@@ -1,0 +1,76 @@
+[package]
+name = "voxitype"
+version = "0.1.0"
+description = "Free & open-source voice-to-text for all applications"
+authors = ["VoxiType Contributors"]
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "voxitype_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# --- Tauri core + plugins ---
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-store = "2"
+tauri-plugin-log = "2"
+
+# --- Serialization ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- Async runtime ---
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# --- Audio pipeline ---
+cpal = "0.15"
+rubato = "0.16"
+ringbuf = "0.4"
+
+# --- HTTP client (Ollama, Groq) ---
+reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+
+# --- Text injection ---
+enigo = "0.2"
+arboard = "3.4"
+
+# --- Storage ---
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+
+# --- Logging ---
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# --- Optional native engines (require cmake + libclang to build) ---
+# Silero VAD via ONNX Runtime. `download-binaries` fetches a prebuilt ORT.
+ort = { version = "2.0.0-rc.10", optional = true, default-features = false, features = ["ndarray", "download-binaries"] }
+ndarray = { version = "0.16", optional = true }
+# whisper.cpp binding. Requires cmake + a C/C++ toolchain + libclang.
+whisper-rs = { version = "0.14", optional = true }
+
+[features]
+default = []
+# Enable local Silero VAD (needs cmake/libclang or prebuilt ORT binaries).
+local-vad = ["dep:ort", "dep:ndarray"]
+# Enable local Whisper.cpp STT (needs cmake + libclang).
+local-stt = ["dep:whisper-rs"]
+# Enable everything that compiles natively.
+full = ["local-vad", "local-stt"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
