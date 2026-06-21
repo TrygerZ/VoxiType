@@ -111,6 +111,7 @@ pub fn run() {
             commands::get_history,
             commands::search_history,
             commands::delete_history,
+            commands::clear_history,
             commands::pin_history,
             commands::re_inject,
             commands::export_history,

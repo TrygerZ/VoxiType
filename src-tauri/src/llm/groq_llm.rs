@@ -35,9 +35,9 @@ impl GroqLlmFormatter {
             "model": self.config.model,
             "messages": [
                 { "role": "system", "content": system },
-                { "role": "user", "content": user },
+                { "role": "user", "content": format!("Text to format:\n\n{}", user) },
             ],
-            "temperature": self.config.temperature,
+            "temperature": 0.0, // Force 0.0 for strict formatting
             "max_tokens": self.config.max_tokens,
             "stream": false,
         });

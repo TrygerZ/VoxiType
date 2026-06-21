@@ -53,9 +53,11 @@ impl SttEngine for GroqSttEngine {
 
         let wav = encode_wav_16k_mono(audio);
         let language = if config.language == "auto" {
-            self.config.language.clone()
+            // Groq Whisper doesn't accept "auto" as a language parameter.
+            // When auto-detecting, omit the language field.
+            None
         } else {
-            config.language.clone()
+            Some(config.language.clone())
         };
 
         // Network call wrapped in retry-with-backoff (max 3 retries) for
@@ -69,12 +71,15 @@ impl SttEngine for GroqSttEngine {
                     .mime_str("audio/wav")
                     .map_err(|e| AppError::stt(format!("multipart error: {e}")))?;
 
-                let form = reqwest::multipart::Form::new()
+                let mut form = reqwest::multipart::Form::new()
                     .part("file", part)
                     .text("model", self.config.model.clone())
-                    .text("language", language)
                     .text("temperature", self.config.temperature.to_string())
                     .text("response_format", "verbose_json");
+                    
+                if let Some(lang) = language {
+                    form = form.text("language", lang);
+                }
 
                 let resp = self
                     .client

@@ -488,6 +488,16 @@ pub fn pin_history(
     HistoryRepository::new(&state.db).set_pinned(&id, pinned)
 }
 
+/// Clear all history. When `keep_pinned` is true (default), pinned entries are
+/// preserved. Returns the number of removed entries.
+#[tauri::command]
+pub fn clear_history(
+    state: State<'_, AppStateInner>,
+    keep_pinned: Option<bool>,
+) -> std::result::Result<usize, AppError> {
+    HistoryRepository::new(&state.db).clear(keep_pinned.unwrap_or(true))
+}
+
 #[tauri::command]
 pub fn re_inject(state: State<'_, AppStateInner>, id: String) -> std::result::Result<(), AppError> {
     let entry = HistoryRepository::new(&state.db)

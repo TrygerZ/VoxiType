@@ -34,6 +34,8 @@ export const searchHistory = (query: string) =>
   invoke<TranscriptionEntry[]>("search_history", { query });
 export const deleteHistory = (id: string) =>
   invoke<void>("delete_history", { id });
+export const clearHistory = (keepPinned = true) =>
+  invoke<number>("clear_history", { keepPinned });
 export const pinHistory = (id: string, pinned: boolean) =>
   invoke<void>("pin_history", { id, pinned });
 export const reInject = (id: string) => invoke<void>("re_inject", { id });

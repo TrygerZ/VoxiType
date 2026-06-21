@@ -21,9 +21,22 @@ export function HistoryPanel() {
   const load = useHistoryStore((s) => s.load);
   const search = useHistoryStore((s) => s.search);
   const remove = useHistoryStore((s) => s.remove);
+  const clear = useHistoryStore((s) => s.clear);
   const togglePin = useHistoryStore((s) => s.togglePin);
   const [modeFilter, setModeFilter] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      await clear(true);
+    } finally {
+      setClearing(false);
+      setConfirmingClear(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -78,6 +91,39 @@ export function HistoryPanel() {
             >
               <Download className="h-3.5 w-3.5" /> CSV
             </Button>
+            {confirmingClear ? (
+              <>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void handleClear()}
+                  disabled={clearing}
+                  title="Confirm clearing history (pinned items are kept)"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />{" "}
+                  {clearing ? "Clearing..." : "Confirm"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmingClear(false)}
+                  disabled={clearing}
+                  title="Cancel"
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmingClear(true)}
+                disabled={items.length === 0}
+                title="Clear history (pinned items are kept)"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Clear
+              </Button>
+            )}
           </>
         }
       />

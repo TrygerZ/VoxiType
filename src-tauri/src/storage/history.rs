@@ -177,6 +177,19 @@ impl<'a> HistoryRepository<'a> {
         })
     }
 
+    /// Delete all history entries. When `keep_pinned` is true, pinned entries
+    /// are preserved. Returns the number of rows removed.
+    pub fn clear(&self, keep_pinned: bool) -> Result<usize> {
+        self.db.with_conn(|c| {
+            let n = if keep_pinned {
+                c.execute("DELETE FROM transcriptions WHERE is_pinned = 0", [])?
+            } else {
+                c.execute("DELETE FROM transcriptions", [])?
+            };
+            Ok(n)
+        })
+    }
+
     pub fn delete_older_than(&self, days: u32) -> Result<usize> {
         self.db.with_conn(|c| {
             let n = c.execute(
@@ -258,5 +271,30 @@ mod tests {
 
         repo.delete("b").unwrap();
         assert_eq!(repo.list(&HistoryFilter::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clear_respects_pinned() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = HistoryRepository::new(&db);
+        repo.insert(&sample("a", "satu")).unwrap();
+        repo.insert(&sample("b", "dua")).unwrap();
+        repo.insert(&sample("c", "tiga")).unwrap();
+        repo.set_pinned("b", true).unwrap();
+
+        // keep_pinned=true removes only unpinned entries.
+        let removed = repo.clear(true).unwrap();
+        assert_eq!(removed, 2);
+        let remaining = repo.list(&HistoryFilter::default()).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, "b");
+
+        // FTS stays in sync after the bulk delete.
+        assert_eq!(repo.search("satu").unwrap().len(), 0);
+
+        // keep_pinned=false wipes everything.
+        let removed = repo.clear(false).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(repo.list(&HistoryFilter::default()).unwrap().len(), 0);
     }
 }

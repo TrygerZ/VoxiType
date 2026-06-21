@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { TranscriptionEntry } from "../types/app";
 import {
+  clearHistory,
   deleteHistory,
   getHistory,
   pinHistory,
@@ -14,6 +15,7 @@ interface HistoryStore {
   load: () => Promise<void>;
   search: (query: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  clear: (keepPinned?: boolean) => Promise<void>;
   togglePin: (id: string, pinned: boolean) => Promise<void>;
 }
 
@@ -47,6 +49,13 @@ export const useHistoryStore = create<HistoryStore>((set, getState) => ({
   remove: async (id) => {
     await deleteHistory(id);
     set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+  },
+
+  clear: async (keepPinned = true) => {
+    await clearHistory(keepPinned);
+    set((s) => ({
+      items: keepPinned ? s.items.filter((i) => i.is_pinned) : [],
+    }));
   },
 
   togglePin: async (id, pinned) => {
