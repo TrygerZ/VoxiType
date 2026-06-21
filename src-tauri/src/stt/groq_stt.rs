@@ -76,7 +76,7 @@ impl SttEngine for GroqSttEngine {
                     .text("model", self.config.model.clone())
                     .text("temperature", self.config.temperature.to_string())
                     .text("response_format", "verbose_json");
-                    
+
                 if let Some(lang) = language {
                     form = form.text("language", lang);
                 }

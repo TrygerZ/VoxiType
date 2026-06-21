@@ -86,7 +86,10 @@ impl AppState {
                 code: *code,
             }),
 
-            _ => Err((self, AppError::invalid_transition("Invalid state transition"))),
+            _ => Err((
+                self,
+                AppError::invalid_transition("Invalid state transition"),
+            )),
         }
     }
 }

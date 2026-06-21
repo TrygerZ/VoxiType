@@ -18,9 +18,7 @@ mod platform {
     use windows::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
-    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
     pub fn foreground_process_name() -> Option<String> {
         unsafe {
@@ -35,12 +33,8 @@ mod platform {
                 return None;
             }
 
-            let handle = OpenProcess(
-                PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                false,
-                pid,
-            )
-            .ok()?;
+            let handle =
+                OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
 
             let mut buf = [0u16; MAX_PATH as usize];
             let len = GetModuleBaseNameW(handle, None, &mut buf);

@@ -107,8 +107,7 @@ fn active_mode(db: &Database) -> LlmMode {
         .unwrap_or(false);
     if per_app_on {
         if let Some(proc) = crate::active_window::foreground_process_name() {
-            if let Ok(Some(mode_id)) =
-                crate::storage::PerAppModeRepository::new(db).mode_for(&proc)
+            if let Ok(Some(mode_id)) = crate::storage::PerAppModeRepository::new(db).mode_for(&proc)
             {
                 return LlmMode::from_id(&mode_id);
             }
@@ -320,9 +319,7 @@ fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
 pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
     let tag = state.pipeline.state_tag();
-    if tag != crate::pipeline::AppStateTag::Idle
-        && tag != crate::pipeline::AppStateTag::Error
-    {
+    if tag != crate::pipeline::AppStateTag::Idle && tag != crate::pipeline::AppStateTag::Error {
         return;
     }
     let config = build_audio_config(&state.db);

@@ -3,8 +3,8 @@
 //! Library root. Wires modules into the Tauri application and exposes the
 //! managed [`AppStateInner`] shared by all commands.
 
-pub mod audio;
 pub mod active_window;
+pub mod audio;
 pub mod commands;
 pub mod crypto;
 pub mod error;
