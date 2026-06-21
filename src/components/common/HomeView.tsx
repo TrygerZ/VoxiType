@@ -1,9 +1,10 @@
 import { Mic, Loader2, Keyboard } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { startRecording } from "../../lib/tauri";
-import { t } from "../../lib/i18n";
+import { useT } from "../../lib/i18n";
 
 export function HomeView() {
+  const t = useT();
   const state = useAppStore((s) => s.state);
   const isRecording = state === "recording";
   const isProcessing = state === "processing";

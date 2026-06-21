@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { setHotkey } from "../../lib/tauri";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
+import { HotkeyRecorder } from "./HotkeyRecorder";
 
 export function ShortcutsTab() {
   const settings = useSettingsStore((s) => s.settings);
@@ -36,13 +36,7 @@ export function ShortcutsTab() {
 
       <SettingsGroup title="Global hotkey">
         <div className="px-4 py-3.5">
-          <Input
-            label="Hotkey combination"
-            placeholder="Ctrl+Space"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            hint="e.g. Ctrl+Space, Alt+D, CommandOrControl+Shift+V"
-          />
+          <HotkeyRecorder value={key} onChange={setKey} />
         </div>
         <SettingsRow
           label="Recording mode"

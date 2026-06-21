@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { TopBar } from "./components/common/TopBar";
 import { Sidebar } from "./components/common/Sidebar";
 import { HomeView } from "./components/common/HomeView";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -73,7 +72,6 @@ export default function App() {
   if (showOnboarding) {
     return (
       <div className="flex h-full flex-col">
-        <TopBar />
         <OnboardingFlow onComplete={() => setShowOnboarding(false)} />
       </div>
     );
@@ -81,11 +79,10 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col vx-app-bg">
-      <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar active={view} onChange={setView} />
         <main className="flex-1 overflow-y-auto">
-          <div key={view} className="vx-animate-in h-full">
+          <div className="h-full">
             {view === "home" && <HomeView />}
             {view === "settings" && <SettingsPanel />}
             {view === "history" && <HistoryPanel />}

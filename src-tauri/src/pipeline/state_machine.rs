@@ -13,6 +13,7 @@ use crate::error::{AppError, ErrorCode};
 pub const RECORDING_TIMEOUT_SECS: u64 = 60;
 
 /// Runtime state. Heavy payloads (audio) are kept out of the serialized form.
+#[derive(Debug)]
 pub enum AppState {
     Idle,
     Recording { start_time: Instant },
@@ -53,24 +54,20 @@ pub enum StateEvent {
 }
 
 impl AppState {
-    /// Apply an event, returning the next state or an invalid-transition error.
-    pub fn transition(self, event: StateEvent) -> Result<AppState, AppError> {
-        match (self, event) {
-            // Start recording from Idle or after an Error (recovery).
+    /// Apply an event, returning the next state or the original state + error.
+    pub fn transition(self, event: StateEvent) -> Result<AppState, (AppState, AppError)> {
+        match (&self, &event) {
             (AppState::Idle, StateEvent::StartRecording)
             | (AppState::Error { .. }, StateEvent::StartRecording) => Ok(AppState::Recording {
                 start_time: Instant::now(),
             }),
 
-            // Recording -> Processing.
             (AppState::Recording { .. }, StateEvent::StopRecording) => Ok(AppState::Processing {
                 start_time: Instant::now(),
             }),
 
-            // Recording -> Idle (cancel, audio discarded).
             (AppState::Recording { .. }, StateEvent::CancelRecording) => Ok(AppState::Idle),
 
-            // Recording timeout -> Error.
             (AppState::Recording { start_time }, StateEvent::Timeout) => {
                 if start_time.elapsed().as_secs() >= RECORDING_TIMEOUT_SECS {
                     Ok(AppState::Error {
@@ -78,17 +75,18 @@ impl AppState {
                         code: ErrorCode::RecordingTimeout,
                     })
                 } else {
-                    Err(AppError::invalid_transition("Timeout before limit"))
+                    Err((self, AppError::invalid_transition("Timeout before limit")))
                 }
             }
 
-            // Processing -> Idle (done).
             (AppState::Processing { .. }, StateEvent::ProcessingComplete) => Ok(AppState::Idle),
 
-            // Any -> Error.
-            (_, StateEvent::Error { message, code }) => Ok(AppState::Error { message, code }),
+            (_, StateEvent::Error { message, code }) => Ok(AppState::Error {
+                message: message.clone(),
+                code: *code,
+            }),
 
-            _ => Err(AppError::invalid_transition("Invalid state transition")),
+            _ => Err((self, AppError::invalid_transition("Invalid state transition"))),
         }
     }
 }

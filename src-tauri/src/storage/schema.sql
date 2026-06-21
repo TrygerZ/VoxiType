@@ -112,6 +112,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('llm_model', '"qwen2.5:3b"'),
     ('active_mode', '"dictation"'),
     ('language', '"id"'),
+    ('stt_language', '"auto"'),
     ('mic_device', '"default"'),
     ('auto_start', 'false'),
     ('auto_update', 'true'),

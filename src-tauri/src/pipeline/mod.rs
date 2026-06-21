@@ -47,7 +47,6 @@ impl PipelineOrchestrator {
     /// Apply a state event, mutating the stored state in place.
     pub fn apply(&self, event: StateEvent) -> Result<AppStateTag> {
         let mut guard = self.state.lock().unwrap();
-        // Replace via take/transition. `Idle` is a cheap placeholder.
         let current = std::mem::replace(&mut *guard, AppState::Idle);
         match current.transition(event) {
             Ok(next) => {
@@ -55,8 +54,8 @@ impl PipelineOrchestrator {
                 *guard = next;
                 Ok(tag)
             }
-            Err(e) => {
-                // Restore Idle on invalid transition (guard already holds Idle).
+            Err((original, e)) => {
+                *guard = original;
                 Err(e)
             }
         }

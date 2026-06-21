@@ -53,8 +53,8 @@ export function STTTab() {
               { value: "id", label: "Bahasa Indonesia" },
               { value: "en", label: "English" },
             ]}
-            value={(settings.language as string) ?? "auto"}
-            onChange={(e) => void update("language", e.target.value)}
+            value={(settings.stt_language as string) ?? "auto"}
+            onChange={(e) => void update("stt_language", e.target.value)}
             className="w-48"
           />
         </SettingsRow>

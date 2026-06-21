@@ -9,7 +9,7 @@ import {
   AppWindow,
   Info,
 } from "lucide-react";
-import { t } from "../../lib/i18n";
+import { useT } from "../../lib/i18n";
 import { GeneralTab } from "./GeneralTab";
 import { AudioTab } from "./AudioTab";
 import { STTTab } from "./STTTab";
@@ -33,6 +33,7 @@ const tabs = [
 type TabId = (typeof tabs)[number]["id"];
 
 export function SettingsPanel() {
+  const t = useT();
   const [active, setActive] = useState<TabId>("general");
 
   return (
@@ -58,7 +59,7 @@ export function SettingsPanel() {
         ))}
       </div>
       <div className="flex-1 overflow-y-auto p-6">
-        <div key={active} className="vx-animate-in">
+        <div>
           {active === "general" && <GeneralTab />}
           {active === "audio" && <AudioTab />}
           {active === "stt" && <STTTab />}

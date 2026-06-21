@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Mic, Check, ChevronRight, Zap, Cloud, Languages } from "lucide-react";
 import { Button } from "../ui/Button";
-import { t } from "../../lib/i18n";
+import { useT } from "../../lib/i18n";
 import { useSettingsStore } from "../../stores/settingsStore";
 
 type Step = "welcome" | "complete";
@@ -34,6 +34,7 @@ const features = [
 ];
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
+  const t = useT();
   const [step, setStep] = useState<Step>("welcome");
   const update = useSettingsStore((s) => s.update);
 

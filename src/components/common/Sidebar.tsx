@@ -1,5 +1,5 @@
 import { Settings, History, BookOpen, Info, Mic, Zap, Home } from "lucide-react";
-import { t } from "../../lib/i18n";
+import { useT } from "../../lib/i18n";
 
 type View =
   | "home"
@@ -24,6 +24,7 @@ const items: { id: View; icon: typeof Mic; labelKey: string }[] = [
 ];
 
 export function Sidebar({ active, onChange }: SidebarProps) {
+  const t = useT();
   return (
     <nav className="flex w-52 shrink-0 flex-col gap-1 border-r border-vx-border bg-vx-bg-secondary/60 p-3">
       <div className="mb-5 flex items-center gap-2.5 px-2 pt-1">

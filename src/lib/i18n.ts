@@ -88,3 +88,11 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   }
   return value;
 }
+
+// ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
+import { useSettingsStore } from "../stores/settingsStore";
+export function useT() {
+  const lang = useSettingsStore((s) => s.settings.language) as string | undefined;
+  if (lang && dictionaries[lang]) setLanguage(lang);
+  return t;
+}

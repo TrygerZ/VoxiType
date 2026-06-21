@@ -56,7 +56,7 @@ fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
     };
     let groq = GroqSttConfig {
         api_key: decrypted_api_key(state),
-        language: string_setting(&state.db, "language", "id"),
+        language: string_setting(&state.db, "stt_language", "auto"),
         ..Default::default()
     };
     SttFactory::create(kind, whisper, groq)
@@ -82,7 +82,7 @@ fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
 }
 
 fn build_stt_config(db: &Database) -> SttConfig {
-    let language = string_setting(db, "language", "auto");
+    let language = string_setting(db, "stt_language", "auto");
     let hotwords = DictionaryRepository::new(db)
         .get_hotwords()
         .unwrap_or_default();
@@ -319,7 +319,10 @@ fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
 
 pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
-    if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Idle {
+    let tag = state.pipeline.state_tag();
+    if tag != crate::pipeline::AppStateTag::Idle
+        && tag != crate::pipeline::AppStateTag::Error
+    {
         return;
     }
     let config = build_audio_config(&state.db);
@@ -377,7 +380,9 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
 pub fn hotkey_toggle<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
     match state.pipeline.state_tag() {
-        crate::pipeline::AppStateTag::Idle => hotkey_start(app),
+        crate::pipeline::AppStateTag::Idle | crate::pipeline::AppStateTag::Error => {
+            hotkey_start(app)
+        }
         crate::pipeline::AppStateTag::Recording => hotkey_stop(app),
         _ => {}
     }
