@@ -1,4 +1,5 @@
 import { type SelectHTMLAttributes, forwardRef } from "react";
+import { ChevronDown } from "lucide-react";
 
 interface Option {
   value: string;
@@ -20,18 +21,21 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             {label}
           </span>
         )}
-        <select
-          ref={ref}
-          id={selectId}
-          className={`rounded-md border border-vx-border bg-vx-bg-secondary px-3 py-2 text-sm text-vx-text-primary focus:border-vx-accent focus:outline-none focus:ring-1 focus:ring-vx-accent ${className}`}
-          {...rest}
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            ref={ref}
+            id={selectId}
+            className={`w-full appearance-none rounded-lg border border-vx-border bg-vx-bg-tertiary/60 px-3.5 py-2.5 pr-9 text-sm text-vx-text-primary transition-all duration-150 hover:border-vx-border-strong focus:border-vx-accent focus:bg-vx-bg-tertiary focus:outline-none focus:ring-2 focus:ring-vx-accent/30 ${className}`}
+            {...rest}
+          >
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
+        </div>
       </label>
     );
   },

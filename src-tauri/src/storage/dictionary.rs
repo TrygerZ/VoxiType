@@ -114,10 +114,34 @@ impl<'a> DictionaryRepository<'a> {
     /// Active words, used to bias STT (hotword prompt).
     pub fn get_hotwords(&self) -> Result<Vec<String>> {
         self.db.with_conn(|c| {
-            let mut stmt =
-                c.prepare("SELECT word FROM dictionary_entries WHERE is_active = 1")?;
+            let mut stmt = c.prepare("SELECT word FROM dictionary_entries WHERE is_active = 1")?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+    }
+
+    /// Active entries that define a non-empty replacement, as `(word, replacement)`.
+    pub fn get_replacements(&self) -> Result<Vec<(String, String)>> {
+        self.db.with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT word, replacement FROM dictionary_entries
+                 WHERE is_active = 1 AND replacement IS NOT NULL AND replacement <> ''",
+            )?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+    }
+
+    /// Toggle the active flag for an entry.
+    pub fn set_active(&self, id: &str, active: bool) -> Result<()> {
+        self.db.with_conn(|c| {
+            c.execute(
+                "UPDATE dictionary_entries SET is_active = ?2, updated_at = datetime('now')
+                 WHERE id = ?1",
+                rusqlite::params![id, active as i32],
+            )?;
+            Ok(())
         })
     }
 
@@ -130,6 +154,54 @@ impl<'a> DictionaryRepository<'a> {
             Ok(())
         })
     }
+}
+
+/// Apply `(word -> replacement)` substitutions to `text`.
+///
+/// Matching is case-insensitive and bounded by non-alphanumeric characters so
+/// "JS" replaces the standalone token but not the "js" inside "jsx".
+pub fn apply_replacements(text: &str, replacements: &[(String, String)]) -> String {
+    let mut out = text.to_string();
+    for (word, replacement) in replacements {
+        if word.is_empty() {
+            continue;
+        }
+        out = replace_word_ci(&out, word, replacement);
+    }
+    out
+}
+
+fn replace_word_ci(haystack: &str, needle: &str, replacement: &str) -> String {
+    let hay_lower = haystack.to_lowercase();
+    let needle_lower = needle.to_lowercase();
+    let mut result = String::with_capacity(haystack.len());
+    let mut cursor = 0usize;
+
+    while let Some(rel) = hay_lower[cursor..].find(&needle_lower) {
+        let start = cursor + rel;
+        let end = start + needle_lower.len();
+
+        let before_ok = start == 0
+            || !haystack[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric());
+        let after_ok = end == haystack.len()
+            || !haystack[end..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric());
+
+        result.push_str(&haystack[cursor..start]);
+        if before_ok && after_ok {
+            result.push_str(replacement);
+        } else {
+            result.push_str(&haystack[start..end]);
+        }
+        cursor = end;
+    }
+    result.push_str(&haystack[cursor..]);
+    result
 }
 
 fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<DictionaryEntry> {
@@ -171,5 +243,46 @@ mod tests {
         assert_eq!(repo.get_all(&DictFilter::default()).unwrap().len(), 1);
         repo.delete("1").unwrap();
         assert!(repo.get_all(&DictFilter::default()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn replacements_are_word_bounded_and_case_insensitive() {
+        let reps = vec![
+            ("js".to_string(), "JavaScript".to_string()),
+            ("voxitype".to_string(), "VoxiType".to_string()),
+        ];
+        // "js" replaced, but "jsx" left intact.
+        let out = apply_replacements("i love js and jsx in voxitype", &reps);
+        assert_eq!(out, "i love JavaScript and jsx in VoxiType");
+    }
+
+    #[test]
+    fn replacements_handle_punctuation_boundaries() {
+        let reps = vec![("api".to_string(), "API".to_string())];
+        assert_eq!(
+            apply_replacements("the api, please", &reps),
+            "the API, please"
+        );
+    }
+
+    #[test]
+    fn replacement_and_active_toggle() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        repo.upsert(&DictionaryEntry {
+            id: "1".into(),
+            word: "js".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("JavaScript".into()),
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+        assert_eq!(repo.get_replacements().unwrap().len(), 1);
+        repo.set_active("1", false).unwrap();
+        assert!(repo.get_replacements().unwrap().is_empty());
+        assert!(repo.get_hotwords().unwrap().is_empty());
     }
 }

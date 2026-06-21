@@ -56,5 +56,36 @@ export interface AppInfo {
   tauri: string;
 }
 
+export interface Snippet {
+  id: string;
+  name: string;
+  trigger_phrase: string;
+  content: string;
+  category?: string | null;
+  mode?: string | null;
+  usage_count: number;
+  is_active: boolean;
+}
+
+export interface UsageStats {
+  date: string;
+  transcription_count: number;
+  total_words: number;
+  total_duration_ms: number;
+  stt_local_count: number;
+  stt_cloud_count: number;
+  llm_local_count: number;
+  llm_cloud_count: number;
+  error_count: number;
+}
+
+export interface UpdateInfo {
+  available: boolean;
+  current_version: string;
+  latest_version: string;
+  notes: string;
+  url: string;
+}
+
 // Settings is a flat key->value map (values are JSON).
 export type Settings = Record<string, unknown>;

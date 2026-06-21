@@ -1,22 +1,42 @@
 @import "tailwindcss";
 
 @theme {
-  --color-vx-bg-primary: #0f0f13;
-  --color-vx-bg-secondary: #1a1a23;
-  --color-vx-bg-tertiary: #252533;
-  --color-vx-accent: #6c5ce7;
-  --color-vx-accent-hover: #7d6ff0;
-  --color-vx-success: #00b894;
-  --color-vx-warning: #fdcb6e;
-  --color-vx-error: #e17055;
-  --color-vx-text-primary: #f5f5fa;
-  --color-vx-text-secondary: #9e9eb8;
-  --color-vx-text-dim: #6c6c8a;
-  --color-vx-border: #2d2d3d;
+  /* Base surfaces — deep, slightly blue-tinted neutrals for a premium dark UI */
+  --color-vx-bg-primary: #0b0b10;
+  --color-vx-bg-secondary: #131319;
+  --color-vx-bg-tertiary: #1c1c26;
+  --color-vx-bg-elevated: #21212e;
+
+  /* Brand — violet → indigo */
+  --color-vx-accent: #7c6cf0;
+  --color-vx-accent-hover: #8f80f5;
+  --color-vx-accent-soft: #2a2547;
+
+  /* Semantic */
+  --color-vx-success: #2dd4a7;
+  --color-vx-warning: #fbbf4c;
+  --color-vx-error: #f0715a;
+
+  /* Text */
+  --color-vx-text-primary: #f6f6fb;
+  --color-vx-text-secondary: #a4a4bd;
+  --color-vx-text-dim: #6b6b86;
+
+  /* Lines */
+  --color-vx-border: #26262f;
+  --color-vx-border-strong: #34343f;
+
+  /* Shadows & rings */
+  --shadow-vx-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-vx-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-vx-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-vx-glow: 0 0 0 1px rgba(124, 108, 240, 0.4),
+    0 8px 32px rgba(124, 108, 240, 0.25);
 }
 
 :root {
-  --vx-font-family: "Inter", system-ui, sans-serif;
+  --vx-font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --vx-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 }
 
 * {
@@ -32,33 +52,62 @@ body,
 
 body {
   font-family: var(--vx-font-family);
-  background-color: var(--vx-bg-primary);
-  color: var(--vx-text-primary);
+  background-color: var(--color-vx-bg-primary);
+  color: var(--color-vx-text-primary);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* Subtle ambient gradient backdrop for the main shell */
+.vx-app-bg {
+  background:
+    radial-gradient(
+      900px circle at 0% 0%,
+      rgba(124, 108, 240, 0.08),
+      transparent 45%
+    ),
+    radial-gradient(
+      700px circle at 100% 100%,
+      rgba(45, 212, 167, 0.05),
+      transparent 40%
+    ),
+    var(--color-vx-bg-primary);
+}
+
+/* Transparent overlay window (floating widget) */
+body.vx-transparent,
+html.vx-transparent,
+html.vx-transparent #root {
+  background: transparent !important;
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--vx-border);
-  border-radius: 4px;
+  background: var(--color-vx-border-strong);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--vx-text-dim);
+  background: var(--color-vx-text-dim);
+  background-clip: content-box;
 }
 
+/* Animations */
 @keyframes vx-pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.4;
   }
 }
 
@@ -66,4 +115,51 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes vx-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vx-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes vx-glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(240, 113, 90, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(240, 113, 90, 0);
+  }
+}
+
+.vx-animate-in {
+  animation: vx-fade-in 0.3s ease both;
+}
+
+.vx-scale-in {
+  animation: vx-scale-in 0.2s ease both;
+}
+
+/* Glass surface helper */
+.vx-glass {
+  background: color-mix(in srgb, var(--color-vx-bg-secondary) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
 }

@@ -22,7 +22,7 @@ pub struct GroqLlmFormatter {
 impl GroqLlmFormatter {
     pub fn new(config: GroqLlmConfig) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: crate::util::http_client(),
             config,
         }
     }
@@ -42,25 +42,33 @@ impl GroqLlmFormatter {
             "stream": false,
         });
 
-        let resp = self
-            .client
-            .post(GROQ_CHAT_URL)
-            .bearer_auth(&self.config.api_key)
-            .json(&body)
-            .send()
-            .await?;
+        // Retry transient failures with exponential backoff; auth fails fast.
+        let text = crate::util::retry_with_backoff(3, std::time::Duration::from_secs(1), || {
+            let body = body.clone();
+            async move {
+                let resp = self
+                    .client
+                    .post(GROQ_CHAT_URL)
+                    .bearer_auth(&self.config.api_key)
+                    .json(&body)
+                    .send()
+                    .await?;
 
-        let status = resp.status();
-        let text = resp.text().await?;
-        if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(AppError::new(
-                ErrorCode::LlmApiKeyInvalid,
-                "Groq rejected the API key (401)",
-            ));
-        }
-        if !status.is_success() {
-            return Err(AppError::llm(format!("Groq LLM error {status}: {text}")));
-        }
+                let status = resp.status();
+                let text = resp.text().await?;
+                if status == reqwest::StatusCode::UNAUTHORIZED {
+                    return Err(AppError::new(
+                        ErrorCode::LlmApiKeyInvalid,
+                        "Groq rejected the API key (401)",
+                    ));
+                }
+                if !status.is_success() {
+                    return Err(AppError::llm(format!("Groq LLM error {status}: {text}")));
+                }
+                Ok(text)
+            }
+        })
+        .await?;
 
         let parsed: ChatResponse = serde_json::from_str(&text)?;
         let content = parsed

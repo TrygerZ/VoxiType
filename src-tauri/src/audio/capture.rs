@@ -40,7 +40,9 @@ impl Default for AudioConfig {
             input_gain: 1.0,
             sample_rate: 48_000,
             buffer_size_ms: 50,
-            noise_gate_threshold: 0.05,
+            // Very low so quiet speech is never gated. STT handles silence
+            // itself; the gate only drops near-dead-silent blocks.
+            noise_gate_threshold: 0.005,
         }
     }
 }
@@ -138,29 +140,32 @@ fn build_stream(config: &AudioConfig, shared: Arc<Shared>) -> Result<cpal::Strea
 
 /// Process a callback's worth of interleaved samples into the ring buffer.
 fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
+    // Compute the peak of the gain-applied block for both metering and gating.
     let mut peak = 0.0f32;
     for &s in data {
-        let a = s.abs();
+        let a = (s * shared.gain).abs();
         if a > peak {
             peak = a;
         }
     }
     shared.set_level(peak.min(1.0));
 
-    let gated: Vec<f32> = data
-        .iter()
-        .map(|&s| {
-            let g = s * shared.gain;
-            if g.abs() < shared.noise_gate {
-                0.0
-            } else {
-                g.clamp(-1.0, 1.0)
-            }
-        })
-        .collect();
+    // Block-level noise gate: if the whole block is quieter than the threshold
+    // treat it as silence. NEVER gate per-sample — speech waveforms cross zero
+    // constantly, so zeroing individual samples below the threshold shreds the
+    // signal and garbles transcription.
+    let block_is_silent = peak < shared.noise_gate;
+
+    let processed: Vec<f32> = if block_is_silent {
+        vec![0.0; data.len()]
+    } else {
+        data.iter()
+            .map(|&s| (s * shared.gain).clamp(-1.0, 1.0))
+            .collect()
+    };
 
     let mut resampler = shared.resampler.lock().unwrap();
-    if let Ok(out) = resampler.process(&gated) {
+    if let Ok(out) = resampler.process(&processed) {
         drop(resampler);
         if !out.is_empty() {
             shared.ring.lock().unwrap().push_slice(&out);
@@ -182,7 +187,10 @@ impl AudioCapture for AudioCaptureImpl {
 
         let resampler = Resampler::new(in_rate, TARGET_SAMPLE_RATE, channels)?;
         let shared = Arc::new(Shared {
-            ring: Mutex::new(AudioRingBuffer::with_duration(TARGET_SAMPLE_RATE, RING_SECONDS)),
+            ring: Mutex::new(AudioRingBuffer::with_duration(
+                TARGET_SAMPLE_RATE,
+                RING_SECONDS,
+            )),
             resampler: Mutex::new(resampler),
             level: AtomicU32::new(0),
             gain: config.input_gain,

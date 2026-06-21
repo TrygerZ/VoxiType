@@ -41,6 +41,12 @@ impl SttFactory {
             SttEngineKind::WhisperCpp => match Self::whisper_cpp(whisper) {
                 Ok(engine) => Ok(engine),
                 Err(e) => {
+                    if groq.api_key.trim().is_empty() {
+                        return Err(crate::error::AppError::model_not_found(
+                            "Local Whisper.cpp is not available in this build and no Groq API key is set. \
+                             Add a Groq API key in Settings or use a build with --features local-stt.",
+                        ));
+                    }
                     tracing::warn!("Whisper.cpp unavailable ({e}); falling back to Groq");
                     Ok(Self::groq(groq))
                 }

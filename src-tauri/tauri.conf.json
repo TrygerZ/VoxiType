@@ -20,6 +20,21 @@
         "fullscreen": false,
         "visible": true,
         "center": true
+      },
+      {
+        "label": "floating-widget",
+        "url": "floating.html",
+        "title": "VoxiType Widget",
+        "width": 320,
+        "height": 96,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": false
       }
     ],
     "security": {

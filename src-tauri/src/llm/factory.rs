@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use super::fallback::FallbackFormatter;
 use super::groq_llm::GroqLlmFormatter;
 use super::ollama::OllamaFormatter;
 use super::rule_based::RuleBasedFormatter;
@@ -23,8 +24,12 @@ impl LlmFactory {
         Arc::new(GroqLlmFormatter::new(config))
     }
 
-    /// Build a formatter for the selected engine. `Off` maps to the rule-based
-    /// cleaner so the pipeline always produces usable output.
+    /// Build a formatter for the selected engine.
+    ///
+    /// `Off` maps to the rule-based cleaner. Network/local engines (Ollama,
+    /// Groq) are wrapped so that any failure (server down, bad key, network)
+    /// transparently falls back to the rule-based cleaner — the pipeline always
+    /// produces usable output.
     pub fn create(
         kind: LlmEngineKind,
         ollama: OllamaConfig,
@@ -33,8 +38,14 @@ impl LlmFactory {
     ) -> Arc<dyn LlmFormatter> {
         match kind {
             LlmEngineKind::Off | LlmEngineKind::RuleBased => Self::rule_based(rule_based),
-            LlmEngineKind::Ollama => Self::ollama(ollama),
-            LlmEngineKind::Groq => Self::groq(groq),
+            LlmEngineKind::Ollama => Arc::new(FallbackFormatter::new(
+                Self::ollama(ollama),
+                Self::rule_based(rule_based),
+            )),
+            LlmEngineKind::Groq => Arc::new(FallbackFormatter::new(
+                Self::groq(groq),
+                Self::rule_based(rule_based),
+            )),
         }
     }
 }

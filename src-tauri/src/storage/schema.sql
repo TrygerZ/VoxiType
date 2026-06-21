@@ -119,7 +119,12 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('telemetry', 'false'),
     ('onboarding_completed', 'false'),
     ('theme', '"dark"'),
-    ('history_retention_days', '90');
+    ('history_retention_days', '90'),
+    ('groq_api_key', '""'),
+    ('translation_enabled', 'false'),
+    ('translation_target', '"en"'),
+    ('command_mode', 'false'),
+    ('per_app_mode', 'false');
 
 -- ============================================================
 -- Usage Stats (opt-in telemetry, anonymous)
@@ -172,7 +177,7 @@ CREATE TABLE IF NOT EXISTS per_app_modes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     app_process_name TEXT NOT NULL UNIQUE,
     app_display_name TEXT,
-    mode_id         TEXT NOT NULL REFERENCES modes(id),
+    mode_id         TEXT NOT NULL,
     is_active       INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -5,6 +5,7 @@
 //! - [`groq_llm::GroqLlmFormatter`] — Groq cloud (OpenAI-compatible).
 
 pub mod factory;
+pub mod fallback;
 pub mod groq_llm;
 pub mod ollama;
 pub mod prompts;
@@ -12,6 +13,7 @@ pub mod rule_based;
 pub mod types;
 
 pub use factory::LlmFactory;
+pub use fallback::FallbackFormatter;
 pub use types::{GroqLlmConfig, LlmEngineKind, LlmMode, OllamaConfig, RuleBasedConfig};
 
 use async_trait::async_trait;

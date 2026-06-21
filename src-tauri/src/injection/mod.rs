@@ -4,9 +4,11 @@
 //! Fallback: per-character keystroke simulation.
 
 pub mod clipboard;
+pub mod command;
 pub mod hybrid;
 pub mod keystroke;
 
+pub use command::VoiceCommand;
 pub use hybrid::HybridInjector;
 
 use serde::{Deserialize, Serialize};

@@ -17,13 +17,34 @@ pub struct BatchOutcome {
     pub inject: InjectResult,
 }
 
-/// Run STT -> LLM -> injection for one captured utterance.
+/// Optional translation step applied after formatting.
+pub struct TranslateOpts {
+    pub target: String,
+}
+
+/// Post-formatting text transforms applied before injection.
+#[derive(Default)]
+pub struct PostProcess {
+    /// Dictionary `(word -> replacement)` pairs.
+    pub replacements: Vec<(String, String)>,
+    /// Snippet `(trigger_phrase -> content)` pairs.
+    pub snippets: Vec<(String, String)>,
+}
+
+/// Run STT -> LLM format -> (optional) translate -> replacements -> snippets ->
+/// injection.
+///
+/// Replacements and snippet expansion run after formatting/translation so
+/// custom spellings and shortcuts always win over the LLM's output.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_batch(
     audio: &[f32],
     stt: Arc<dyn SttEngine>,
     stt_config: &SttConfig,
     llm: Arc<dyn LlmFormatter>,
     mode: &LlmMode,
+    post: &PostProcess,
+    translate: Option<&TranslateOpts>,
     injector: &dyn TextInjector,
 ) -> Result<BatchOutcome> {
     let transcription = stt.transcribe(audio, stt_config).await?;
@@ -31,7 +52,16 @@ pub async fn run_batch(
     let formatted_text = if transcription.text.trim().is_empty() {
         String::new()
     } else {
-        llm.format(&transcription.text, mode).await?
+        let formatted = llm.format(&transcription.text, mode).await?;
+        let translated = match translate {
+            Some(opts) if opts.target != transcription.language => {
+                llm.translate(&formatted, &transcription.language, &opts.target)
+                    .await?
+            }
+            _ => formatted,
+        };
+        let replaced = crate::storage::apply_replacements(&translated, &post.replacements);
+        crate::storage::expand_snippets(&replaced, &post.snippets)
     };
 
     let inject = if formatted_text.is_empty() {
@@ -55,7 +85,7 @@ pub async fn run_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::injection::{InjectStrategy, InjectResult};
+    use crate::injection::{InjectResult, InjectStrategy};
     use async_trait::async_trait;
 
     struct MockStt;
@@ -103,6 +133,8 @@ mod tests {
             &SttConfig::default(),
             llm,
             &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
             &injector,
         )
         .await

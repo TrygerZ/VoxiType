@@ -1,0 +1,30 @@
+name: Bug Report
+description: Create a report to help us improve VoxiType
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: VoxiType Version
+      placeholder: e.g., 0.1.0
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Please attach relevant lines from your log file (found in `%APPDATA%\com.voxitype.app\logs` on Windows).

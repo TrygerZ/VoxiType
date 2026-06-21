@@ -4,9 +4,11 @@ type Dict = Record<string, string>;
 
 const id: Dict = {
   "app.name": "VoxiType",
+  "nav.home": "Beranda",
   "nav.settings": "Pengaturan",
   "nav.history": "Riwayat",
   "nav.dictionary": "Kamus",
+  "nav.snippets": "Snippet",
   "nav.about": "Tentang",
   "recording": "Merekam...",
   "processing": "Memproses...",
@@ -17,6 +19,7 @@ const id: Dict = {
   "settings.stt": "STT",
   "settings.llm": "LLM",
   "settings.modes": "Mode",
+  "settings.app_rules": "Aturan App",
   "settings.dictionary": "Kamus",
   "settings.shortcuts": "Pintasan",
   "settings.about": "Tentang",
@@ -35,9 +38,11 @@ const id: Dict = {
 
 const en: Dict = {
   "app.name": "VoxiType",
+  "nav.home": "Home",
   "nav.settings": "Settings",
   "nav.history": "History",
   "nav.dictionary": "Dictionary",
+  "nav.snippets": "Snippets",
   "nav.about": "About",
   "recording": "Recording...",
   "processing": "Processing...",
@@ -48,6 +53,7 @@ const en: Dict = {
   "settings.stt": "STT",
   "settings.llm": "LLM",
   "settings.modes": "Modes",
+  "settings.app_rules": "App Rules",
   "settings.dictionary": "Dictionary",
   "settings.shortcuts": "Shortcuts",
   "settings.about": "About",

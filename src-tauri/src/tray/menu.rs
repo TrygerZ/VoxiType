@@ -19,10 +19,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> Result<Menu<R>> {
         .map_err(|e| AppError::internal(e.to_string()))?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)
         .map_err(|e| AppError::internal(e.to_string()))?;
-    let sep1 =
-        PredefinedMenuItem::separator(app).map_err(|e| AppError::internal(e.to_string()))?;
-    let sep2 =
-        PredefinedMenuItem::separator(app).map_err(|e| AppError::internal(e.to_string()))?;
+    let sep1 = PredefinedMenuItem::separator(app).map_err(|e| AppError::internal(e.to_string()))?;
+    let sep2 = PredefinedMenuItem::separator(app).map_err(|e| AppError::internal(e.to_string()))?;
 
     Menu::with_items(
         app,

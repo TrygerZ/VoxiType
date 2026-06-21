@@ -20,7 +20,7 @@ pub struct OllamaFormatter {
 impl OllamaFormatter {
     pub fn new(config: OllamaConfig) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: crate::util::http_client(),
             config,
         }
     }
@@ -32,7 +32,10 @@ impl OllamaFormatter {
     }
 
     async fn generate(&self, system: &str, prompt: &str) -> Result<String> {
-        let url = format!("{}/api/generate", self.config.endpoint.trim_end_matches('/'));
+        let url = format!(
+            "{}/api/generate",
+            self.config.endpoint.trim_end_matches('/')
+        );
         let body = json!({
             "model": self.config.model,
             "prompt": prompt,

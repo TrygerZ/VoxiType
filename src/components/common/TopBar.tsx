@@ -1,32 +1,38 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Minus, X } from "lucide-react";
 
 export function TopBar() {
   const win = getCurrentWindow();
   return (
     <div
       data-tauri-drag-region
-      className="flex h-8 items-center justify-between border-b border-vx-border bg-vx-bg-secondary px-3"
+      className="flex h-9 shrink-0 items-center justify-between border-b border-vx-border bg-vx-bg-secondary/70 px-3 vx-glass"
     >
-      <span
+      <div
         data-tauri-drag-region
-        className="text-xs font-medium text-vx-text-dim select-none"
+        className="flex items-center gap-2 select-none"
       >
-        VoxiType
-      </span>
+        <span className="h-2.5 w-2.5 rounded-full bg-gradient-to-br from-vx-accent to-vx-accent-hover" />
+        <span className="text-xs font-semibold tracking-wide text-vx-text-secondary">
+          VoxiType
+        </span>
+      </div>
       <div className="flex gap-1">
         <button
           type="button"
           onClick={() => void win.minimize()}
-          className="rounded px-2 py-0.5 text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+          aria-label="Minimize"
         >
-          &#x2014;
+          <Minus className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
           onClick={() => void win.close()}
-          className="rounded px-2 py-0.5 text-vx-text-dim hover:bg-vx-error hover:text-white"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-vx-text-dim transition-colors hover:bg-vx-error hover:text-white"
+          aria-label="Close"
         >
-          &#x2715;
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>

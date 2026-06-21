@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Download,
+  Upload,
+  ToggleLeft,
+  ToggleRight,
+  BookOpen,
+} from "lucide-react";
 import { useDictionaryStore } from "../../stores/dictionaryStore";
 import { Button } from "../ui/Button";
+import { PanelHeader } from "../common/PanelHeader";
 import type { DictionaryEntry } from "../../types/app";
+import {
+  exportDictionary,
+  importDictionary,
+  setDictionaryActive,
+} from "../../lib/tauri";
 
 export function DictionaryPanel() {
   const entries = useDictionaryStore((s) => s.entries);
@@ -10,7 +24,9 @@ export function DictionaryPanel() {
   const load = useDictionaryStore((s) => s.load);
   const add = useDictionaryStore((s) => s.add);
   const remove = useDictionaryStore((s) => s.remove);
+
   const [word, setWord] = useState("");
+  const [replacement, setReplacement] = useState("");
 
   useEffect(() => {
     void load();
@@ -23,62 +39,147 @@ export function DictionaryPanel() {
       word: word.trim(),
       pronunciation: null,
       category: "custom",
-      replacement: null,
+      replacement: replacement.trim() || null,
       language: "id",
       usage_count: 0,
       is_active: true,
     };
     void add(entry);
     setWord("");
+    setReplacement("");
+  };
+
+  const handleToggle = async (id: string, current: boolean) => {
+    await setDictionaryActive(id, !current);
+    void load();
+  };
+
+  const handleExport = async () => {
+    try {
+      const data = await exportDictionary();
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "voxitype-dictionary.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleImport = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      await importDictionary(text);
+      void load();
+    };
+    input.click();
   };
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <h2 className="text-lg font-semibold">Dictionary</h2>
+    <div className="flex h-full flex-col">
+      <PanelHeader
+        title="Dictionary"
+        subtitle="Custom words, names, and replacements"
+        icon={<BookOpen className="h-4.5 w-4.5" />}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleExport()}
+              title="Export"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleImport}
+              title="Import"
+            >
+              <Upload className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        }
+      />
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 px-5 py-3">
         <input
-          className="flex-1 rounded-md border border-vx-border bg-vx-bg-secondary px-3 py-2 text-sm text-vx-text-primary placeholder:text-vx-text-dim focus:border-vx-accent focus:outline-none"
-          placeholder="Add a word..."
+          className="flex-1 rounded-lg border border-vx-border bg-vx-bg-tertiary/60 px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-colors hover:border-vx-border-strong focus:border-vx-accent focus:outline-none focus:ring-2 focus:ring-vx-accent/30"
+          placeholder="Word"
           value={word}
           onChange={(e) => setWord(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
         />
+        <input
+          className="w-44 rounded-lg border border-vx-border bg-vx-bg-tertiary/60 px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-colors hover:border-vx-border-strong focus:border-vx-accent focus:outline-none focus:ring-2 focus:ring-vx-accent/30"
+          placeholder="Replacement (optional)"
+          value={replacement}
+          onChange={(e) => setReplacement(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+        />
         <Button variant="primary" size="sm" onClick={handleAdd}>
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4" /> Add
         </Button>
       </div>
 
-      {loading && <p className="text-sm text-vx-text-dim">Loading...</p>}
+      <div className="flex-1 overflow-y-auto px-5 pb-5">
+        {loading && <p className="text-sm text-vx-text-dim">Loading...</p>}
 
-      <div className="flex-1 overflow-y-auto">
         {entries.length === 0 && !loading && (
-          <p className="py-8 text-center text-sm text-vx-text-dim">
-            No dictionary entries
-          </p>
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+            <BookOpen className="h-10 w-10 text-vx-text-dim/50" />
+            <p className="text-sm text-vx-text-dim">No dictionary entries</p>
+          </div>
         )}
 
         <div className="flex flex-col gap-1.5">
           {entries.map((e) => (
             <div
               key={e.id}
-              className="group flex items-center justify-between rounded-md border border-vx-border bg-vx-bg-secondary px-3 py-2"
+              className={`group flex items-center justify-between rounded-xl border border-vx-border bg-vx-bg-secondary/60 px-4 py-2.5 transition-colors hover:border-vx-border-strong ${
+                !e.is_active ? "opacity-50" : ""
+              }`}
             >
               <div className="min-w-0">
-                <span className="text-sm text-vx-text-primary">{e.word}</span>
+                <span className="text-sm font-medium text-vx-text-primary">
+                  {e.word}
+                </span>
                 {e.replacement && (
                   <span className="ml-2 text-xs text-vx-text-dim">
-                    → {e.replacement}
+                    &rarr; {e.replacement}
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => void remove(e.id)}
-                className="rounded p-1 text-vx-text-dim opacity-0 group-hover:opacity-100 hover:text-vx-error transition-opacity"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => void handleToggle(e.id, e.is_active)}
+                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary"
+                  title={e.is_active ? "Deactivate" : "Activate"}
+                >
+                  {e.is_active ? (
+                    <ToggleRight className="h-4.5 w-4.5 text-vx-success" />
+                  ) : (
+                    <ToggleLeft className="h-4.5 w-4.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void remove(e.id)}
+                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

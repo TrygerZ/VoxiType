@@ -44,8 +44,7 @@ impl<'a> SettingsManager<'a> {
 
     /// Set a typed value (JSON-encoded).
     pub fn set<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
-        let encoded =
-            serde_json::to_string(value).map_err(|e| AppError::storage(e.to_string()))?;
+        let encoded = serde_json::to_string(value).map_err(|e| AppError::storage(e.to_string()))?;
         self.set_raw(key, &encoded)
     }
 
@@ -66,9 +65,8 @@ impl<'a> SettingsManager<'a> {
     pub fn all(&self) -> Result<Value> {
         self.db.with_conn(|c| {
             let mut stmt = c.prepare("SELECT key, value FROM settings")?;
-            let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            })?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
             let mut map = serde_json::Map::new();
             for row in rows {
                 let (k, v) = row?;

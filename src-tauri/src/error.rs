@@ -60,7 +60,10 @@ impl AppError {
         Self::new(ErrorCode::MicNotFound, msg)
     }
     pub fn audio_permission_denied() -> Self {
-        Self::new(ErrorCode::MicPermissionDenied, "Microphone permission denied")
+        Self::new(
+            ErrorCode::MicPermissionDenied,
+            "Microphone permission denied",
+        )
     }
     pub fn audio(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::AudioDeviceError, msg)

@@ -4,16 +4,23 @@
 //! managed [`AppStateInner`] shared by all commands.
 
 pub mod audio;
+pub mod active_window;
 pub mod commands;
+pub mod crypto;
 pub mod error;
 pub mod events;
 pub mod hotkey;
 pub mod injection;
 pub mod llm;
+pub mod logging;
+pub mod overlay;
 pub mod pipeline;
+pub mod sound;
 pub mod storage;
 pub mod stt;
 pub mod tray;
+pub mod updater;
+pub mod util;
 pub mod vad;
 
 use std::path::PathBuf;
@@ -29,35 +36,35 @@ pub struct AppStateInner {
     pub db: Database,
     pub pipeline: PipelineOrchestrator,
     pub app_data_dir: PathBuf,
+    pub master_key: [u8; 32],
+    /// Keeps the file-log writer thread alive; flushed on drop.
+    pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
 }
 
 impl AppStateInner {
-    fn new(app_data_dir: PathBuf) -> error::Result<Self> {
+    fn new(
+        app_data_dir: PathBuf,
+        log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    ) -> error::Result<Self> {
         let db_path = app_data_dir.join("data").join("voxitype.db");
         let db = Database::open(&db_path)?;
+        let master_key = crypto::get_master_key(&app_data_dir)?;
         Ok(Self {
             db,
             pipeline: PipelineOrchestrator::new(),
             app_data_dir,
+            master_key,
+            _log_guard: log_guard,
         })
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .with_target(false)
-        .init();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_log::Builder::default().build())
         .setup(|app| {
             let handle = app.handle();
             let app_data_dir = handle
@@ -65,8 +72,11 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
+            // Initialize logging (stderr + rotating file) once the log dir is known.
+            let log_guard = logging::init(&app_data_dir.join("logs"));
+
             // Initialize shared state (DB + pipeline).
-            let state = AppStateInner::new(app_data_dir)
+            let state = AppStateInner::new(app_data_dir, log_guard)
                 .map_err(|e| format!("Failed to init app state: {e}"))?;
 
             // Load hotkey config from settings (fallback to default).
@@ -103,11 +113,27 @@ pub fn run() {
             commands::delete_history,
             commands::pin_history,
             commands::re_inject,
+            commands::export_history,
             commands::get_dictionary,
             commands::add_dictionary_word,
+            commands::update_dictionary_word,
+            commands::set_dictionary_active,
             commands::delete_dictionary_word,
+            commands::export_dictionary,
+            commands::import_dictionary,
+            commands::get_snippets,
+            commands::add_snippet,
+            commands::delete_snippet,
+            commands::get_usage_stats,
+            commands::get_per_app_modes,
+            commands::set_per_app_mode,
+            commands::delete_per_app_mode,
+            commands::get_active_app,
+            commands::translate,
+            commands::set_hotkey,
             commands::get_microphones,
             commands::get_app_info,
+            commands::check_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

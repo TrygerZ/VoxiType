@@ -21,7 +21,7 @@ pub struct GroqSttEngine {
 impl GroqSttEngine {
     pub fn new(config: GroqSttConfig) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: crate::util::http_client(),
             config,
         }
     }
@@ -58,40 +58,50 @@ impl SttEngine for GroqSttEngine {
             config.language.clone()
         };
 
-        let part = reqwest::multipart::Part::bytes(wav)
-            .file_name("audio.wav")
-            .mime_str("audio/wav")
-            .map_err(|e| AppError::stt(format!("multipart error: {e}")))?;
+        // Network call wrapped in retry-with-backoff (max 3 retries) for
+        // transient failures. Auth errors fail fast.
+        let body = crate::util::retry_with_backoff(3, std::time::Duration::from_secs(1), || {
+            let wav = wav.clone();
+            let language = language.clone();
+            async move {
+                let part = reqwest::multipart::Part::bytes(wav)
+                    .file_name("audio.wav")
+                    .mime_str("audio/wav")
+                    .map_err(|e| AppError::stt(format!("multipart error: {e}")))?;
 
-        let form = reqwest::multipart::Form::new()
-            .part("file", part)
-            .text("model", self.config.model.clone())
-            .text("language", language)
-            .text("temperature", self.config.temperature.to_string())
-            .text("response_format", "verbose_json");
+                let form = reqwest::multipart::Form::new()
+                    .part("file", part)
+                    .text("model", self.config.model.clone())
+                    .text("language", language)
+                    .text("temperature", self.config.temperature.to_string())
+                    .text("response_format", "verbose_json");
 
-        let resp = self
-            .client
-            .post(GROQ_STT_URL)
-            .bearer_auth(&self.config.api_key)
-            .multipart(form)
-            .send()
-            .await?;
+                let resp = self
+                    .client
+                    .post(GROQ_STT_URL)
+                    .bearer_auth(&self.config.api_key)
+                    .multipart(form)
+                    .send()
+                    .await?;
 
-        let status = resp.status();
-        let body = resp.text().await?;
+                let status = resp.status();
+                let body = resp.text().await?;
 
-        if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(AppError::new(
-                crate::error::ErrorCode::SttApiKeyInvalid,
-                "Groq rejected the API key (401)",
-            ));
-        }
-        if !status.is_success() {
-            return Err(AppError::stt_api(format!(
-                "Groq STT error {status}: {body}"
-            )));
-        }
+                if status == reqwest::StatusCode::UNAUTHORIZED {
+                    return Err(AppError::new(
+                        crate::error::ErrorCode::SttApiKeyInvalid,
+                        "Groq rejected the API key (401)",
+                    ));
+                }
+                if !status.is_success() {
+                    return Err(AppError::stt_api(format!(
+                        "Groq STT error {status}: {body}"
+                    )));
+                }
+                Ok(body)
+            }
+        })
+        .await?;
 
         let parsed: GroqResponse = serde_json::from_str(&body)?;
         let confidence = if parsed.segments.is_empty() {
