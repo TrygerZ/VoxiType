@@ -45,27 +45,27 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   if (step === "welcome") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-8">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-10 p-10">
         <div className="flex flex-col items-center gap-4 text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-vx-accent to-vx-accent-hover shadow-[0_8px_32px_rgba(124,108,240,0.45)]">
-            <Mic className="h-8 w-8 text-white" />
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
+            <Mic className="h-7 w-7" />
           </span>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             {t("onboarding.welcome.title")}
           </h1>
-          <p className="max-w-sm text-sm text-vx-text-secondary">
+          <p className="max-w-sm text-sm text-vx-text-dim">
             {t("onboarding.welcome.body")}
           </p>
         </div>
 
-        <div className="grid w-full max-w-md grid-cols-2 gap-3">
+        <div className="grid w-full max-w-md grid-cols-2 gap-4">
           {features.map(({ icon: Icon, title, body }) => (
             <div
               key={title}
-              className="flex flex-col gap-1.5 rounded-xl border border-vx-border bg-vx-bg-secondary/60 p-4"
+              className="flex flex-col gap-1.5 rounded-xl bg-vx-bg-secondary p-5"
             >
               <Icon className="h-5 w-5 text-vx-accent" />
-              <span className="text-sm font-semibold">{title}</span>
+              <span className="text-sm font-medium">{title}</span>
               <span className="text-xs leading-relaxed text-vx-text-dim">
                 {body}
               </span>
@@ -87,16 +87,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   }
 
   return (
-    <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
-      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-vx-success/15 text-vx-success shadow-[0_8px_32px_rgba(45,212,167,0.3)]">
-        <Check className="h-8 w-8" />
+    <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-success/10 text-vx-success">
+        <Check className="h-7 w-7" />
       </span>
-      <h1 className="text-2xl font-bold tracking-tight">
+      <h1 className="text-3xl font-semibold tracking-tight">
         {t("onboarding.complete.title")}
       </h1>
-      <p className="max-w-sm text-sm text-vx-text-secondary">
+      <p className="max-w-sm text-sm text-vx-text-dim">
         Press{" "}
-        <kbd className="rounded-md border border-vx-border bg-vx-bg-tertiary px-2 py-0.5 text-xs font-semibold text-vx-text-primary">
+        <kbd className="rounded-md bg-vx-bg-tertiary px-2 py-0.5 text-xs font-semibold text-vx-text-primary">
           Ctrl+Space
         </kbd>{" "}
         to start dictating. Add your Groq API key in Settings for cloud

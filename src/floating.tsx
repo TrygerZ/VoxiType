@@ -13,7 +13,7 @@ function FloatingApp() {
   // reflects recording state, audio level, timer, and results live.
   useTauriEvents();
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-transparent p-1">
+    <div className="flex h-screen w-screen items-center justify-center bg-transparent overflow-hidden p-6">
       <FloatingWidget alwaysRender />
     </div>
   );

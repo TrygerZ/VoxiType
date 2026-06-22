@@ -1,91 +1,71 @@
-import { Mic, Loader2, Keyboard } from "lucide-react";
+import { Mic, Loader2 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { startRecording } from "../../lib/tauri";
-import { useT } from "../../lib/i18n";
 
 export function HomeView() {
-  const t = useT();
   const state = useAppStore((s) => s.state);
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
 
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-8 p-8">
-      {/* Mic button with status-aware halo */}
-      <div className="relative flex items-center justify-center">
-        {isRecording && (
-          <>
-            <span className="absolute h-44 w-44 animate-ping rounded-full bg-vx-error/10" />
-            <span className="absolute h-32 w-32 rounded-full bg-vx-error/20 blur-xl" />
-          </>
-        )}
-        {state === "idle" && (
-          <span className="absolute h-40 w-40 rounded-full bg-vx-accent/10 blur-2xl" />
-        )}
-        <button
-          type="button"
-          onClick={() => void startRecording()}
-          disabled={isRecording || isProcessing}
-          className={`group relative flex h-28 w-28 items-center justify-center rounded-full border transition-all duration-300 disabled:cursor-default ${
+    <div className="relative flex h-[80vh] flex-col items-center justify-center">
+      {/* Zen Mode Mic — absolutely centered, minimal distraction */}
+      <button
+        type="button"
+        onClick={() => void startRecording()}
+        disabled={isRecording || isProcessing}
+        className="group relative flex h-40 w-40 items-center justify-center disabled:cursor-default outline-none"
+      >
+        {/* Outer ambient glow */}
+        <span
+          className={`absolute inset-0 rounded-full transition-all duration-700 ease-out ${
             isRecording
-              ? "border-vx-error/40 bg-vx-error/15"
+              ? "bg-vx-error/5 scale-110 blur-xl"
               : isProcessing
-                ? "border-vx-warning/40 bg-vx-warning/10"
-                : "border-vx-border-strong bg-vx-bg-secondary hover:scale-105 hover:border-vx-accent/50 hover:bg-vx-accent/10"
+                ? "bg-vx-warning/5 scale-100 blur-xl"
+                : "bg-vx-accent/5 scale-90 blur-xl group-hover:scale-110 group-hover:bg-vx-accent/10"
+          }`}
+        />
+        {/* Core button */}
+        <span
+          className={`relative flex h-24 w-24 items-center justify-center rounded-full transition-all duration-500 ease-out ${
+            isRecording
+              ? "bg-vx-error/10 scale-105 shadow-[0_0_40px_rgba(204,139,125,0.2)]"
+              : isProcessing
+                ? "bg-vx-warning/10"
+                : "bg-vx-bg-tertiary shadow-vx-lg group-hover:scale-105"
           }`}
         >
           {isProcessing ? (
-            <Loader2 className="h-11 w-11 animate-[vx-spin_1s_linear_infinite] text-vx-warning" />
+            <Loader2 className="h-8 w-8 animate-[vx-spin_1.5s_linear_infinite] text-vx-warning" />
           ) : (
             <Mic
-              className={`h-11 w-11 transition-transform duration-300 ${
+              className={`h-8 w-8 transition-colors duration-300 ${
                 isRecording
                   ? "text-vx-error animate-[vx-pulse_1.4s_ease-in-out_infinite]"
-                  : "text-vx-accent group-hover:scale-110"
+                  : "text-vx-text-secondary group-hover:text-vx-accent"
               }`}
             />
           )}
-        </button>
-      </div>
+        </span>
+      </button>
 
-      {/* Status text */}
-      <div className="flex flex-col items-center gap-2 text-center">
-        {state === "idle" && (
-          <>
-            <h2 className="text-xl font-semibold tracking-tight">
-              Ready to dictate
-            </h2>
-            <p className="flex items-center gap-1.5 text-sm text-vx-text-secondary">
-              <Keyboard className="h-4 w-4" />
-              {t("idle.hint")}
-            </p>
-          </>
-        )}
-        {isRecording && (
-          <h2 className="text-xl font-semibold tracking-tight text-vx-error">
-            {t("recording")}
-          </h2>
-        )}
-        {isProcessing && (
-          <h2 className="text-xl font-semibold tracking-tight text-vx-warning">
-            {t("processing")}
-          </h2>
-        )}
+      {/* Only show text when actively doing something (recording/processing) */}
+      <div
+        className={`absolute bottom-[20%] flex flex-col items-center transition-all duration-500 ${
+          isRecording || isProcessing
+            ? "opacity-100 translate-y-0"
+            : "opacity-0 translate-y-4 pointer-events-none"
+        }`}
+      >
+        <span
+          className={`text-sm font-medium tracking-wide uppercase ${
+            isRecording ? "text-vx-error animate-pulse" : "text-vx-warning"
+          }`}
+        >
+          {isRecording ? "Listening..." : "Processing..."}
+        </span>
       </div>
-
-      {/* Hint chips */}
-      {state === "idle" && (
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {["Dictation", "Message", "Email"].map((m) => (
-            <span
-              key={m}
-              className="rounded-full border border-vx-border bg-vx-bg-secondary/70 px-3 py-1 text-xs text-vx-text-secondary"
-            >
-              {m}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

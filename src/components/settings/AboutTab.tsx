@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Mic, ExternalLink, RefreshCw, CheckCircle2 } from "lucide-react";
+import { ExternalLink, RefreshCw, CheckCircle2 } from "lucide-react";
 import { getAppInfo, checkUpdates } from "../../lib/tauri";
 import type { AppInfo, UpdateInfo } from "../../types/app";
 import { Button } from "../ui/Button";
@@ -30,12 +30,12 @@ export function AboutTab() {
   };
 
   return (
-    <div className="max-w-xl">
+    <div className="mx-auto flex h-full max-w-xl flex-col justify-center pb-20">
       <SettingsHeader title="About" />
 
-      <div className="flex flex-col items-center gap-4 rounded-2xl border border-vx-border bg-vx-bg-secondary/60 p-8 text-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-vx-accent to-vx-accent-hover shadow-[0_8px_28px_rgba(124,108,240,0.4)]">
-          <Mic className="h-8 w-8 text-white" />
+      <div className="flex flex-col items-center justify-center gap-4 rounded-2xl bg-vx-bg-tertiary p-10 text-center shadow-vx-md">
+        <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-vx-accent-soft text-vx-accent">
+          <img src="/logo.png" alt="VoxiType Logo" className="h-full w-full object-contain" />
         </span>
         <div>
           <h3 className="text-xl font-bold tracking-tight">VoxiType</h3>

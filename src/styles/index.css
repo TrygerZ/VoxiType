@@ -1,37 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  /* Base surfaces — deep, slightly blue-tinted neutrals for a premium dark UI */
-  --color-vx-bg-primary: #0b0b10;
-  --color-vx-bg-secondary: #131319;
-  --color-vx-bg-tertiary: #1c1c26;
-  --color-vx-bg-elevated: #21212e;
+  /* Base surfaces — slightly cooler, premium dark grays */
+  --color-vx-bg-primary: #121214;
+  --color-vx-bg-secondary: #18181b;
+  --color-vx-bg-tertiary: #1e1e24;
+  --color-vx-bg-elevated: #27272a;
 
-  /* Brand — violet → indigo */
-  --color-vx-accent: #7c6cf0;
-  --color-vx-accent-hover: #8f80f5;
-  --color-vx-accent-soft: #2a2547;
+  /* Brand — soft clay (muted, premium) */
+  --color-vx-accent: #D97757;
+  --color-vx-accent-hover: #c4a48d;
+  --color-vx-accent-soft: #2a2218;
 
-  /* Semantic */
-  --color-vx-success: #2dd4a7;
-  --color-vx-warning: #fbbf4c;
-  --color-vx-error: #f0715a;
+  /* Semantic — desaturated, calm */
+  --color-vx-success: #8aae93;
+  --color-vx-warning: #d4b685;
+  --color-vx-error: #cc8b7d;
 
-  /* Text */
-  --color-vx-text-primary: #f6f6fb;
-  --color-vx-text-secondary: #a4a4bd;
-  --color-vx-text-dim: #6b6b86;
+  /* Text — warm off-white descending to dim stone */
+  --color-vx-text-primary: #EBEBF2;
+  --color-vx-text-secondary: #A3A8B2;
+  --color-vx-text-dim: #7a7268;
 
-  /* Lines */
-  --color-vx-border: #26262f;
-  --color-vx-border-strong: #34343f;
+  /* Lines — hairline dividers, used sparingly */
+  --color-vx-border: #313840;
+  --color-vx-border-strong: #404953;
+  --color-vx-divider: #1C2025;
 
-  /* Shadows & rings */
-  --shadow-vx-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-vx-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-vx-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
-  --shadow-vx-glow: 0 0 0 1px rgba(124, 108, 240, 0.4),
-    0 8px 32px rgba(124, 108, 240, 0.25);
+  /* Shadows — soft elevation only, no colored glow */
+  --shadow-vx-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-vx-md: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-vx-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
 }
 
 :root {
@@ -58,20 +57,23 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Subtle ambient gradient backdrop for the main shell */
+/* Flat, calm backdrop for the main shell — no ambient gradient */
 .vx-app-bg {
-  background:
-    radial-gradient(
-      900px circle at 0% 0%,
-      rgba(124, 108, 240, 0.08),
-      transparent 45%
-    ),
-    radial-gradient(
-      700px circle at 100% 100%,
-      rgba(45, 212, 167, 0.05),
-      transparent 40%
-    ),
-    var(--color-vx-bg-primary);
+  background: var(--color-vx-bg-primary);
+}
+
+/* Hairline dividers — the primary separator in the borderless language */
+.vx-hairline {
+  border-color: var(--color-vx-divider);
+}
+.vx-divide > * + * {
+  border-top: 1px solid var(--color-vx-divider);
+}
+
+/* Soft raised surface — elevation without a hard border */
+.vx-raised {
+  background: var(--color-vx-bg-secondary);
+  box-shadow: var(--shadow-vx-md);
 }
 
 /* Transparent overlay window (floating widget) */
@@ -139,16 +141,6 @@ html.vx-transparent #root {
   }
 }
 
-@keyframes vx-glow-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(240, 113, 90, 0.45);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(240, 113, 90, 0);
-  }
-}
-
 .vx-animate-in {
   animation: vx-fade-in 0.3s ease both;
 }
@@ -157,9 +149,9 @@ html.vx-transparent #root {
   animation: vx-scale-in 0.2s ease both;
 }
 
-/* Glass surface helper */
+/* Glass surface helper — calmer, less saturated blur */
 .vx-glass {
-  background: color-mix(in srgb, var(--color-vx-bg-secondary) 80%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  background: color-mix(in srgb, var(--color-vx-bg-secondary) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

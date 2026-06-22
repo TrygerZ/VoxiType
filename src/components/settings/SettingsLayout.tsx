@@ -9,10 +9,12 @@ export function SettingsHeader({
   description?: string;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-1">
-      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+    <div className="mb-8 flex flex-col gap-1.5">
+      <h1 className="text-2xl font-semibold tracking-tight text-vx-text-primary">
+        {title}
+      </h1>
       {description && (
-        <p className="text-sm text-vx-text-secondary">{description}</p>
+        <p className="text-sm text-vx-text-dim">{description}</p>
       )}
     </div>
   );
@@ -27,15 +29,13 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="mb-5">
+    <div className="mb-8">
       {title && (
-        <h3 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-vx-text-dim">
+        <h3 className="mb-1 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-vx-text-dim">
           {title}
         </h3>
       )}
-      <div className="flex flex-col divide-y divide-vx-border rounded-xl border border-vx-border bg-vx-bg-secondary/60">
-        {children}
-      </div>
+      <div className="flex flex-col divide-y divide-vx-divider">{children}</div>
     </div>
   );
 }
@@ -51,7 +51,7 @@ export function SettingsRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+    <div className="flex items-center justify-between gap-4 py-4">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm font-medium text-vx-text-primary">
           {label}

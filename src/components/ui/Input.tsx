@@ -18,7 +18,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
-          className={`rounded-lg border border-vx-border bg-vx-bg-tertiary/60 px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-all duration-150 hover:border-vx-border-strong focus:border-vx-accent focus:bg-vx-bg-tertiary focus:outline-none focus:ring-2 focus:ring-vx-accent/30 ${className}`}
+          className={`rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-vx-accent/40 ${className}`}
           {...rest}
         />
         {hint && <span className="text-xs text-vx-text-dim">{hint}</span>}

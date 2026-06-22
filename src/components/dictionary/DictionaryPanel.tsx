@@ -84,7 +84,7 @@ export function DictionaryPanel() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="mx-auto flex h-full max-w-4xl flex-col">
       <PanelHeader
         title="Dictionary"
         subtitle="Custom words, names, and replacements"
@@ -111,16 +111,16 @@ export function DictionaryPanel() {
         }
       />
 
-      <div className="flex gap-2 px-5 py-3">
+      <div className="flex gap-2 px-10 pb-4">
         <input
-          className="flex-1 rounded-lg border border-vx-border bg-vx-bg-tertiary/60 px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-colors hover:border-vx-border-strong focus:border-vx-accent focus:outline-none focus:ring-2 focus:ring-vx-accent/30"
+          className="flex-1 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
           placeholder="Word"
           value={word}
           onChange={(e) => setWord(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
         />
         <input
-          className="w-44 rounded-lg border border-vx-border bg-vx-bg-tertiary/60 px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-colors hover:border-vx-border-strong focus:border-vx-accent focus:outline-none focus:ring-2 focus:ring-vx-accent/30"
+          className="w-44 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
           placeholder="Replacement (optional)"
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
@@ -131,21 +131,21 @@ export function DictionaryPanel() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-5">
+      <div className="flex-1 overflow-y-auto px-10 pb-8">
         {loading && <p className="text-sm text-vx-text-dim">Loading...</p>}
 
         {entries.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-            <BookOpen className="h-10 w-10 text-vx-text-dim/50" />
+          <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
+            <BookOpen className="h-10 w-10 text-vx-text-dim/40" />
             <p className="text-sm text-vx-text-dim">No dictionary entries</p>
           </div>
         )}
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col divide-y divide-vx-divider">
           {entries.map((e) => (
             <div
               key={e.id}
-              className={`group flex items-center justify-between rounded-xl border border-vx-border bg-vx-bg-secondary/60 px-4 py-2.5 transition-colors hover:border-vx-border-strong ${
+              className={`group flex items-center justify-between py-3 transition-opacity ${
                 !e.is_active ? "opacity-50" : ""
               }`}
             >

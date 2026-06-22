@@ -37,28 +37,32 @@ export function SettingsPanel() {
   const [active, setActive] = useState<TabId>("general");
 
   return (
-    <div className="flex h-full">
-      <div className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-vx-border p-3">
-        <h1 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-vx-text-dim">
-          Settings
+    <div className="mx-auto flex h-full max-w-4xl">
+      <div className="flex w-56 shrink-0 flex-col gap-0.5 px-4 py-9">
+        <h1 className="mb-4 px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-vx-text-dim">
+          Preferences
         </h1>
         {tabs.map(({ id, labelKey, icon: Icon }) => (
           <button
             key={id}
             type="button"
             onClick={() => setActive(id)}
-            className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 ${
               active === id
-                ? "bg-vx-accent-soft text-vx-accent"
-                : "text-vx-text-secondary hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+                ? "font-medium text-vx-text-primary bg-vx-bg-tertiary shadow-vx-sm"
+                : "font-normal text-vx-text-dim hover:text-vx-text-secondary hover:bg-vx-bg-tertiary/50"
             }`}
           >
-            <Icon className="h-4 w-4" />
+            <Icon
+              className={`h-[18px] w-[18px] shrink-0 transition-colors ${
+                active === id ? "text-vx-accent" : "text-vx-text-dim"
+              }`}
+            />
             {t(labelKey)}
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto px-12 py-9">
         <div>
           {active === "general" && <GeneralTab />}
           {active === "audio" && <AudioTab />}

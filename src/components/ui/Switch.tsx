@@ -15,9 +15,7 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
     >
       <span
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${
-          checked
-            ? "bg-vx-accent shadow-[0_0_12px_rgba(124,108,240,0.5)]"
-            : "bg-vx-border-strong"
+          checked ? "bg-vx-accent" : "bg-vx-border-strong"
         }`}
       >
         <span

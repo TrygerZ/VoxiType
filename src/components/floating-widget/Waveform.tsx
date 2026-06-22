@@ -30,12 +30,12 @@ export function Waveform({ level, active }: WaveformProps) {
   }, [active]);
 
   return (
-    <div className="flex h-7 flex-1 items-center gap-[2px]" aria-hidden>
+    <div className="flex h-5 flex-1 items-center gap-[2px]" aria-hidden>
       {bars.map((v, i) => (
         <span
           key={i}
-          className="flex-1 rounded-full bg-gradient-to-t from-vx-accent/60 to-vx-accent transition-[height] duration-75"
-          style={{ height: `${Math.max(8, v * 100)}%` }}
+          className="flex-1 rounded-full bg-vx-accent transition-[height] duration-75"
+          style={{ height: `${Math.max(12, v * 100)}%` }}
         />
       ))}
     </div>

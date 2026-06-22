@@ -1,24 +1,15 @@
 import { useEffect, useState } from "react";
-import { Sidebar } from "./components/common/Sidebar";
+import { FloatingDock, type View } from "./components/common/FloatingDock";
 import { HomeView } from "./components/common/HomeView";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { HistoryPanel } from "./components/history/HistoryPanel";
 import { DictionaryPanel } from "./components/dictionary/DictionaryPanel";
 import { SnippetsPanel } from "./components/dictionary/SnippetsPanel";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
-import { AboutTab } from "./components/settings/AboutTab";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { onEvent } from "./lib/tauri";
 import { setLanguage } from "./lib/i18n";
-
-type View =
-  | "home"
-  | "settings"
-  | "history"
-  | "dictionary"
-  | "snippets"
-  | "about";
 
 export default function App() {
   useTauriEvents();
@@ -26,7 +17,7 @@ export default function App() {
   const loadSettings = useSettingsStore((s) => s.load);
   const loaded = useSettingsStore((s) => s.loaded);
   const settings = useSettingsStore((s) => s.settings);
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View | "about">("home");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
@@ -49,7 +40,7 @@ export default function App() {
   useEffect(() => {
     const unsub = onEvent<string>("navigate", (route) => {
       if (
-        ["settings", "history", "dictionary", "snippets", "about"].includes(
+        ["settings", "history", "dictionary", "snippets"].includes(
           route,
         )
       ) {
@@ -78,24 +69,17 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full flex-col vx-app-bg">
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar active={view} onChange={setView} />
-        <main className="flex-1 overflow-y-auto">
-          <div className="h-full">
-            {view === "home" && <HomeView />}
-            {view === "settings" && <SettingsPanel />}
-            {view === "history" && <HistoryPanel />}
-            {view === "dictionary" && <DictionaryPanel />}
-            {view === "snippets" && <SnippetsPanel />}
-            {view === "about" && (
-              <div className="p-6">
-                <AboutTab />
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
+    <div className="flex h-full w-full flex-col vx-app-bg relative">
+      <main className="flex-1 overflow-y-auto pb-28">
+        {view === "home" && <HomeView />}
+        {view === "settings" && <SettingsPanel />}
+        {view === "history" && <HistoryPanel />}
+        {view === "dictionary" && <DictionaryPanel />}
+        {view === "snippets" && <SnippetsPanel />}
+      </main>
+
+      {/* Absolute floating dock at the bottom */}
+      <FloatingDock active={view} onChange={setView} />
     </div>
   );
 }

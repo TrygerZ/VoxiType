@@ -68,7 +68,7 @@ export function HistoryPanel() {
     : items;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="mx-auto flex h-full max-w-4xl flex-col">
       <PanelHeader
         title="History"
         subtitle="Your recent transcriptions"
@@ -128,11 +128,11 @@ export function HistoryPanel() {
         }
       />
 
-      <div className="flex gap-2 px-5 py-3">
+      <div className="flex gap-2 px-10 pb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
           <input
-            className="w-full rounded-lg border border-vx-border bg-vx-bg-tertiary/60 py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-colors hover:border-vx-border-strong focus:border-vx-accent focus:outline-none focus:ring-2 focus:ring-vx-accent/30"
+            className="w-full rounded-lg bg-vx-bg-tertiary py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
             placeholder="Search transcriptions..."
             value={query}
             onChange={(e) => void search(e.target.value)}
@@ -151,21 +151,21 @@ export function HistoryPanel() {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-5">
+      <div className="flex-1 overflow-y-auto px-10 pb-8">
         {loading && <p className="text-sm text-vx-text-dim">Loading...</p>}
 
         {filtered.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-            <HistoryIcon className="h-10 w-10 text-vx-text-dim/50" />
+          <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
+            <HistoryIcon className="h-10 w-10 text-vx-text-dim/40" />
             <p className="text-sm text-vx-text-dim">No transcriptions yet</p>
           </div>
         )}
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col divide-y divide-vx-divider">
           {filtered.map((item) => (
             <div
               key={item.id}
-              className="group flex items-start gap-3 rounded-xl border border-vx-border bg-vx-bg-secondary/60 p-3.5 transition-colors hover:border-vx-border-strong hover:bg-vx-bg-secondary"
+              className="group flex items-start gap-3 py-4 transition-opacity"
             >
               <div className="min-w-0 flex-1">
                 <p className="text-sm leading-relaxed text-vx-text-primary line-clamp-2">
