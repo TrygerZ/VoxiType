@@ -168,6 +168,9 @@ async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
         .ok()
         .flatten()
         .unwrap_or(false);
+    // In command mode we must transcribe up front to detect editing commands.
+    // Keep the result so a non-command phrase doesn't get transcribed twice.
+    let mut precomputed = None;
     if command_mode {
         match stt.transcribe(&audio, &stt_config).await {
             Ok(tr) => {
@@ -186,7 +189,8 @@ async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                     hide_overlay_soon(app.clone());
                     return;
                 }
-                // Not a command: fall through to normal injection of the text.
+                // Not a command: reuse this transcription for normal injection.
+                precomputed = Some(tr);
             }
             Err(e) => return fail(&app, &state.pipeline, &e),
         }
@@ -224,17 +228,36 @@ async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     let stt_name = stt.name().to_string();
     let llm_name = llm.name().to_string();
 
-    let outcome = batch::run_batch(
-        &audio,
-        stt,
-        &stt_config,
-        llm,
-        &mode,
-        &post,
-        translate_opts.as_ref(),
-        &injector,
-    )
-    .await;
+    // The mode actually used for formatting (may be a per-app override), so it
+    // is recorded in history instead of the global `active_mode` setting.
+    let mode_id = mode.id();
+
+    let outcome = match precomputed {
+        Some(tr) => {
+            batch::run_batch_with_transcription(
+                tr,
+                llm,
+                &mode,
+                &post,
+                translate_opts.as_ref(),
+                &injector,
+            )
+            .await
+        }
+        None => {
+            batch::run_batch(
+                &audio,
+                stt,
+                &stt_config,
+                llm,
+                &mode,
+                &post,
+                translate_opts.as_ref(),
+                &injector,
+            )
+            .await
+        }
+    };
 
     match outcome {
         Ok(out) => {
@@ -251,7 +274,7 @@ async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 } else {
                     None
                 },
-                mode: string_setting(&state.db, "active_mode", "dictation"),
+                mode: mode_id,
                 stt_engine: stt_name,
                 stt_confidence: Some(out.transcription.confidence),
                 llm_engine: Some(llm_name),

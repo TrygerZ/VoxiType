@@ -172,35 +172,58 @@ pub fn apply_replacements(text: &str, replacements: &[(String, String)]) -> Stri
 }
 
 fn replace_word_ci(haystack: &str, needle: &str, replacement: &str) -> String {
-    let hay_lower = haystack.to_lowercase();
     let needle_lower = needle.to_lowercase();
+    if needle_lower.is_empty() {
+        return haystack.to_string();
+    }
+
+    // Lowercase the haystack while recording, for every byte offset in the
+    // lowercased string, the corresponding byte offset in the original. We
+    // search in the lowercased text but slice the original, so this mapping is
+    // required to stay panic-free when lowercasing changes byte lengths (e.g.
+    // 'İ' -> "i̇" is 2 -> 3 bytes). Without it, offsets from the lowercased
+    // string can land out of bounds or mid-UTF-8-char in the original.
+    let mut hay_lower = String::with_capacity(haystack.len());
+    let mut offsets: Vec<usize> = Vec::with_capacity(haystack.len() + 1);
+    for (orig_off, ch) in haystack.char_indices() {
+        for lc in ch.to_lowercase() {
+            for _ in 0..lc.len_utf8() {
+                offsets.push(orig_off);
+            }
+            hay_lower.push(lc);
+        }
+    }
+    offsets.push(haystack.len()); // sentinel for end-of-string
+
     let mut result = String::with_capacity(haystack.len());
-    let mut cursor = 0usize;
+    let mut cursor = 0usize; // byte offset into `hay_lower`
 
     while let Some(rel) = hay_lower[cursor..].find(&needle_lower) {
-        let start = cursor + rel;
-        let end = start + needle_lower.len();
+        let lstart = cursor + rel;
+        let lend = lstart + needle_lower.len();
+        let ostart = offsets[lstart];
+        let oend = offsets[lend];
 
-        let before_ok = start == 0
-            || !haystack[..start]
+        let before_ok = ostart == 0
+            || !haystack[..ostart]
                 .chars()
                 .next_back()
                 .is_some_and(|c| c.is_alphanumeric());
-        let after_ok = end == haystack.len()
-            || !haystack[end..]
+        let after_ok = oend == haystack.len()
+            || !haystack[oend..]
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_alphanumeric());
 
-        result.push_str(&haystack[cursor..start]);
+        result.push_str(&haystack[offsets[cursor]..ostart]);
         if before_ok && after_ok {
             result.push_str(replacement);
         } else {
-            result.push_str(&haystack[start..end]);
+            result.push_str(&haystack[ostart..oend]);
         }
-        cursor = end;
+        cursor = lend;
     }
-    result.push_str(&haystack[cursor..]);
+    result.push_str(&haystack[offsets[cursor]..]);
     result
 }
 
@@ -263,6 +286,17 @@ mod tests {
             apply_replacements("the api, please", &reps),
             "the API, please"
         );
+    }
+
+    #[test]
+    fn replacements_survive_length_changing_lowercase() {
+        // 'İ' (U+0130) lowercases to "i̇" (2 bytes -> 3 bytes). A naive
+        // implementation that derives offsets from the lowercased string but
+        // slices the original panics here. Must not panic and must still
+        // replace the surrounding word.
+        let reps = vec![("hello".to_string(), "hi".to_string())];
+        let out = apply_replacements("İ hello world", &reps);
+        assert_eq!(out, "İ hi world");
     }
 
     #[test]

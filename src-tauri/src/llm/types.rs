@@ -22,6 +22,16 @@ impl LlmMode {
             other => Self::Custom(other.to_string()),
         }
     }
+
+    /// The settings id string for this mode (inverse of [`from_id`]).
+    pub fn id(&self) -> String {
+        match self {
+            Self::Dictation => "dictation".to_string(),
+            Self::Message => "message".to_string(),
+            Self::Email => "email".to_string(),
+            Self::Custom(id) => id.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

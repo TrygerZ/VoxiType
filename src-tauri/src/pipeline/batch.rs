@@ -48,7 +48,22 @@ pub async fn run_batch(
     injector: &dyn TextInjector,
 ) -> Result<BatchOutcome> {
     let transcription = stt.transcribe(audio, stt_config).await?;
+    run_batch_with_transcription(transcription, llm, mode, post, translate, injector).await
+}
 
+/// Like [`run_batch`] but skips STT, reusing an already-computed transcription.
+///
+/// Used by command-mode, which must transcribe up front to detect editing
+/// commands; on a non-command phrase it falls through to normal injection
+/// without paying for a second transcription.
+pub async fn run_batch_with_transcription(
+    transcription: TranscriptionResult,
+    llm: Arc<dyn LlmFormatter>,
+    mode: &LlmMode,
+    post: &PostProcess,
+    translate: Option<&TranslateOpts>,
+    injector: &dyn TextInjector,
+) -> Result<BatchOutcome> {
     let formatted_text = if transcription.text.trim().is_empty() {
         String::new()
     } else {
