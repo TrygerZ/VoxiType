@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Check } from "lucide-react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
@@ -9,6 +9,7 @@ import { HotkeyRecorder } from "./HotkeyRecorder";
 
 export function ShortcutsTab() {
   const settings = useSettingsStore((s) => s.settings);
+  const loadSettings = useSettingsStore((s) => s.load);
 
   const hotkeyRaw = settings.hotkey as
     | { key: string; mode: string }
@@ -17,9 +18,18 @@ export function ShortcutsTab() {
   const [mode, setMode] = useState(hotkeyRaw?.mode ?? "ptt");
   const [status, setStatus] = useState<"idle" | "ok" | string>("idle");
 
+  // Keep the editor in sync with the stored hotkey. Settings may load after
+  // this tab mounts (or change elsewhere), so mirror the store whenever the
+  // persisted hotkey changes to avoid showing a stale combination.
+  useEffect(() => {
+    if (hotkeyRaw?.key) setKey(hotkeyRaw.key);
+    if (hotkeyRaw?.mode) setMode(hotkeyRaw.mode);
+  }, [hotkeyRaw?.key, hotkeyRaw?.mode]);
+
   const handleApply = async () => {
     try {
       await setHotkey(key, mode);
+      await loadSettings();
       setStatus("ok");
       setTimeout(() => setStatus("idle"), 2000);
     } catch (e: unknown) {

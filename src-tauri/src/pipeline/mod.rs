@@ -44,6 +44,15 @@ impl PipelineOrchestrator {
         self.audio.lock().unwrap().level()
     }
 
+    /// Get the elapsed duration of the current recording, if in Recording state.
+    pub fn recording_duration(&self) -> Option<std::time::Duration> {
+        let guard = self.state.lock().unwrap();
+        match &*guard {
+            AppState::Recording { start_time } => Some(start_time.elapsed()),
+            _ => None,
+        }
+    }
+
     /// Apply a state event, mutating the stored state in place.
     pub fn apply(&self, event: StateEvent) -> Result<AppStateTag> {
         let mut guard = self.state.lock().unwrap();
@@ -70,6 +79,11 @@ impl PipelineOrchestrator {
             return Err(e);
         }
         Ok(tag)
+    }
+
+    /// Start the underlying audio capture stream.
+    pub fn start_capture(&self, config: &AudioConfig) -> Result<()> {
+        self.audio.lock().unwrap().start(config)
     }
 
     /// Stop capturing and return the captured samples, moving to Processing.

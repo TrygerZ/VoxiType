@@ -13,7 +13,8 @@ function FloatingApp() {
   // reflects recording state, audio level, timer, and results live.
   useTauriEvents();
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-transparent overflow-hidden p-6">
+    // Transparent, click-through wrapper; only the pill itself is interactive.
+    <div className="pointer-events-none flex h-screen w-screen items-center justify-center bg-transparent overflow-hidden p-2">
       <FloatingWidget alwaysRender />
     </div>
   );

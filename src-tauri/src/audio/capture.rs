@@ -16,12 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use super::device::{list_input_devices, resolve_device, DeviceInfo};
 use super::resampler::Resampler;
-use super::ring_buffer::AudioRingBuffer;
 use super::{AudioCapture, TARGET_SAMPLE_RATE};
 use crate::error::{AppError, Result};
-
-/// Maximum buffered audio window in seconds.
-const RING_SECONDS: u32 = 30;
 
 /// Runtime configuration for a capture session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +45,7 @@ impl Default for AudioConfig {
 
 /// Shared capture state mutated from the cpal audio callback thread.
 struct Shared {
-    ring: Mutex<AudioRingBuffer>,
+    ring: Mutex<Vec<f32>>,
     resampler: Mutex<Resampler>,
     level: AtomicU32,
     gain: f32,
@@ -91,11 +87,11 @@ impl AudioCaptureImpl {
 }
 
 /// Build the cpal input stream feeding `shared`.
-fn build_stream(config: &AudioConfig, shared: Arc<Shared>) -> Result<cpal::Stream> {
-    let device = resolve_device(&config.mic_device)?;
-    let supported = device
-        .default_input_config()
-        .map_err(|e| AppError::audio(format!("No default input config: {e}")))?;
+fn build_stream(
+    device: cpal::Device,
+    supported: cpal::SupportedStreamConfig,
+    shared: Arc<Shared>,
+) -> Result<cpal::Stream> {
     let stream_config: cpal::StreamConfig = supported.config();
     let err_fn = |e| tracing::error!("Audio stream error: {e}");
 
@@ -148,7 +144,16 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
             peak = a;
         }
     }
-    shared.set_level(peak.min(1.0));
+
+    // Peak-hold decay: smooth level changes, especially during silent blocks,
+    // to match polling interval and prevent erratic UI waveform behavior.
+    let current = shared.get_level();
+    let new_level = if peak > current {
+        peak
+    } else {
+        current * 0.98
+    };
+    shared.set_level(new_level.min(1.0));
 
     // Block-level noise gate: if the whole block is quieter than the threshold
     // treat it as silence. NEVER gate per-sample — speech waveforms cross zero
@@ -168,7 +173,7 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
     if let Ok(out) = resampler.process(&processed) {
         drop(resampler);
         if !out.is_empty() {
-            shared.ring.lock().unwrap().push_slice(&out);
+            shared.ring.lock().unwrap().extend_from_slice(&out);
         }
     }
 }
@@ -187,10 +192,7 @@ impl AudioCapture for AudioCaptureImpl {
 
         let resampler = Resampler::new(in_rate, TARGET_SAMPLE_RATE, channels)?;
         let shared = Arc::new(Shared {
-            ring: Mutex::new(AudioRingBuffer::with_duration(
-                TARGET_SAMPLE_RATE,
-                RING_SECONDS,
-            )),
+            ring: Mutex::new(Vec::new()),
             resampler: Mutex::new(resampler),
             level: AtomicU32::new(0),
             gain: config.input_gain,
@@ -200,11 +202,12 @@ impl AudioCapture for AudioCaptureImpl {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let shared_thread = shared.clone();
-        let config_thread = config.clone();
+        let device_thread = device.clone();
+        let supported_thread = supported.clone();
 
         // The cpal stream lives entirely on this thread because it is `!Send`.
         let handle = std::thread::spawn(move || {
-            let stream = match build_stream(&config_thread, shared_thread) {
+            let stream = match build_stream(device_thread, supported_thread, shared_thread) {
                 Ok(s) => s,
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
@@ -243,13 +246,15 @@ impl AudioCapture for AudioCaptureImpl {
             let _ = tx.send(());
         }
         if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+            std::thread::spawn(move || {
+                let _ = handle.join();
+            });
         }
         let samples = if let Some(shared) = self.shared.take() {
             let tail = shared.resampler.lock().unwrap().flush().unwrap_or_default();
             let mut ring = shared.ring.lock().unwrap();
-            ring.push_slice(&tail);
-            ring.to_vec()
+            ring.extend_from_slice(&tail);
+            std::mem::take(&mut *ring)
         } else {
             Vec::new()
         };
@@ -262,7 +267,9 @@ impl AudioCapture for AudioCaptureImpl {
             let _ = tx.send(());
         }
         if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+            std::thread::spawn(move || {
+                let _ = handle.join();
+            });
         }
         self.shared = None;
         Ok(())
@@ -322,5 +329,30 @@ mod tests {
         let samples = vec![0.0f32; 100];
         let trimmed = trim_silence(&samples, 16_000);
         assert_eq!(trimmed.len(), samples.len());
+    }
+
+    #[test]
+    fn test_audio_level_decay() {
+        let resampler = Resampler::new(16_000, TARGET_SAMPLE_RATE, 1).unwrap();
+        let shared = Arc::new(Shared {
+            ring: Mutex::new(Vec::new()),
+            resampler: Mutex::new(resampler),
+            level: AtomicU32::new(0),
+            gain: 1.0,
+            noise_gate: 0.0,
+        });
+
+        assert_eq!(shared.get_level(), 0.0);
+
+        // Process high amplitude
+        process_samples(&shared, &[0.5]);
+        let level1 = shared.get_level();
+        assert!(level1 > 0.0);
+
+        // Process silence - level should decay, not drop to 0 instantly
+        process_samples(&shared, &[0.0]);
+        let level2 = shared.get_level();
+        assert!(level2 > 0.0);
+        assert!(level2 < level1);
     }
 }

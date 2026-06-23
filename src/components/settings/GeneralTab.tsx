@@ -1,4 +1,5 @@
 import { useSettingsStore } from "../../stores/settingsStore";
+import { setFloatingWidgetEnabled } from "../../lib/tauri";
 import { Switch } from "../ui/Switch";
 import { Select } from "../ui/Select";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
@@ -6,6 +7,15 @@ import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 export function GeneralTab() {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+
+  // Toggle the floating widget: update the local store optimistically and let
+  // the backend persist the setting and show/hide the overlay window.
+  const toggleFloatingWidget = (v: boolean) => {
+    useSettingsStore.setState((s) => ({
+      settings: { ...s.settings, floating_widget: v },
+    }));
+    void setFloatingWidgetEnabled(v);
+  };
 
   return (
     <div className="max-w-xl">
@@ -24,6 +34,15 @@ export function GeneralTab() {
             value={(settings.language as string) ?? "id"}
             onChange={(e) => void update("language", e.target.value)}
             className="w-48"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Floating widget"
+          description="Show a draggable status pill on top of other apps. It animates while transcribing."
+        >
+          <Switch
+            checked={(settings.floating_widget as boolean) ?? true}
+            onChange={toggleFloatingWidget}
           />
         </SettingsRow>
       </SettingsGroup>

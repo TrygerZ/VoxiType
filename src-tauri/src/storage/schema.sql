@@ -125,7 +125,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('translation_enabled', 'false'),
     ('translation_target', '"en"'),
     ('command_mode', 'false'),
-    ('per_app_mode', 'false');
+    ('per_app_mode', 'false'),
+    ('floating_widget', 'true'),
+    ('floating_widget_pos', 'null');
 
 -- ============================================================
 -- Usage Stats (opt-in telemetry, anonymous)

@@ -50,16 +50,42 @@ fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
         "groq" => SttEngineKind::Groq,
         _ => SttEngineKind::WhisperCpp,
     };
+
+    let model = string_setting(&state.db, "stt_model", "small");
+    let api_key = decrypted_api_key(state);
+
+    let cache_key = match kind {
+        SttEngineKind::WhisperCpp => model.clone(),
+        SttEngineKind::Groq => api_key.clone(),
+    };
+
+    // Check if the cached engine in AppStateInner matches the current config
+    let mut cache = state.stt_engine.lock().unwrap();
+    if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
+        if *cached_kind == kind && *cached_key == cache_key {
+            return Ok(cached_engine.clone());
+        }
+    }
+
     let whisper = WhisperCppConfig {
-        model: string_setting(&state.db, "stt_model", "small"),
+        model: model.clone(),
+        model_path: state
+            .app_data_dir
+            .join("models")
+            .join(format!("ggml-{}.bin", model))
+            .to_string_lossy()
+            .into_owned(),
         ..Default::default()
     };
     let groq = GroqSttConfig {
-        api_key: decrypted_api_key(state),
+        api_key,
         language: string_setting(&state.db, "stt_language", "auto"),
         ..Default::default()
     };
-    SttFactory::create(kind, whisper, groq)
+
+    let new_engine = SttFactory::create(kind, whisper, groq)?;
+    *cache = Some((kind, cache_key, new_engine.clone()));
+    Ok(new_engine)
 }
 
 fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
@@ -151,7 +177,7 @@ async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     if audio.is_empty() {
         let _ = state.pipeline.finish_processing();
         events::emit_state(&app, state.pipeline.state_tag());
-        crate::overlay::hide(&app);
+        crate::overlay::maybe_hide(&app);
         return;
     }
 
@@ -330,7 +356,7 @@ fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
         if tag != crate::pipeline::AppStateTag::Recording
             && tag != crate::pipeline::AppStateTag::Processing
         {
-            crate::overlay::hide(&app);
+            crate::overlay::maybe_hide(&app);
         }
     });
 }
@@ -345,18 +371,31 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     if tag != crate::pipeline::AppStateTag::Idle && tag != crate::pipeline::AppStateTag::Error {
         return;
     }
-    let config = build_audio_config(&state.db);
-    match state.pipeline.start_recording(&config) {
-        Ok(tag) => {
-            if sound_cues_enabled(&state.db) {
-                crate::sound::play(crate::sound::Cue::Start);
-            }
-            crate::overlay::show(app);
-            events::emit_state(app, tag);
-            spawn_level_emitter(app.clone());
-        }
-        Err(e) => fail(app, &state.pipeline, &e),
+
+    // Instantly transition state to Recording and notify UI/play tone
+    let tag = match state.pipeline.apply(crate::pipeline::StateEvent::StartRecording) {
+        Ok(t) => t,
+        Err(e) => return fail(app, &state.pipeline, &e),
+    };
+
+    if sound_cues_enabled(&state.db) {
+        crate::sound::play(crate::sound::Cue::Start);
     }
+    crate::overlay::ensure_visible(app);
+    events::emit_state(app, tag);
+    spawn_level_emitter(app.clone());
+
+    // Asynchronously initialize and start CPAL audio capture
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app_clone.state::<AppStateInner>();
+        let config = build_audio_config(&state.db);
+        if let Err(e) = state.pipeline.start_capture(&config) {
+            // Roll back state to Idle on capture failure and emit error
+            let _ = state.pipeline.apply(crate::pipeline::StateEvent::CancelRecording);
+            fail(&app_clone, &state.pipeline, &e);
+        }
+    });
 }
 
 /// Emit `audio_level` events ~20x/sec while recording so the UI waveform reacts.
@@ -382,6 +421,17 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
     if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Recording {
         return;
     }
+
+    // Skip transcription if hotkey is pressed for less than or equal to 1 second
+    if let Some(duration) = state.pipeline.recording_duration() {
+        if duration.as_secs_f32() <= 1.0 {
+            let _ = state.pipeline.cancel_recording();
+            events::emit_state(app, state.pipeline.state_tag());
+            crate::overlay::maybe_hide(app);
+            return;
+        }
+    }
+
     match state.pipeline.stop_recording() {
         Ok(audio) => {
             if sound_cues_enabled(&state.db) {
@@ -429,7 +479,7 @@ pub async fn cancel_recording<R: Runtime>(app: AppHandle<R>) -> std::result::Res
     let state = app.state::<AppStateInner>();
     state.pipeline.cancel_recording()?;
     events::emit_state(&app, state.pipeline.state_tag());
-    crate::overlay::hide(&app);
+    crate::overlay::maybe_hide(&app);
     Ok(())
 }
 
@@ -476,6 +526,19 @@ pub fn update_setting(
         serde_json::to_string(&value)?
     };
     SettingsManager::new(&state.db).set_raw(&key, &encoded)
+}
+
+/// Enable or disable the floating widget and immediately show/hide it.
+/// Persists the `floating_widget` setting so the choice survives restarts.
+#[tauri::command]
+pub fn set_floating_widget_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    SettingsManager::new(&state.db).set("floating_widget", &enabled)?;
+    crate::overlay::apply_enabled(&app, enabled);
+    Ok(())
 }
 
 // --- History ---

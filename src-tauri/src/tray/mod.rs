@@ -2,7 +2,7 @@
 
 pub mod menu;
 
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime};
 
 use crate::error::{AppError, Result};
@@ -22,9 +22,11 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()))
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { .. } = event {
-                let app = tray.app_handle();
-                show_main_window(app);
+            if let TrayIconEvent::Click { button, .. } = event {
+                if button == MouseButton::Left {
+                    let app = tray.app_handle();
+                    show_main_window(app);
+                }
             }
         })
         .build(app)

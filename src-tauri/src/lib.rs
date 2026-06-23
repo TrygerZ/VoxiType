@@ -39,6 +39,7 @@ pub struct AppStateInner {
     pub master_key: [u8; 32],
     /// Keeps the file-log writer thread alive; flushed on drop.
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    pub stt_engine: std::sync::Mutex<Option<(crate::stt::SttEngineKind, String, std::sync::Arc<dyn crate::stt::SttEngine>)>>,
 }
 
 impl AppStateInner {
@@ -55,6 +56,7 @@ impl AppStateInner {
             app_data_dir,
             master_key,
             _log_guard: log_guard,
+            stt_engine: std::sync::Mutex::new(None),
         })
     }
 }
@@ -98,6 +100,11 @@ pub fn run() {
                 tracing::warn!("Hotkey registration failed: {e}");
             }
 
+            // Floating widget: remember its position across drags and apply the
+            // saved enabled/disabled state on launch.
+            overlay::setup_persistence(handle);
+            overlay::apply_enabled(handle, overlay::is_enabled(handle));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -108,6 +115,7 @@ pub fn run() {
             commands::get_audio_level,
             commands::get_settings,
             commands::update_setting,
+            commands::set_floating_widget_enabled,
             commands::get_history,
             commands::search_history,
             commands::delete_history,
@@ -136,6 +144,14 @@ pub fn run() {
             commands::get_app_info,
             commands::check_updates,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

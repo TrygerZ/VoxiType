@@ -28,18 +28,21 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()
 
     let app_handle = app.clone();
     gs.on_shortcut(shortcut, move |_app, _sc, event| {
-        match (mode, event.state()) {
-            (HotkeyMode::Ptt, ShortcutState::Pressed) => {
-                crate::commands::hotkey_start(&app_handle);
+        let app_handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            match (mode, event.state()) {
+                (HotkeyMode::Ptt, ShortcutState::Pressed) => {
+                    crate::commands::hotkey_start(&app_handle);
+                }
+                (HotkeyMode::Ptt, ShortcutState::Released) => {
+                    crate::commands::hotkey_stop(&app_handle);
+                }
+                (HotkeyMode::Toggle, ShortcutState::Pressed) => {
+                    crate::commands::hotkey_toggle(&app_handle);
+                }
+                (HotkeyMode::Toggle, ShortcutState::Released) => {}
             }
-            (HotkeyMode::Ptt, ShortcutState::Released) => {
-                crate::commands::hotkey_stop(&app_handle);
-            }
-            (HotkeyMode::Toggle, ShortcutState::Pressed) => {
-                crate::commands::hotkey_toggle(&app_handle);
-            }
-            (HotkeyMode::Toggle, ShortcutState::Released) => {}
-        }
+        });
     })
     .map_err(|e| AppError::hotkey_conflict(format!("Failed to register '{}': {e}", cfg.key)))?;
 

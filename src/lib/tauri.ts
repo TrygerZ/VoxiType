@@ -26,6 +26,8 @@ export const getAudioLevel = () => invoke<number>("get_audio_level");
 export const getSettings = () => invoke<Settings>("get_settings");
 export const updateSetting = (key: string, value: unknown) =>
   invoke<void>("update_setting", { key, value });
+export const setFloatingWidgetEnabled = (enabled: boolean) =>
+  invoke<void>("set_floating_widget_enabled", { enabled });
 
 // --- History ---
 export const getHistory = (filter?: HistoryFilter) =>
