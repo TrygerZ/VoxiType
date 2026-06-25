@@ -89,10 +89,8 @@ pub fn persist_position<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
     let state = app.state::<AppStateInner>();
-    let _ = SettingsManager::new(&state.db).set(
-        "floating_widget_pos",
-        &WidgetPos { x: pos.x, y: pos.y },
-    );
+    let _ = SettingsManager::new(&state.db)
+        .set("floating_widget_pos", &WidgetPos { x: pos.x, y: pos.y });
 }
 
 /// Register a debounced listener that remembers the overlay position whenever
@@ -127,7 +125,9 @@ pub fn setup_persistence<R: Runtime>(app: &AppHandle<R>) {
 
                 // Clamp position to monitor bounds to prevent widget from going off-screen
                 let monitor = win.current_monitor().ok().flatten().or_else(|| {
-                    win.available_monitors().ok().and_then(|ms| ms.into_iter().next())
+                    win.available_monitors()
+                        .ok()
+                        .and_then(|ms| ms.into_iter().next())
                 });
 
                 if let Some(m) = monitor {
@@ -151,8 +151,7 @@ pub fn setup_persistence<R: Runtime>(app: &AppHandle<R>) {
                 }
 
                 let state = app.state::<AppStateInner>();
-                let _ = SettingsManager::new(&state.db)
-                    .set("floating_widget_pos", &saved);
+                let _ = SettingsManager::new(&state.db).set("floating_widget_pos", &saved);
             });
         }
     });
@@ -190,9 +189,7 @@ fn position_visible<R: Runtime>(win: &WebviewWindow<R>, p: &WidgetPos) -> bool {
 }
 
 /// Compute a position at the horizontal center, near the bottom of the monitor.
-fn bottom_center_position<R: Runtime>(
-    win: &WebviewWindow<R>,
-) -> Option<PhysicalPosition<i32>> {
+fn bottom_center_position<R: Runtime>(win: &WebviewWindow<R>) -> Option<PhysicalPosition<i32>> {
     let monitor = win.current_monitor().ok()??;
     let m_pos = monitor.position();
     let m_size = monitor.size();

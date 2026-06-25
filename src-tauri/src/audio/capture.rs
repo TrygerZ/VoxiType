@@ -148,11 +148,7 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
     // Peak-hold decay: smooth level changes, especially during silent blocks,
     // to match polling interval and prevent erratic UI waveform behavior.
     let current = shared.get_level();
-    let new_level = if peak > current {
-        peak
-    } else {
-        current * 0.98
-    };
+    let new_level = if peak > current { peak } else { current * 0.98 };
     shared.set_level(new_level.min(1.0));
 
     // Block-level noise gate: if the whole block is quieter than the threshold

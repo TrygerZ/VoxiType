@@ -373,7 +373,10 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     }
 
     // Instantly transition state to Recording and notify UI/play tone
-    let tag = match state.pipeline.apply(crate::pipeline::StateEvent::StartRecording) {
+    let tag = match state
+        .pipeline
+        .apply(crate::pipeline::StateEvent::StartRecording)
+    {
         Ok(t) => t,
         Err(e) => return fail(app, &state.pipeline, &e),
     };
@@ -392,7 +395,9 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
         let config = build_audio_config(&state.db);
         if let Err(e) = state.pipeline.start_capture(&config) {
             // Roll back state to Idle on capture failure and emit error
-            let _ = state.pipeline.apply(crate::pipeline::StateEvent::CancelRecording);
+            let _ = state
+                .pipeline
+                .apply(crate::pipeline::StateEvent::CancelRecording);
             fail(&app_clone, &state.pipeline, &e);
         }
     });

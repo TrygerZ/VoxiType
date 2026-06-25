@@ -39,7 +39,13 @@ pub struct AppStateInner {
     pub master_key: [u8; 32],
     /// Keeps the file-log writer thread alive; flushed on drop.
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
-    pub stt_engine: std::sync::Mutex<Option<(crate::stt::SttEngineKind, String, std::sync::Arc<dyn crate::stt::SttEngine>)>>,
+    pub stt_engine: std::sync::Mutex<
+        Option<(
+            crate::stt::SttEngineKind,
+            String,
+            std::sync::Arc<dyn crate::stt::SttEngine>,
+        )>,
+    >,
 }
 
 impl AppStateInner {
