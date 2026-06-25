@@ -21,7 +21,6 @@ pub mod stt;
 pub mod tray;
 pub mod updater;
 pub mod util;
-pub mod vad;
 
 use std::path::PathBuf;
 

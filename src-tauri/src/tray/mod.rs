@@ -37,7 +37,7 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
 
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
-        "record" => crate::commands::hotkey_toggle(app),
+        "record" => crate::commands::runtime::hotkey_toggle(app),
         "settings" => navigate(app, "settings"),
         "history" => navigate(app, "history"),
         "dictionary" => navigate(app, "dictionary"),

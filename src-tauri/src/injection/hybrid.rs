@@ -6,37 +6,17 @@ use std::time::{Duration, Instant};
 use super::{clipboard, keystroke, InjectResult, InjectStrategy, TextInjector};
 use crate::error::Result;
 
-/// Injection behaviour flags (from settings).
-#[derive(Debug, Clone)]
-pub struct InjectionOptions {
-    pub auto_paste: bool,
-    pub fallback_to_keystroke: bool,
-    pub restore_clipboard: bool,
-}
-
-impl Default for InjectionOptions {
-    fn default() -> Self {
-        Self {
-            auto_paste: true,
-            fallback_to_keystroke: true,
-            restore_clipboard: true,
-        }
-    }
-}
-
-pub struct HybridInjector {
-    options: InjectionOptions,
-}
+pub struct HybridInjector;
 
 impl HybridInjector {
-    pub fn new(options: InjectionOptions) -> Self {
-        Self { options }
+    pub fn new() -> Self {
+        Self
     }
 }
 
 impl Default for HybridInjector {
     fn default() -> Self {
-        Self::new(InjectionOptions::default())
+        Self
     }
 }
 
@@ -54,48 +34,30 @@ impl TextInjector for HybridInjector {
         // Try clipboard first.
         match self.inject_clipboard(text) {
             Ok(res) if res.success => Ok(res),
-            _ if self.options.fallback_to_keystroke => self.inject_keystroke(text),
-            other => other,
+            _ => self.inject_keystroke(text),
         }
     }
 
     fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
         let started = Instant::now();
-        let original = if self.options.restore_clipboard {
-            clipboard::read_text()
-        } else {
-            None
-        };
+        let original = clipboard::read_text();
 
         clipboard::write_text(text)?;
 
-        if self.options.auto_paste {
-            let paste_result = keystroke::paste();
-            // Give the target app time to consume the paste before restoring.
-            thread::sleep(Duration::from_millis(300));
+        let paste_result = keystroke::paste();
+        // Give the target app time to consume the paste before restoring.
+        thread::sleep(Duration::from_millis(300));
 
-            // Restore clipboard regardless of paste success to avoid leaving
-            // injected text on the clipboard.
-            if self.options.restore_clipboard {
-                if let Some(orig) = original {
-                    let _ = clipboard::write_text(&orig);
-                }
-            }
-
-            paste_result?;
-        } else if self.options.restore_clipboard {
-            if let Some(orig) = original {
-                let _ = clipboard::write_text(&orig);
-            }
+        // Restore clipboard regardless of paste success.
+        if let Some(orig) = original {
+            let _ = clipboard::write_text(&orig);
         }
+
+        paste_result?;
 
         Ok(InjectResult {
             success: true,
-            strategy: if self.options.auto_paste {
-                InjectStrategy::Clipboard
-            } else {
-                InjectStrategy::Manual
-            },
+            strategy: InjectStrategy::Clipboard,
             chars_injected: text.chars().count() as u32,
             duration_ms: started.elapsed().as_millis() as u64,
         })

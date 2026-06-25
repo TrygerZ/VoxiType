@@ -71,17 +71,6 @@ impl PipelineOrchestrator {
         }
     }
 
-    /// Begin capturing audio.
-    pub fn start_recording(&self, config: &AudioConfig) -> Result<AppStateTag> {
-        let tag = self.apply(StateEvent::StartRecording)?;
-        if let Err(e) = self.audio.lock_recover().start(config) {
-            // Roll back to Idle on capture failure.
-            let _ = self.apply(StateEvent::CancelRecording);
-            return Err(e);
-        }
-        Ok(tag)
-    }
-
     /// Start the underlying audio capture stream.
     pub fn start_capture(&self, config: &AudioConfig) -> Result<()> {
         self.audio.lock_recover().start(config)
@@ -101,23 +90,10 @@ impl PipelineOrchestrator {
         Ok(())
     }
 
-    /// Cancel in-progress processing (STT/LLM work).
-    pub fn cancel_processing(&self) -> Result<()> {
-        self.apply(StateEvent::CancelProcessing)?;
-        Ok(())
-    }
-
     /// Mark processing as finished.
     pub fn finish_processing(&self) -> Result<()> {
         self.apply(StateEvent::ProcessingComplete)?;
         Ok(())
-    }
-
-    /// Check if processing has timed out (STT/LLM hung).
-    pub fn check_processing_timeout(&self) -> bool {
-        let guard = self.state.lock_recover();
-        matches!(&*guard, AppState::Processing { start_time }
-            if start_time.elapsed().as_secs() >= state_machine::PROCESSING_TIMEOUT_SECS)
     }
 
     /// Move to error state.

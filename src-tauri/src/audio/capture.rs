@@ -14,7 +14,7 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::SampleFormat;
 use serde::{Deserialize, Serialize};
 
-use super::device::{list_input_devices, resolve_device, DeviceInfo};
+use super::device::resolve_device;
 use super::resampler::Resampler;
 use super::{AudioCapture, TARGET_SAMPLE_RATE};
 use crate::error::{AppError, Result};
@@ -281,14 +281,6 @@ impl AudioCapture for AudioCaptureImpl {
 
     fn level(&self) -> f32 {
         self.shared.as_ref().map(|s| s.get_level()).unwrap_or(0.0)
-    }
-
-    fn is_active(&self) -> bool {
-        self.active
-    }
-
-    fn device_list(&self) -> Result<Vec<DeviceInfo>> {
-        list_input_devices()
     }
 }
 

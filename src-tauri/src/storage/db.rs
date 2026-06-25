@@ -72,21 +72,12 @@ mod tests {
             .with_conn(|c| {
                 Ok(c.query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN \
-                     ('transcriptions','dictionary_entries','snippets','settings','modes')",
+                     ('transcriptions','dictionary_entries','snippets','settings')",
                     [],
                     |r| r.get(0),
                 )?)
             })
             .unwrap();
-        assert_eq!(count, 5);
-    }
-
-    #[test]
-    fn seed_modes_inserted() {
-        let db = Database::open_in_memory().unwrap();
-        let count: i64 = db
-            .with_conn(|c| Ok(c.query_row("SELECT COUNT(*) FROM modes", [], |r| r.get(0))?))
-            .unwrap();
-        assert!(count >= 3);
+        assert_eq!(count, 4);
     }
 }

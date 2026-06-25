@@ -134,7 +134,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
 CREATE TABLE IF NOT EXISTS usage_stats (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     date            TEXT NOT NULL,
-    session_count   INTEGER NOT NULL DEFAULT 0,
     transcription_count INTEGER NOT NULL DEFAULT 0,
     total_words     INTEGER NOT NULL DEFAULT 0,
     total_duration_ms INTEGER NOT NULL DEFAULT 0,
@@ -145,34 +144,6 @@ CREATE TABLE IF NOT EXISTS usage_stats (
     error_count     INTEGER NOT NULL DEFAULT 0,
     UNIQUE(date)
 );
-
--- ============================================================
--- Modes (User-defined modes)
-CREATE TABLE IF NOT EXISTS modes (
-    id              TEXT PRIMARY KEY,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    name            TEXT NOT NULL UNIQUE,
-    description     TEXT,
-    system_prompt   TEXT NOT NULL,
-    is_builtin      INTEGER NOT NULL DEFAULT 0,
-    is_active       INTEGER NOT NULL DEFAULT 1,
-    sort_order      INTEGER NOT NULL DEFAULT 0
-);
-
-INSERT OR IGNORE INTO modes (id, name, description, system_prompt, is_builtin, sort_order) VALUES
-    ('mode_dictation', 'Dictation',
-     'Raw transcription with minimal filler removal',
-     'You are a transcription text cleaner. Remove filler words. Fix punctuation and capitalization. DO NOT paraphrase. Output ONLY the cleaned text.',
-     1, 1),
-    ('mode_message', 'Message',
-     'Casual format for chat',
-     'Format text as a casual chat message. Short sentences, natural flow. Use sentence case. May add emoji if expressive. Output ONLY the formatted text.',
-     1, 2),
-    ('mode_email', 'Email',
-     'Formal format for email with proper structure',
-     'Format text as a formal email. Use structure: greeting, body, sign-off. Proper capitalization. Professional tone. Output ONLY the formatted text.',
-     1, 3);
 
 -- ============================================================
 -- Per-App Mode Mapping

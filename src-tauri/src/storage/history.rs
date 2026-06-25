@@ -190,17 +190,6 @@ impl<'a> HistoryRepository<'a> {
             Ok(n)
         })
     }
-
-    pub fn delete_older_than(&self, days: u32) -> Result<usize> {
-        self.db.with_conn(|c| {
-            let n = c.execute(
-                "DELETE FROM transcriptions
-                 WHERE is_pinned = 0 AND created_at < datetime('now', ?1)",
-                [format!("-{days} days")],
-            )?;
-            Ok(n)
-        })
-    }
 }
 
 /// Escape FTS5 special characters and operators from user input so queries

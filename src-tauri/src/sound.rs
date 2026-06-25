@@ -1,8 +1,6 @@
 //! Optional sound cues for recording start/stop.
 //!
-//! Plays short generated tones via a dedicated cpal output stream. `cpal::Stream`
-//! is `!Send`, so playback runs on its own short-lived OS thread; the public API
-//! is fire-and-forget and never blocks the caller.
+//! Plays short premium WAV files via a dedicated cpal output stream.
 
 use std::sync::mpsc;
 use std::time::Duration;
@@ -13,24 +11,91 @@ use cpal::SampleFormat;
 /// Which cue to play.
 #[derive(Debug, Clone, Copy)]
 pub enum Cue {
-    /// Rising tone — recording started.
+    /// Woodblock tock — recording started.
     Start,
-    /// Falling tone — recording stopped / processing.
+    /// Woodblock tock — recording stopped / processing.
     Stop,
 }
 
-impl Cue {
-    /// Tone frequency in Hz.
-    fn frequency(self) -> f32 {
-        match self {
-            Cue::Start => 880.0,
-            Cue::Stop => 523.25,
-        }
-    }
+struct WavData {
+    sample_rate: u32,
+    samples: Vec<i16>,
 }
 
-/// Play a cue without blocking. Errors are logged, never propagated, because a
-/// missing output device must not break the recording pipeline.
+fn parse_wav(bytes: &[u8]) -> Result<WavData, String> {
+    if bytes.len() < 44 {
+        return Err("WAV too short".to_string());
+    }
+    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err("Not a RIFF WAVE file".to_string());
+    }
+
+    let mut pos = 12;
+    let mut channels = None;
+    let mut sample_rate = None;
+    let mut data_slice = None;
+
+    while pos + 8 <= bytes.len() {
+        let chunk_id = &bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        pos += 8;
+
+        if pos + chunk_size > bytes.len() {
+            return Err("Chunk size out of bounds".to_string());
+        }
+
+        match chunk_id {
+            b"fmt " => {
+                if chunk_size >= 16 {
+                    let format = u16::from_le_bytes(bytes[pos..pos + 2].try_into().unwrap());
+                    if format != 1 {
+                        return Err("Only uncompressed PCM WAV supported".to_string());
+                    }
+                    channels = Some(u16::from_le_bytes(
+                        bytes[pos + 2..pos + 4].try_into().unwrap(),
+                    ));
+                    sample_rate = Some(u32::from_le_bytes(
+                        bytes[pos + 4..pos + 8].try_into().unwrap(),
+                    ));
+                    let bits_per_sample =
+                        u16::from_le_bytes(bytes[pos + 14..pos + 16].try_into().unwrap());
+                    if bits_per_sample != 16 {
+                        return Err("Only 16-bit WAV supported".to_string());
+                    }
+                }
+            }
+            b"data" => {
+                data_slice = Some(&bytes[pos..pos + chunk_size]);
+            }
+            _ => {}
+        }
+        pos += chunk_size;
+    }
+
+    let channels = channels.ok_or("Missing fmt chunk")?;
+    if channels != 1 {
+        return Err("Only mono WAV supported".to_string());
+    }
+    let sample_rate = sample_rate.ok_or("Missing fmt chunk")?;
+    let raw_data = data_slice.ok_or("Missing data chunk")?;
+
+    if raw_data.len() % 2 != 0 {
+        return Err("Data length is not even".to_string());
+    }
+
+    let num_samples = raw_data.len() / 2;
+    let mut samples = Vec::with_capacity(num_samples);
+    for chunk in raw_data.chunks_exact(2) {
+        samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+    }
+
+    Ok(WavData {
+        sample_rate,
+        samples,
+    })
+}
+
+/// Play a cue without blocking. Errors are logged, never propagated.
 pub fn play(cue: Cue) {
     std::thread::spawn(move || {
         if let Err(e) = play_blocking(cue) {
@@ -40,29 +105,47 @@ pub fn play(cue: Cue) {
 }
 
 fn play_blocking(cue: Cue) -> Result<(), String> {
+    let wav_bytes = match cue {
+        Cue::Start => include_bytes!("../assets/sound/start.wav") as &[u8],
+        Cue::Stop => include_bytes!("../assets/sound/stop.wav") as &[u8],
+    };
+
+    let wav = parse_wav(wav_bytes)?;
+
     let host = cpal::default_host();
     let device = host
         .default_output_device()
         .ok_or_else(|| "no default output device".to_string())?;
     let config = device.default_output_config().map_err(|e| e.to_string())?;
 
-    let sample_rate = config.sample_rate().0 as f32;
-    let channels = config.channels() as usize;
-    let freq = cue.frequency();
-    let total_samples = (sample_rate * 0.14) as usize;
+    let stream_sample_rate = config.sample_rate().0 as f64;
+    let wav_sample_rate = wav.sample_rate as f64;
+    let step = wav_sample_rate / stream_sample_rate;
 
+    let play_duration_ms = ((wav.samples.len() as f64 / wav_sample_rate) * 1000.0) as u64;
+
+    let channels = config.channels() as usize;
     let (done_tx, done_rx) = mpsc::channel::<()>();
     let mut clock = 0usize;
 
-    // Amplitude envelope avoids clicks at start/end.
+    // Linear interpolation resampler returning float sample values (-1.0 to 1.0)
     let next_sample = move || -> Option<f32> {
-        if clock >= total_samples {
+        let pos = clock as f64 * step;
+        let idx = pos.floor() as usize;
+        let fract = (pos - idx as f64) as f32;
+
+        if idx >= wav.samples.len() {
             return None;
         }
-        let t = clock as f32 / sample_rate;
-        let progress = clock as f32 / total_samples as f32;
-        let envelope = (progress * std::f32::consts::PI).sin();
-        let value = (2.0 * std::f32::consts::PI * freq * t).sin() * 0.2 * envelope;
+
+        let s0 = wav.samples[idx] as f32 / 32768.0;
+        let s1 = if idx + 1 < wav.samples.len() {
+            wav.samples[idx + 1] as f32 / 32768.0
+        } else {
+            0.0
+        };
+
+        let value = (1.0 - fract) * s0 + fract * s1;
         clock += 1;
         Some(value)
     };
@@ -109,9 +192,28 @@ fn play_blocking(cue: Cue) -> Result<(), String> {
 
     stream.play().map_err(|e| e.to_string())?;
 
-    // Wait until the tone finished (with a safety timeout), then drop the stream.
-    let _ = done_rx.recv_timeout(Duration::from_millis(400));
-    std::thread::sleep(Duration::from_millis(20));
+    // Wait until the sound has finished playing, then drop the stream
+    let _ = done_rx.recv_timeout(Duration::from_millis(play_duration_ms + 100));
+    std::thread::sleep(Duration::from_millis(150));
     drop(stream);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_wav_valid() {
+        let start_bytes = include_bytes!("../assets/sound/start.wav");
+        let parsed = parse_wav(start_bytes).unwrap();
+        assert_eq!(parsed.sample_rate, 48000);
+        assert!(!parsed.samples.is_empty());
+    }
+
+    #[test]
+    fn test_parse_wav_invalid() {
+        let invalid_bytes = b"RIFFxxxxWAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\xbb\x00\x00\x00\x77\x01\x00\x02\x00\x10\x00data\x01\x00\x00";
+        assert!(parse_wav(invalid_bytes).is_err());
+    }
 }

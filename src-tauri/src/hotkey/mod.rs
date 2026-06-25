@@ -32,13 +32,13 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()
         tauri::async_runtime::spawn(async move {
             match (mode, event.state()) {
                 (HotkeyMode::Ptt, ShortcutState::Pressed) => {
-                    crate::commands::hotkey_start(&app_handle);
+                    crate::commands::runtime::hotkey_start(&app_handle);
                 }
                 (HotkeyMode::Ptt, ShortcutState::Released) => {
-                    crate::commands::hotkey_stop(&app_handle);
+                    crate::commands::runtime::hotkey_stop(&app_handle);
                 }
                 (HotkeyMode::Toggle, ShortcutState::Pressed) => {
-                    crate::commands::hotkey_toggle(&app_handle);
+                    crate::commands::runtime::hotkey_toggle(&app_handle);
                 }
                 (HotkeyMode::Toggle, ShortcutState::Released) => {}
             }
