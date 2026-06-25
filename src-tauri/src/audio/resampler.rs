@@ -59,6 +59,13 @@ impl Resampler {
             return interleaved.to_vec();
         }
         let frames = interleaved.len() / self.channels;
+        let leftover = interleaved.len() % self.channels;
+        if leftover != 0 {
+            tracing::warn!(
+                "Resampler: dropping {leftover} trailing samples (not a full {}-channel frame)",
+                self.channels
+            );
+        }
         let mut mono = Vec::with_capacity(frames);
         for f in 0..frames {
             let base = f * self.channels;

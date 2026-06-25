@@ -70,12 +70,20 @@ impl TextInjector for HybridInjector {
         clipboard::write_text(text)?;
 
         if self.options.auto_paste {
-            keystroke::paste()?;
+            let paste_result = keystroke::paste();
             // Give the target app time to consume the paste before restoring.
-            thread::sleep(Duration::from_millis(120));
-        }
+            thread::sleep(Duration::from_millis(300));
 
-        if self.options.restore_clipboard {
+            // Restore clipboard regardless of paste success to avoid leaving
+            // injected text on the clipboard.
+            if self.options.restore_clipboard {
+                if let Some(orig) = original {
+                    let _ = clipboard::write_text(&orig);
+                }
+            }
+
+            paste_result?;
+        } else if self.options.restore_clipboard {
             if let Some(orig) = original {
                 let _ = clipboard::write_text(&orig);
             }

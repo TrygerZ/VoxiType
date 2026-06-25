@@ -31,6 +31,13 @@ use hotkey::HotkeyConfig;
 use pipeline::PipelineOrchestrator;
 use storage::{Database, SettingsManager};
 
+/// Cached STT engine: (engine kind, cache key, engine instance).
+type SttEngineCache = Option<(
+    crate::stt::SttEngineKind,
+    String,
+    std::sync::Arc<dyn crate::stt::SttEngine>,
+)>;
+
 /// Shared application state stored in Tauri's managed state.
 pub struct AppStateInner {
     pub db: Database,
@@ -39,13 +46,7 @@ pub struct AppStateInner {
     pub master_key: [u8; 32],
     /// Keeps the file-log writer thread alive; flushed on drop.
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
-    pub stt_engine: std::sync::Mutex<
-        Option<(
-            crate::stt::SttEngineKind,
-            String,
-            std::sync::Arc<dyn crate::stt::SttEngine>,
-        )>,
-    >,
+    pub stt_engine: std::sync::Mutex<SttEngineCache>,
 }
 
 impl AppStateInner {

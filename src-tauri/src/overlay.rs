@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, PhysicalPosition, Runtime, WebviewWindow, WindowEvent};
 
 use crate::storage::SettingsManager;
+use crate::util::MutexExt;
 use crate::AppStateInner;
 
 const LABEL: &str = "floating-widget";
@@ -106,7 +107,7 @@ pub fn setup_persistence<R: Runtime>(app: &AppHandle<R>) {
 
     win.on_window_event(move |event| {
         if let WindowEvent::Moved(pos) = event {
-            *pending.lock().unwrap() = WidgetPos { x: pos.x, y: pos.y };
+            *pending.lock_recover() = WidgetPos { x: pos.x, y: pos.y };
             let my_gen = generation.fetch_add(1, Ordering::SeqCst) + 1;
 
             let app = app.clone();
@@ -118,7 +119,7 @@ pub fn setup_persistence<R: Runtime>(app: &AppHandle<R>) {
                 if generation.load(Ordering::SeqCst) != my_gen {
                     return;
                 }
-                let mut saved = *pending.lock().unwrap();
+                let mut saved = *pending.lock_recover();
                 let Some(win) = app.get_webview_window(LABEL) else {
                     return;
                 };

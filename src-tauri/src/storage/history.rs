@@ -139,7 +139,8 @@ impl<'a> HistoryRepository<'a> {
                  WHERE transcriptions_fts MATCH ?1
                  ORDER BY t.created_at DESC LIMIT 100",
             )?;
-            let rows = stmt.query_map([query], row_to_entry)?;
+            let safe = sanitize_fts5(query);
+            let rows = stmt.query_map([&safe], row_to_entry)?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         })
     }
@@ -199,6 +200,25 @@ impl<'a> HistoryRepository<'a> {
             )?;
             Ok(n)
         })
+    }
+}
+
+/// Escape FTS5 special characters and operators from user input so queries
+/// containing AND/OR/NOT/NEAR/*/etc. are treated as literal text.
+fn sanitize_fts5(query: &str) -> String {
+    // Characters that carry special meaning in FTS5 syntax.
+    const SPECIAL: &[char] = &[
+        '"', '*', '^', '(', ')', ':', '~', ',',
+    ];
+    let cleaned: String = query
+        .chars()
+        .filter(|c| !SPECIAL.contains(c))
+        .collect();
+    // Quote the result so FTS5 can't interpret AND/OR/NOT/NEAR as operators.
+    if cleaned.is_empty() {
+        "\"\"".to_string()
+    } else {
+        format!("\"{}\"", cleaned.replace('"', "\"\""))
     }
 }
 

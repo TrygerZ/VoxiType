@@ -32,7 +32,7 @@ export const useAppStore = create<AppStore>((set) => ({
   setAudioLevel: (audioLevel) => set({ audioLevel }),
   setDuration: (durationSec) => set({ durationSec }),
   setMode: (mode) => set({ mode }),
-  setResult: (lastText, wordCount) => set({ lastText, wordCount }),
+  setResult: (lastText, wordCount) => set({ lastText, wordCount, errorMessage: null }),
   setError: (errorMessage) =>
     set({ errorMessage, state: errorMessage ? "error" : "idle" }),
   reset: () =>

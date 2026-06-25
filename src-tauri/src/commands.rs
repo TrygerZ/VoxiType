@@ -19,6 +19,7 @@ use crate::storage::{
 };
 use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCppConfig};
 use crate::{events, AppStateInner};
+use crate::util::MutexExt;
 
 // ============================================================
 // Settings-derived runtime config
@@ -60,7 +61,7 @@ fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
     };
 
     // Check if the cached engine in AppStateInner matches the current config
-    let mut cache = state.stt_engine.lock().unwrap();
+    let mut cache = state.stt_engine.lock_recover();
     if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
         if *cached_kind == kind && *cached_key == cache_key {
             return Ok(cached_engine.clone());
@@ -156,6 +157,11 @@ fn telemetry_enabled(db: &Database) -> bool {
         .ok()
         .flatten()
         .unwrap_or(false)
+}
+
+/// Escape a string for CSV: double any internal quotes.
+fn csv_escape(s: &str) -> String {
+    s.replace('"', "\"\"")
 }
 
 /// Classify an engine name as local or cloud for telemetry bucketing.
@@ -489,6 +495,15 @@ pub async fn cancel_recording<R: Runtime>(app: AppHandle<R>) -> std::result::Res
 }
 
 #[tauri::command]
+pub async fn cancel_processing<R: Runtime>(app: AppHandle<R>) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    state.pipeline.cancel_processing()?;
+    events::emit_state(&app, state.pipeline.state_tag());
+    crate::overlay::maybe_hide(&app);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_state(state: State<'_, AppStateInner>) -> String {
     format!("{:?}", state.pipeline.state_tag())
 }
@@ -614,10 +629,13 @@ pub fn export_history(
         "csv" => {
             let mut out = String::from("created_at,mode,source_lang,word_count,text_formatted\n");
             for it in &items {
-                let text = it.text_formatted.replace('"', "\"\"");
                 out.push_str(&format!(
-                    "{},{},{},{},\"{}\"\n",
-                    it.created_at, it.mode, it.source_lang, it.word_count, text
+                    "\"{}\",\"{}\",\"{}\",{},\"{}\"\n",
+                    csv_escape(&it.created_at),
+                    csv_escape(&it.mode),
+                    csv_escape(&it.source_lang),
+                    it.word_count,
+                    csv_escape(&it.text_formatted),
                 ));
             }
             Ok(out)

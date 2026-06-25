@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 
 use crate::error::Result;
+use crate::util::MutexExt;
 
 /// Embedded schema (v1). Idempotent — safe to run on every startup.
 const SCHEMA_V1: &str = include_str!("schema.sql");
@@ -48,14 +49,14 @@ impl Database {
     }
 
     fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock_recover();
         conn.execute_batch(SCHEMA_V1)?;
         Ok(())
     }
 
     /// Run a closure with locked access to the connection.
     pub fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock_recover();
         f(&conn)
     }
 }

@@ -12,6 +12,9 @@ use crate::error::{AppError, ErrorCode};
 /// Recording timeout in seconds.
 pub const RECORDING_TIMEOUT_SECS: u64 = 60;
 
+/// Processing timeout in seconds (STT/LLM operations).
+pub const PROCESSING_TIMEOUT_SECS: u64 = 60;
+
 /// Runtime state. Heavy payloads (audio) are kept out of the serialized form.
 #[derive(Debug)]
 pub enum AppState {
@@ -48,6 +51,7 @@ pub enum StateEvent {
     StartRecording,
     StopRecording,
     CancelRecording,
+    CancelProcessing,
     ProcessingComplete,
     Timeout,
     Error { message: String, code: ErrorCode },
@@ -68,11 +72,24 @@ impl AppState {
 
             (AppState::Recording { .. }, StateEvent::CancelRecording) => Ok(AppState::Idle),
 
+            (AppState::Processing { .. }, StateEvent::CancelProcessing) => Ok(AppState::Idle),
+
             (AppState::Recording { start_time }, StateEvent::Timeout) => {
                 if start_time.elapsed().as_secs() >= RECORDING_TIMEOUT_SECS {
                     Ok(AppState::Error {
                         message: "Recording timeout reached".into(),
                         code: ErrorCode::RecordingTimeout,
+                    })
+                } else {
+                    Err((self, AppError::invalid_transition("Timeout before limit")))
+                }
+            }
+
+            (AppState::Processing { start_time }, StateEvent::Timeout) => {
+                if start_time.elapsed().as_secs() >= PROCESSING_TIMEOUT_SECS {
+                    Ok(AppState::Error {
+                        message: "Processing timeout reached".into(),
+                        code: ErrorCode::ProcessingTimeout,
                     })
                 } else {
                     Err((self, AppError::invalid_transition("Timeout before limit")))

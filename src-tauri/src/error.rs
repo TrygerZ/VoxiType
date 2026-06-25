@@ -15,6 +15,7 @@ pub enum ErrorCode {
     MicPermissionDenied,
     AudioDeviceError,
     RecordingTimeout,
+    ProcessingTimeout,
     // STT
     SttModelNotFound,
     SttEngineError,

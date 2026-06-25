@@ -17,7 +17,7 @@ export default function App() {
   const loadSettings = useSettingsStore((s) => s.load);
   const loaded = useSettingsStore((s) => s.loaded);
   const settings = useSettingsStore((s) => s.settings);
-  const [view, setView] = useState<View | "about">("home");
+  const [view, setView] = useState<View>("home");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {

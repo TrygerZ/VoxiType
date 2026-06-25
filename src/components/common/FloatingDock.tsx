@@ -11,8 +11,8 @@ import { useT } from "../../lib/i18n";
 export type View = "home" | "settings" | "history" | "dictionary" | "snippets";
 
 interface FloatingDockProps {
-  active: View | "about";
-  onChange: (view: View | "about") => void;
+  active: View;
+  onChange: (view: View) => void;
 }
 
 const items: { id: View; icon: typeof Mic; labelKey: string }[] = [

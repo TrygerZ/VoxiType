@@ -1,10 +1,23 @@
 //! Small shared helpers used across modules.
 
 use std::future::Future;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, MutexGuard};
 use std::time::Duration;
 
 use crate::error::{AppError, ErrorCode};
+
+/// Extension trait for `std::sync::Mutex` that recovers from poisoned state
+/// instead of panicking. A poisoned mutex means a thread panicked while holding
+/// the lock; the data may be inconsistent but crashing the whole app is worse.
+pub trait MutexExt<T> {
+    fn lock_recover(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> MutexExt<T> for std::sync::Mutex<T> {
+    fn lock_recover(&self) -> MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
 
 /// Process-wide shared `reqwest` client.
 ///
@@ -17,6 +30,7 @@ pub fn http_client() -> reqwest::Client {
         .get_or_init(|| {
             reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(30))
                 .build()
                 .unwrap_or_default()
         })

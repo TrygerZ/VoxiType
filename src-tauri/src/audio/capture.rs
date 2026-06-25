@@ -18,6 +18,7 @@ use super::device::{list_input_devices, resolve_device, DeviceInfo};
 use super::resampler::Resampler;
 use super::{AudioCapture, TARGET_SAMPLE_RATE};
 use crate::error::{AppError, Result};
+use crate::util::MutexExt;
 
 /// Runtime configuration for a capture session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,7 +106,14 @@ fn build_stream(
         SampleFormat::I16 => device.build_input_stream(
             &stream_config,
             move |data: &[i16], _| {
-                let floats: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                let floats: Vec<f32> = data
+                    .iter()
+                    .map(|&s| {
+                        // Use i16::MAX + 1 to make the range symmetric: both
+                        // i16::MIN and i16::MAX map to exactly ±1.0.
+                        s as f32 / (i16::MAX as f32 + 1.0)
+                    })
+                    .collect();
                 process_samples(&shared, &floats)
             },
             err_fn,
@@ -165,11 +173,11 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
             .collect()
     };
 
-    let mut resampler = shared.resampler.lock().unwrap();
+    let mut resampler = shared.resampler.lock_recover();
     if let Ok(out) = resampler.process(&processed) {
         drop(resampler);
         if !out.is_empty() {
-            shared.ring.lock().unwrap().extend_from_slice(&out);
+            shared.ring.lock_recover().extend_from_slice(&out);
         }
     }
 }
@@ -247,8 +255,8 @@ impl AudioCapture for AudioCaptureImpl {
             });
         }
         let samples = if let Some(shared) = self.shared.take() {
-            let tail = shared.resampler.lock().unwrap().flush().unwrap_or_default();
-            let mut ring = shared.ring.lock().unwrap();
+            let tail = shared.resampler.lock_recover().flush().unwrap_or_default();
+            let mut ring = shared.ring.lock_recover();
             ring.extend_from_slice(&tail);
             std::mem::take(&mut *ring)
         } else {

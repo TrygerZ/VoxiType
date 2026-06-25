@@ -104,9 +104,11 @@ impl LlmFormatter for RuleBasedFormatter {
         Ok(self.clean(text))
     }
 
-    async fn translate(&self, text: &str, _source: &str, _target: &str) -> Result<String> {
-        // Rule-based formatter cannot translate; return cleaned text unchanged.
-        Ok(self.clean(text))
+    async fn translate(&self, _text: &str, _source: &str, _target: &str) -> Result<String> {
+        Err(crate::error::AppError::llm(
+            "Translation requires a cloud LLM (Groq) or local Ollama. \
+             Rule-based formatter supports text cleanup only.",
+        ))
     }
 
     fn name(&self) -> &'static str {

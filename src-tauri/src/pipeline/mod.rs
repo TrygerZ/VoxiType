@@ -13,6 +13,7 @@ use std::sync::Mutex;
 
 use crate::audio::{AudioCapture, AudioCaptureImpl, AudioConfig};
 use crate::error::{AppError, Result};
+use crate::util::MutexExt;
 
 /// Central pipeline coordinator. Stored in Tauri managed state.
 pub struct PipelineOrchestrator {
@@ -36,17 +37,17 @@ impl PipelineOrchestrator {
 
     /// Current serializable state tag.
     pub fn state_tag(&self) -> AppStateTag {
-        self.state.lock().unwrap().tag()
+        self.state.lock_recover().tag()
     }
 
     /// Current audio input level (0.0 - 1.0).
     pub fn audio_level(&self) -> f32 {
-        self.audio.lock().unwrap().level()
+        self.audio.lock_recover().level()
     }
 
     /// Get the elapsed duration of the current recording, if in Recording state.
     pub fn recording_duration(&self) -> Option<std::time::Duration> {
-        let guard = self.state.lock().unwrap();
+        let guard = self.state.lock_recover();
         match &*guard {
             AppState::Recording { start_time } => Some(start_time.elapsed()),
             _ => None,
@@ -55,7 +56,7 @@ impl PipelineOrchestrator {
 
     /// Apply a state event, mutating the stored state in place.
     pub fn apply(&self, event: StateEvent) -> Result<AppStateTag> {
-        let mut guard = self.state.lock().unwrap();
+        let mut guard = self.state.lock_recover();
         let current = std::mem::replace(&mut *guard, AppState::Idle);
         match current.transition(event) {
             Ok(next) => {
@@ -73,7 +74,7 @@ impl PipelineOrchestrator {
     /// Begin capturing audio.
     pub fn start_recording(&self, config: &AudioConfig) -> Result<AppStateTag> {
         let tag = self.apply(StateEvent::StartRecording)?;
-        if let Err(e) = self.audio.lock().unwrap().start(config) {
+        if let Err(e) = self.audio.lock_recover().start(config) {
             // Roll back to Idle on capture failure.
             let _ = self.apply(StateEvent::CancelRecording);
             return Err(e);
@@ -83,20 +84,26 @@ impl PipelineOrchestrator {
 
     /// Start the underlying audio capture stream.
     pub fn start_capture(&self, config: &AudioConfig) -> Result<()> {
-        self.audio.lock().unwrap().start(config)
+        self.audio.lock_recover().start(config)
     }
 
     /// Stop capturing and return the captured samples, moving to Processing.
     pub fn stop_recording(&self) -> Result<Vec<f32>> {
-        let samples = self.audio.lock().unwrap().stop()?;
         self.apply(StateEvent::StopRecording)?;
+        let samples = self.audio.lock_recover().stop()?;
         Ok(samples)
     }
 
     /// Cancel an in-progress recording.
     pub fn cancel_recording(&self) -> Result<()> {
-        self.audio.lock().unwrap().cancel()?;
         self.apply(StateEvent::CancelRecording)?;
+        self.audio.lock_recover().cancel()?;
+        Ok(())
+    }
+
+    /// Cancel in-progress processing (STT/LLM work).
+    pub fn cancel_processing(&self) -> Result<()> {
+        self.apply(StateEvent::CancelProcessing)?;
         Ok(())
     }
 
@@ -104,6 +111,13 @@ impl PipelineOrchestrator {
     pub fn finish_processing(&self) -> Result<()> {
         self.apply(StateEvent::ProcessingComplete)?;
         Ok(())
+    }
+
+    /// Check if processing has timed out (STT/LLM hung).
+    pub fn check_processing_timeout(&self) -> bool {
+        let guard = self.state.lock_recover();
+        matches!(&*guard, AppState::Processing { start_time }
+            if start_time.elapsed().as_secs() >= state_machine::PROCESSING_TIMEOUT_SECS)
     }
 
     /// Move to error state.

@@ -14,6 +14,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use super::types::WhisperCppConfig;
 use super::{SttConfig, SttEngine, TranscriptionResult};
 use crate::error::{AppError, Result};
+use crate::util::MutexExt;
 
 pub struct WhisperCppEngine {
     ctx: Mutex<WhisperContext>,
@@ -65,7 +66,7 @@ impl SttEngine for WhisperCppEngine {
             params.set_initial_prompt(prompt);
         }
 
-        let ctx = self.ctx.lock().unwrap();
+        let ctx = self.ctx.lock_recover();
         let mut state = ctx
             .create_state()
             .map_err(|e| AppError::stt(format!("Whisper state error: {e}")))?;
