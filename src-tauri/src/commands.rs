@@ -18,8 +18,8 @@ use crate::storage::{
     SettingsManager, TranscriptionEntry,
 };
 use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCppConfig};
-use crate::{events, AppStateInner};
 use crate::util::MutexExt;
+use crate::{events, AppStateInner};
 
 // ============================================================
 // Settings-derived runtime config

@@ -1,7 +1,7 @@
 //! Small shared helpers used across modules.
 
 use std::future::Future;
-use std::sync::{OnceLock, MutexGuard};
+use std::sync::{MutexGuard, OnceLock};
 use std::time::Duration;
 
 use crate::error::{AppError, ErrorCode};

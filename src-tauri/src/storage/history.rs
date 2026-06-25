@@ -207,13 +207,8 @@ impl<'a> HistoryRepository<'a> {
 /// containing AND/OR/NOT/NEAR/*/etc. are treated as literal text.
 fn sanitize_fts5(query: &str) -> String {
     // Characters that carry special meaning in FTS5 syntax.
-    const SPECIAL: &[char] = &[
-        '"', '*', '^', '(', ')', ':', '~', ',',
-    ];
-    let cleaned: String = query
-        .chars()
-        .filter(|c| !SPECIAL.contains(c))
-        .collect();
+    const SPECIAL: &[char] = &['"', '*', '^', '(', ')', ':', '~', ','];
+    let cleaned: String = query.chars().filter(|c| !SPECIAL.contains(c)).collect();
     // Quote the result so FTS5 can't interpret AND/OR/NOT/NEAR as operators.
     if cleaned.is_empty() {
         "\"\"".to_string()
