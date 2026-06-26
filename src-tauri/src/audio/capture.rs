@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::device::resolve_device;
 use super::resampler::Resampler;
-use super::{AudioCapture, TARGET_SAMPLE_RATE};
+use super::TARGET_SAMPLE_RATE;
 use crate::error::{AppError, Result};
 use crate::util::MutexExt;
 
@@ -62,7 +62,7 @@ impl Shared {
     }
 }
 
-/// cpal implementation of [`AudioCapture`].
+/// cpal-based microphone capture implementation.
 pub struct AudioCaptureImpl {
     shared: Option<Arc<Shared>>,
     stop_tx: Option<Sender<()>>,
@@ -182,8 +182,9 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
     }
 }
 
-impl AudioCapture for AudioCaptureImpl {
-    fn start(&mut self, config: &AudioConfig) -> Result<()> {
+impl AudioCaptureImpl {
+    /// Begin capturing. Returns immediately; samples accumulate internally.
+    pub fn start(&mut self, config: &AudioConfig) -> Result<()> {
         if self.active {
             return Ok(());
         }
@@ -244,7 +245,8 @@ impl AudioCapture for AudioCaptureImpl {
         Ok(())
     }
 
-    fn stop(&mut self) -> Result<Vec<f32>> {
+    /// Stop capturing and return the captured 16 kHz mono samples.
+    pub fn stop(&mut self) -> Result<Vec<f32>> {
         self.active = false;
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
@@ -265,7 +267,8 @@ impl AudioCapture for AudioCaptureImpl {
         Ok(trim_silence(&samples, TARGET_SAMPLE_RATE))
     }
 
-    fn cancel(&mut self) -> Result<()> {
+    /// Discard any in-progress capture without returning audio.
+    pub fn cancel(&mut self) -> Result<()> {
         self.active = false;
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
@@ -279,7 +282,8 @@ impl AudioCapture for AudioCaptureImpl {
         Ok(())
     }
 
-    fn level(&self) -> f32 {
+    /// Current normalized input level (0.0 - 1.0) for UI metering.
+    pub fn level(&self) -> f32 {
         self.shared.as_ref().map(|s| s.get_level()).unwrap_or(0.0)
     }
 }

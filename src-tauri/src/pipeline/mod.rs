@@ -11,7 +11,7 @@ pub use state_machine::{AppState, AppStateTag, StateEvent};
 
 use std::sync::Mutex;
 
-use crate::audio::{AudioCapture, AudioCaptureImpl, AudioConfig};
+use crate::audio::{AudioCaptureImpl, AudioConfig};
 use crate::error::{AppError, Result};
 use crate::util::MutexExt;
 

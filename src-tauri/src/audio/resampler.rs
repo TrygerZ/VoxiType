@@ -11,8 +11,6 @@ use crate::error::{AppError, Result};
 
 /// Streaming resampler that mixes to mono and converts to a target rate.
 pub struct Resampler {
-    input_rate: u32,
-    output_rate: u32,
     channels: usize,
     resampler: Option<SincFixedIn<f32>>,
     chunk_frames: usize,
@@ -44,8 +42,6 @@ impl Resampler {
         };
 
         Ok(Self {
-            input_rate,
-            output_rate,
             channels,
             resampler,
             chunk_frames,
@@ -120,13 +116,6 @@ impl Resampler {
         Ok(processed.into_iter().next().unwrap_or_default())
     }
 
-    pub fn output_rate(&self) -> u32 {
-        self.output_rate
-    }
-
-    pub fn input_rate(&self) -> u32 {
-        self.input_rate
-    }
 }
 
 #[cfg(test)]

@@ -34,7 +34,6 @@ pub enum ErrorCode {
     UpdateError,
     // Pipeline
     InvalidTransition,
-    Canceled,
     Timeout,
     // Misc
     NetworkError,
@@ -69,9 +68,6 @@ impl AppError {
     pub fn audio(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::AudioDeviceError, msg)
     }
-    pub fn vad(msg: impl Into<String>) -> Self {
-        Self::new(ErrorCode::SttEngineError, msg)
-    }
     pub fn stt(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::SttEngineError, msg)
     }
@@ -104,9 +100,6 @@ impl AppError {
     }
     pub fn invalid_transition(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidTransition, msg)
-    }
-    pub fn canceled() -> Self {
-        Self::new(ErrorCode::Canceled, "Operation canceled")
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Timeout, msg)

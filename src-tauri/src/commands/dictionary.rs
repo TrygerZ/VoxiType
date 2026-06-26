@@ -27,17 +27,6 @@ pub fn add_dictionary_word(
 }
 
 #[tauri::command]
-pub fn update_dictionary_word(
-    state: State<'_, AppStateInner>,
-    mut entry: DictionaryEntry,
-) -> std::result::Result<(), AppError> {
-    if entry.id.is_empty() {
-        entry.id = Uuid::new_v4().to_string();
-    }
-    DictionaryRepository::new(&state.db).upsert(&entry)
-}
-
-#[tauri::command]
 pub fn set_dictionary_active(
     state: State<'_, AppStateInner>,
     id: String,

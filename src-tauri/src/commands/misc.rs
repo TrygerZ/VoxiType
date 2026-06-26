@@ -1,27 +1,12 @@
-//! Translation, microphone, hotkey, app-info, and update commands.
+//! Microphone, hotkey, app-info, and update commands.
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime};
 
 use crate::audio::DeviceInfo;
 use crate::error::AppError;
-use crate::{hotkey, AppStateInner};
-
-use super::runtime;
-
-#[tauri::command]
-pub async fn translate<R: Runtime>(
-    app: AppHandle<R>,
-    text: String,
-    source: String,
-    target: String,
-) -> std::result::Result<String, AppError> {
-    let llm = {
-        let state = app.state::<AppStateInner>();
-        runtime::build_llm(&state)
-    };
-    llm.translate(&text, &source, &target).await
-}
+use crate::hotkey;
+use crate::AppStateInner;
 
 #[tauri::command]
 pub fn get_microphones() -> std::result::Result<Vec<DeviceInfo>, AppError> {

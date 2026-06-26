@@ -20,7 +20,6 @@ pub enum InjectStrategy {
     Clipboard,
     Keystroke,
     Manual,
-    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

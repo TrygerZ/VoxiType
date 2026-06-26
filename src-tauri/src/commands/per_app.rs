@@ -1,9 +1,9 @@
-//! Per-app mode and usage stats commands.
+//! Per-app mode commands.
 
 use tauri::State;
 
 use crate::error::AppError;
-use crate::storage::{PerAppModeRepository, StatsRepository};
+use crate::storage::PerAppModeRepository;
 use crate::AppStateInner;
 
 #[tauri::command]
@@ -34,10 +34,3 @@ pub fn get_active_app() -> Option<String> {
     crate::active_window::foreground_process_name()
 }
 
-#[tauri::command]
-pub fn get_usage_stats(
-    state: State<'_, AppStateInner>,
-    days: Option<u32>,
-) -> std::result::Result<Vec<crate::storage::DailyStats>, AppError> {
-    StatsRepository::new(&state.db).recent(days.unwrap_or(30))
-}

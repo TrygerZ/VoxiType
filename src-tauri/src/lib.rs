@@ -70,8 +70,6 @@ impl AppStateInner {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let handle = app.handle();
@@ -116,9 +114,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::start_recording,
             commands::stop_recording,
-            commands::cancel_recording,
-            commands::get_state,
-            commands::get_audio_level,
             commands::get_settings,
             commands::update_setting,
             commands::set_floating_widget_enabled,
@@ -131,7 +126,6 @@ pub fn run() {
             commands::export_history,
             commands::get_dictionary,
             commands::add_dictionary_word,
-            commands::update_dictionary_word,
             commands::set_dictionary_active,
             commands::delete_dictionary_word,
             commands::export_dictionary,
@@ -139,12 +133,10 @@ pub fn run() {
             commands::get_snippets,
             commands::add_snippet,
             commands::delete_snippet,
-            commands::get_usage_stats,
             commands::get_per_app_modes,
             commands::set_per_app_mode,
             commands::delete_per_app_mode,
             commands::get_active_app,
-            commands::translate,
             commands::set_hotkey,
             commands::get_microphones,
             commands::get_app_info,

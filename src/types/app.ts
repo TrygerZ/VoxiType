@@ -37,19 +37,6 @@ export interface DictionaryEntry {
   is_active: boolean;
 }
 
-export interface HistoryFilter {
-  mode?: string;
-  source_lang?: string;
-  pinned_only?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
-export interface DictFilter {
-  category?: string;
-  language?: string;
-}
-
 export interface AppInfo {
   name: string;
   version: string;
@@ -65,18 +52,6 @@ export interface Snippet {
   mode?: string | null;
   usage_count: number;
   is_active: boolean;
-}
-
-export interface UsageStats {
-  date: string;
-  transcription_count: number;
-  total_words: number;
-  total_duration_ms: number;
-  stt_local_count: number;
-  stt_cloud_count: number;
-  llm_local_count: number;
-  llm_cloud_count: number;
-  error_count: number;
 }
 
 export interface UpdateInfo {

@@ -60,7 +60,7 @@ export function AboutTab() {
             disabled={checking}
           >
             <RefreshCw
-              className={`h-3.5 w-3.5 ${checking ? "animate-[vx-spin_1s_linear_infinite]" : ""}`}
+              className={`h-3.5 w-3.5 ${checking ? "animate-spin" : ""}`}
             />
             {checking ? "Checking..." : "Check for updates"}
           </Button>

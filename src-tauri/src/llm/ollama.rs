@@ -25,12 +25,6 @@ impl OllamaFormatter {
         }
     }
 
-    /// Check whether the Ollama server is reachable.
-    pub async fn is_available(&self) -> bool {
-        let url = format!("{}/api/tags", self.config.endpoint.trim_end_matches('/'));
-        matches!(self.client.get(&url).send().await, Ok(r) if r.status().is_success())
-    }
-
     async fn generate(&self, system: &str, prompt: &str) -> Result<String> {
         let url = format!(
             "{}/api/generate",

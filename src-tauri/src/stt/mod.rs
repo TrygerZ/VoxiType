@@ -10,9 +10,7 @@ pub mod types;
 pub mod whisper_cpp;
 
 pub use factory::SttFactory;
-pub use types::{
-    GroqSttConfig, SttConfig, SttEngineKind, TranscriptionResult, WhisperCppConfig, WordTiming,
-};
+pub use types::{GroqSttConfig, SttConfig, SttEngineKind, TranscriptionResult, WhisperCppConfig};
 
 use async_trait::async_trait;
 

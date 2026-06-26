@@ -20,7 +20,7 @@ impl RuleBasedFormatter {
         }
     }
 
-    pub fn clean(&self, text: &str) -> String {
+    fn clean(&self, text: &str) -> String {
         let lowered_fillers: Vec<String> =
             self.filler_words.iter().map(|w| w.to_lowercase()).collect();
 

@@ -19,7 +19,7 @@ interface HistoryStore {
   togglePin: (id: string, pinned: boolean) => Promise<void>;
 }
 
-export const useHistoryStore = create<HistoryStore>((set, getState) => ({
+export const useHistoryStore = create<HistoryStore>((set) => ({
   items: [],
   loading: false,
   query: "",
@@ -65,6 +65,5 @@ export const useHistoryStore = create<HistoryStore>((set, getState) => ({
         i.id === id ? { ...i, is_pinned: pinned } : i,
       ),
     }));
-    void getState();
   },
 }));

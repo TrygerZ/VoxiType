@@ -125,7 +125,6 @@ impl SttEngine for GroqSttEngine {
             confidence,
             language: normalize_language(parsed.language.as_deref()),
             duration_ms: parsed.duration.map(|d| (d * 1000.0) as u64).unwrap_or(0),
-            words: Vec::new(),
             raw_response: Some(body),
         })
     }

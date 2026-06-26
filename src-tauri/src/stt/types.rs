@@ -2,15 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Per-word timing and confidence (when the engine provides it).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WordTiming {
-    pub word: String,
-    pub start: f64,
-    pub end: f64,
-    pub confidence: f32,
-}
-
 /// Result of a transcription request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionResult {
@@ -19,7 +10,6 @@ pub struct TranscriptionResult {
     /// Detected language: "id", "en", "unknown".
     pub language: String,
     pub duration_ms: u64,
-    pub words: Vec<WordTiming>,
     /// Raw provider response for debugging.
     pub raw_response: Option<String>,
 }
@@ -31,7 +21,6 @@ impl TranscriptionResult {
             confidence: 1.0,
             language: language.into(),
             duration_ms: 0,
-            words: Vec::new(),
             raw_response: None,
         }
     }

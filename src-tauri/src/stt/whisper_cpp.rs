@@ -89,7 +89,6 @@ impl SttEngine for WhisperCppEngine {
             confidence: 1.0,
             language: config.language.clone(),
             duration_ms: started.elapsed().as_millis() as u64,
-            words: Vec::new(),
             raw_response: None,
         })
     }
