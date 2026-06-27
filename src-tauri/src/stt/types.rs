@@ -26,11 +26,10 @@ impl TranscriptionResult {
     }
 }
 
-/// Engine selection.
+/// Engine selection — Groq only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SttEngineKind {
-    WhisperCpp,
     Groq,
 }
 
@@ -51,32 +50,6 @@ impl Default for SttConfig {
             language: "auto".to_string(),
             initial_prompt: None,
             temperature: 0.0,
-        }
-    }
-}
-
-/// Whisper.cpp specific configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WhisperCppConfig {
-    pub model: String,
-    pub model_path: String,
-    pub gpu_layers: u32,
-    pub threads: u32,
-    pub step_ms: u32,
-    pub length_ms: u32,
-    pub language: String,
-}
-
-impl Default for WhisperCppConfig {
-    fn default() -> Self {
-        Self {
-            model: "small".to_string(),
-            model_path: String::new(),
-            gpu_layers: 0,
-            threads: 4,
-            step_ms: 500,
-            length_ms: 5000,
-            language: "auto".to_string(),
         }
     }
 }

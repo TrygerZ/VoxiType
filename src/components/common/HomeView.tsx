@@ -99,7 +99,6 @@ export function HomeView() {
   const translationEnabled = (settings.translation_enabled as boolean) ?? false;
   const translationTarget = (settings.translation_target as string) ?? "en";
   const micDevice = (settings.mic_device as string) ?? "default";
-  const sttEngine = (settings.stt_engine as string) ?? "whisper_cpp";
   const hotkeyRaw = settings.hotkey as { key: string; mode: string } | undefined;
   const shortcutKey = hotkeyRaw?.key ?? "Ctrl+Space";
 
@@ -197,7 +196,7 @@ export function HomeView() {
             </span>
             <span className="flex items-center gap-1.5 rounded-full border border-vx-border/30 bg-vx-bg-tertiary/40 px-3 py-1">
               <Sparkles className="h-3.5 w-3.5 text-vx-accent" />
-              {sttEngine === "groq" ? "Groq Cloud" : "Local Whisper"}
+              Groq Cloud
             </span>
           </div>
         </div>

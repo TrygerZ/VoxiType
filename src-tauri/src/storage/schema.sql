@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     source_lang     TEXT NOT NULL DEFAULT 'id',
     target_lang     TEXT,
     mode            TEXT NOT NULL DEFAULT 'dictation',
-    stt_engine      TEXT NOT NULL DEFAULT 'whisper_cpp',
+    stt_engine      TEXT NOT NULL DEFAULT 'groq',
     stt_confidence  REAL,
     llm_engine      TEXT,
     duration_ms     INTEGER,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('hotkey', '{"key":"Ctrl+Space","mode":"ptt"}'),
-    ('stt_engine', '"whisper_cpp"'),
+    ('stt_engine', '"groq"'),
     ('stt_model', '"small"'),
     ('llm_engine', '"ollama"'),
     ('llm_model', '"qwen2.5:3b"'),

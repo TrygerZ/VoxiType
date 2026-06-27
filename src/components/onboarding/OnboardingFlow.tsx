@@ -18,8 +18,8 @@ const features = [
   },
   {
     icon: Cloud,
-    title: "Local or cloud",
-    body: "Whisper.cpp on-device, or free Groq cloud transcription.",
+    title: "Cloud transcription",
+    body: "Free Groq Whisper cloud transcription.",
   },
   {
     icon: Zap,

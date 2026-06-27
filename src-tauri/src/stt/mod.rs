@@ -1,16 +1,11 @@
-//! Speech-to-text engines.
-//!
-//! - [`groq_stt::GroqSttEngine`] — Groq Whisper REST (always available).
-//! - `whisper_cpp::WhisperCppEngine` — local whisper.cpp (feature `local-stt`).
+//! Speech-to-text engines — Groq Whisper REST.
 
 pub mod factory;
 pub mod groq_stt;
 pub mod types;
-#[cfg(feature = "local-stt")]
-pub mod whisper_cpp;
 
 pub use factory::SttFactory;
-pub use types::{GroqSttConfig, SttConfig, SttEngineKind, TranscriptionResult, WhisperCppConfig};
+pub use types::{GroqSttConfig, SttConfig, SttEngineKind, TranscriptionResult};
 
 use async_trait::async_trait;
 

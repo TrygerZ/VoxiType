@@ -1,6 +1,6 @@
 [package]
 name = "voxitype"
-version = "0.2.1"
+version = "0.3.0"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
@@ -55,13 +55,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
-# --- Optional native engines (require cmake + libclang to build) ---
-# Silero VAD via ONNX Runtime. `download-binaries` fetches a prebuilt ORT.
-ort = { version = "2.0.0-rc.10", optional = true, default-features = false, features = ["ndarray", "download-binaries"] }
-ndarray = { version = "0.16", optional = true }
-# whisper.cpp binding. Requires cmake + a C/C++ toolchain + libclang.
-whisper-rs = { version = "0.14", optional = true }
-
 # --- Windows-only: active window / process detection for per-app modes ---
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -73,12 +66,6 @@ windows = { version = "0.58", features = [
 
 [features]
 default = []
-# Enable local Silero VAD (needs cmake/libclang or prebuilt ORT binaries).
-local-vad = ["dep:ort", "dep:ndarray"]
-# Enable local Whisper.cpp STT (needs cmake + libclang).
-local-stt = ["dep:whisper-rs"]
-# Enable everything that compiles natively.
-full = ["local-vad", "local-stt"]
 
 [profile.release]
 codegen-units = 1

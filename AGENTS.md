@@ -9,9 +9,7 @@
 | State | Zustand 5.x | src/stores/ |
 | Storage | SQLite via rusqlite | src-tauri/src/storage/ |
 | Audio | cpal + rubato + ringbuf | src-tauri/src/audio/ |
-| VAD | Silero via ort (ONNX) | src-tauri/src/vad/ |
-| STT Local | Whisper.cpp via whisper-rs | src-tauri/src/stt/ |
-| STT Cloud | Groq Whisper (REST) | src-tauri/src/stt/ |
+| STT | Groq Whisper (REST) | src-tauri/src/stt/ |
 | LLM Local | Ollama Qwen2.5 3B | src-tauri/src/llm/ |
 | LLM Cloud | Groq Llama 3.1 8B | src-tauri/src/llm/ |
 | Text Injection | enigo + arboard | src-tauri/src/injection/ |

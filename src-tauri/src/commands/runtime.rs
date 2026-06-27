@@ -16,7 +16,7 @@ use crate::pipeline::{batch, PipelineOrchestrator};
 use crate::storage::{
     Database, DictionaryRepository, HistoryRepository, SettingsManager, TranscriptionEntry,
 };
-use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCppConfig};
+use crate::stt::{GroqSttConfig, SttConfig, SttFactory};
 use crate::util::MutexExt;
 use crate::{events, AppStateInner};
 
@@ -45,45 +45,24 @@ pub fn decrypted_api_key(state: &AppStateInner) -> String {
 }
 
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
-    let engine = string_setting(&state.db, "stt_engine", "whisper_cpp");
-    let kind = match engine.as_str() {
-        "groq" => SttEngineKind::Groq,
-        _ => SttEngineKind::WhisperCpp,
-    };
-
-    let model = string_setting(&state.db, "stt_model", "small");
     let api_key = decrypted_api_key(state);
-
-    let cache_key = match kind {
-        SttEngineKind::WhisperCpp => model.clone(),
-        SttEngineKind::Groq => api_key.clone(),
-    };
 
     let mut cache = state.stt_engine.lock_recover();
     if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
-        if *cached_kind == kind && *cached_key == cache_key {
+        if *cached_kind == crate::stt::SttEngineKind::Groq && *cached_key == api_key {
             return Ok(cached_engine.clone());
         }
     }
 
-    let whisper = WhisperCppConfig {
-        model: model.clone(),
-        model_path: state
-            .app_data_dir
-            .join("models")
-            .join(format!("ggml-{}.bin", model))
-            .to_string_lossy()
-            .into_owned(),
-        ..Default::default()
-    };
     let groq = GroqSttConfig {
         api_key,
         language: string_setting(&state.db, "stt_language", "auto"),
         ..Default::default()
     };
 
-    let new_engine = SttFactory::create(kind, whisper, groq)?;
-    *cache = Some((kind, cache_key, new_engine.clone()));
+    let kind = crate::stt::SttEngineKind::Groq;
+    let new_engine = SttFactory::create(kind, groq);
+    *cache = Some((kind, String::new(), new_engine.clone()));
     Ok(new_engine)
 }
 
@@ -163,6 +142,7 @@ pub fn csv_escape(s: &str) -> String {
 pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
     match name {
         "groq_whisper" | "groq_llm" => crate::storage::EngineKind::Cloud,
+        "ollama" => crate::storage::EngineKind::Local,
         _ => crate::storage::EngineKind::Local,
     }
 }
