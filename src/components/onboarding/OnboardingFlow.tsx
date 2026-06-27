@@ -43,6 +43,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const hotkeyRaw = settings.hotkey as { key: string; mode: string } | undefined;
   const [hotkeyKey, setHotkeyKey] = useState(hotkeyRaw?.key ?? "Ctrl+Space");
   const [hotkeyMode, setHotkeyMode] = useState(hotkeyRaw?.mode ?? "ptt");
+  const [hotkeyError, setHotkeyError] = useState("");
 
   const finish = async () => {
     await update("onboarding_completed", true);
@@ -66,8 +67,10 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     try {
       await setHotkey(hotkeyKey, hotkeyMode);
       await loadSettings();
-    } catch { /* ignore, user can change later */ }
-    setStep("complete");
+      setStep("complete");
+    } catch (e: unknown) {
+      setHotkeyError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const handleTestApi = async () => {
@@ -217,7 +220,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         <div className="flex w-full max-w-sm flex-col gap-3">
           <Input
-            label="API Key"
+            label={t("onboarding.step3.api_key_label")}
             type="password"
             placeholder="gsk_..."
             value={apiKey}
@@ -284,12 +287,12 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           <HotkeyRecorder value={hotkeyKey} onChange={setHotkeyKey} />
           <div>
             <label className="mb-1.5 block text-xs font-medium text-vx-text-secondary">
-              Mode
+              {t("onboarding.step4.mode_label")}
             </label>
             <Select
               options={[
-                { value: "ptt", label: "Push-to-Talk" },
-                { value: "toggle", label: "Toggle" },
+                { value: "ptt", label: t("onboarding.step4.mode_ptt") },
+                { value: "toggle", label: t("onboarding.step4.mode_toggle") },
               ]}
               value={hotkeyMode}
               onChange={(e) => setHotkeyMode(e.target.value)}
@@ -302,6 +305,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           {t("onboarding.step4.continue")}
           <ChevronRight className="h-4 w-4" />
         </Button>
+        {hotkeyError && (
+          <span className="text-xs text-vx-error">{hotkeyError}</span>
+        )}
       </div>
     );
   }
@@ -317,12 +323,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {t("onboarding.complete.title")}
       </h1>
       <p className="max-w-sm text-sm text-vx-text-dim">
-        Press{" "}
-        <kbd className="rounded-md bg-vx-bg-tertiary px-2 py-0.5 text-xs font-semibold text-vx-text-primary">
-          {currentHotkey}
-        </kbd>{" "}
-        to start dictating. Add your Groq API key in Settings for cloud
-        transcription.
+        {t("onboarding.complete.body", { key: currentHotkey })}
       </p>
       <Button variant="primary" size="lg" onClick={finish}>
         {t("onboarding.complete.start")}
