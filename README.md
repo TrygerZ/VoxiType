@@ -6,15 +6,6 @@ VoxiType is a free and open-source desktop application that converts your voice 
 
 ---
 
-## Download
-
-[![GitHub release](https://img.shields.io/github/v/release/voxitype/voxitype?label=latest&color=blue)](https://github.com/voxitype/voxitype/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/voxitype/voxitype/total?color=success)](https://github.com/voxitype/voxitype/releases)
-
-Grab the latest installer or portable build from the **[Releases page](https://github.com/voxitype/voxitype/releases/latest)** — no compilation needed.
-
----
-
 ## Features
 
 - **Real-time Speech-to-Text** — Speak, text appears instantly
