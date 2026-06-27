@@ -1,48 +1,92 @@
 import { useState } from "react";
-import { Mic, Check, ChevronRight, Zap, Cloud, Languages } from "lucide-react";
+import {
+  Mic, Check, ChevronRight, Zap, Cloud, Languages,
+  Key, Keyboard, Settings, ExternalLink, Loader2, XCircle,
+} from "lucide-react";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
 import { useT } from "../../lib/i18n";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { testGroqApi, setHotkey } from "../../lib/tauri";
+import { HotkeyRecorder } from "../settings/HotkeyRecorder";
 
-type Step = "welcome" | "complete";
+type Step = "welcome" | "quick_settings" | "groq_api" | "hotkey" | "complete";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
 const features = [
-  {
-    icon: Mic,
-    title: "Dictate anywhere",
-    body: "Press Ctrl+Space to dictate into any application.",
-  },
-  {
-    icon: Cloud,
-    title: "Cloud transcription",
-    body: "Free Groq Whisper cloud transcription.",
-  },
-  {
-    icon: Zap,
-    title: "Smart formatting",
-    body: "Dictation, Message, and Email modes clean up your text.",
-  },
-  {
-    icon: Languages,
-    title: "Bilingual",
-    body: "Indonesian and English with optional translation.",
-  },
+  { icon: Mic, title: "Dictate anywhere", body: "Press Ctrl+Space to dictate into any application." },
+  { icon: Cloud, title: "Cloud transcription", body: "Free Groq Whisper cloud transcription." },
+  { icon: Zap, title: "Smart formatting", body: "Dictation, Message, and Email modes clean up your text." },
+  { icon: Languages, title: "Bilingual", body: "Indonesian and English with optional translation." },
 ];
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const t = useT();
   const [step, setStep] = useState<Step>("welcome");
+  const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  const loadSettings = useSettingsStore((s) => s.load);
 
-  const finish = () => {
-    void update("onboarding_completed", true);
+  // --- Step 2: Quick Settings local state ---
+  const [lang, setLang] = useState((settings.language as string) ?? "id");
+  const [soundCues, setSoundCues] = useState((settings.sound_cues as boolean) ?? false);
+
+  // --- Step 3: Groq API local state ---
+  const [apiKey, setApiKey] = useState("");
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail" | "err">("idle");
+
+  // --- Step 4: Hotkey local state ---
+  const hotkeyRaw = settings.hotkey as { key: string; mode: string } | undefined;
+  const [hotkeyKey, setHotkeyKey] = useState(hotkeyRaw?.key ?? "Ctrl+Space");
+  const [hotkeyMode, setHotkeyMode] = useState(hotkeyRaw?.mode ?? "ptt");
+
+  const finish = async () => {
+    await update("onboarding_completed", true);
     onComplete();
   };
 
+  const saveQuickSettings = async () => {
+    await update("language", lang);
+    await update("sound_cues", soundCues);
+    setStep("groq_api");
+  };
+
+  const saveGroqApi = async () => {
+    if (apiKey.trim()) {
+      await update("groq_api_key", apiKey);
+    }
+    setStep("hotkey");
+  };
+
+  const saveHotkey = async () => {
+    try {
+      await setHotkey(hotkeyKey, hotkeyMode);
+      await loadSettings();
+    } catch { /* ignore, user can change later */ }
+    setStep("complete");
+  };
+
+  const handleTestApi = async () => {
+    if (!apiKey.trim()) return;
+    setTestStatus("testing");
+    try {
+      await testGroqApi(apiKey.trim());
+      setTestStatus("ok");
+    } catch (e: unknown) {
+      const msg = String(e).toLowerCase();
+      if (msg.includes("invalid") || msg.includes("401")) {
+        setTestStatus("fail");
+      } else {
+        setTestStatus("err");
+      }
+    }
+  };
+
+  // ============ Step 1: Welcome ============
   if (step === "welcome") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-10 p-10">
@@ -60,21 +104,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         <div className="grid w-full max-w-md grid-cols-2 gap-4">
           {features.map(({ icon: Icon, title, body }) => (
-            <div
-              key={title}
-              className="flex flex-col gap-1.5 rounded-xl bg-vx-bg-secondary p-5"
-            >
+            <div key={title} className="flex flex-col gap-1.5 rounded-xl bg-vx-bg-secondary p-5">
               <Icon className="h-5 w-5 text-vx-accent" />
               <span className="text-sm font-medium">{title}</span>
-              <span className="text-xs leading-relaxed text-vx-text-dim">
-                {body}
-              </span>
+              <span className="text-xs leading-relaxed text-vx-text-dim">{body}</span>
             </div>
           ))}
         </div>
 
         <div className="flex gap-3">
-          <Button variant="primary" size="lg" onClick={() => setStep("complete")}>
+          <Button variant="primary" size="lg" onClick={() => setStep("quick_settings")}>
             {t("onboarding.welcome.start")}
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -86,6 +125,189 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     );
   }
 
+  // ============ Step 2: Quick Settings ============
+  if (step === "quick_settings") {
+    return (
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
+          <Settings className="h-7 w-7" />
+        </span>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {t("onboarding.step2.title")}
+        </h1>
+        <p className="max-w-sm text-sm text-vx-text-dim">
+          {t("onboarding.step2.body")}
+        </p>
+
+        <div className="flex w-full max-w-sm flex-col gap-4 text-left">
+          {/* Language */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-vx-text-secondary">
+              {t("onboarding.ui_language")}
+            </label>
+            <Select
+              options={[
+                { value: "id", label: "Bahasa Indonesia" },
+                { value: "en", label: "English" },
+              ]}
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              className="w-full"
+            />
+          </div>
+
+          {/* Sound Cues */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-medium text-vx-text-secondary">
+                {t("onboarding.sound_cues")}
+              </span>
+              <p className="text-xs text-vx-text-dim">
+                {soundCues ? t("onboarding.sound_cues_on") : t("onboarding.sound_cues_off")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSoundCues((v) => !v)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                soundCues ? "bg-vx-accent" : "bg-vx-border-strong"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+                  soundCues ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <Button variant="primary" size="lg" onClick={saveQuickSettings}>
+          {t("onboarding.step2.continue")}
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  // ============ Step 3: Groq API Setup ============
+  if (step === "groq_api") {
+    return (
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
+          <Key className="h-7 w-7" />
+        </span>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {t("onboarding.step3.title")}
+        </h1>
+        <p className="max-w-sm text-sm text-vx-text-dim">
+          {t("onboarding.step3.body")}
+        </p>
+
+        {/* External link to Groq Console */}
+        <a
+          href="https://console.groq.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 text-sm text-vx-accent hover:underline"
+        >
+          <ExternalLink className="h-4 w-4" />
+          {t("onboarding.step3.get_key")}
+        </a>
+
+        <div className="flex w-full max-w-sm flex-col gap-3">
+          <Input
+            label="API Key"
+            type="password"
+            placeholder="gsk_..."
+            value={apiKey}
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              if (testStatus !== "idle") setTestStatus("idle");
+            }}
+          />
+
+          {/* Test connection button */}
+          <button
+            type="button"
+            onClick={handleTestApi}
+            disabled={!apiKey.trim() || testStatus === "testing"}
+            className="inline-flex items-center gap-2 text-xs text-vx-text-secondary hover:text-vx-text-primary disabled:opacity-40"
+          >
+            {testStatus === "testing" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : testStatus === "ok" ? (
+              <Check className="h-3.5 w-3.5 text-vx-success" />
+            ) : testStatus === "fail" || testStatus === "err" ? (
+              <XCircle className="h-3.5 w-3.5 text-vx-error" />
+            ) : null}
+            {testStatus === "testing"
+              ? t("onboarding.step3.testing")
+              : testStatus === "ok"
+                ? t("onboarding.step3.test_ok")
+                : testStatus === "fail"
+                  ? t("onboarding.step3.test_fail")
+                  : testStatus === "err"
+                    ? t("onboarding.step3.test_err")
+                    : t("onboarding.step3.test")}
+          </button>
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="primary" size="lg" onClick={saveGroqApi}>
+            {t("onboarding.step3.continue")}
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="lg" onClick={() => setStep("hotkey")}>
+            {t("onboarding.step3.skip")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ============ Step 4: Hotkey Setup ============
+  if (step === "hotkey") {
+    return (
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
+          <Keyboard className="h-7 w-7" />
+        </span>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {t("onboarding.step4.title")}
+        </h1>
+        <p className="max-w-sm text-sm text-vx-text-dim">
+          {t("onboarding.step4.body")}
+        </p>
+
+        <div className="flex w-full max-w-sm flex-col gap-4">
+          <HotkeyRecorder value={hotkeyKey} onChange={setHotkeyKey} />
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-vx-text-secondary">
+              Mode
+            </label>
+            <Select
+              options={[
+                { value: "ptt", label: "Push-to-Talk" },
+                { value: "toggle", label: "Toggle" },
+              ]}
+              value={hotkeyMode}
+              onChange={(e) => setHotkeyMode(e.target.value)}
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        <Button variant="primary" size="lg" onClick={saveHotkey}>
+          {t("onboarding.step4.continue")}
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  // ============ Step 5: Complete ============
+  const currentHotkey = hotkeyKey ?? "Ctrl+Space";
   return (
     <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-success/10 text-vx-success">
@@ -97,7 +319,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <p className="max-w-sm text-sm text-vx-text-dim">
         Press{" "}
         <kbd className="rounded-md bg-vx-bg-tertiary px-2 py-0.5 text-xs font-semibold text-vx-text-primary">
-          Ctrl+Space
+          {currentHotkey}
         </kbd>{" "}
         to start dictating. Add your Groq API key in Settings for cloud
         transcription.
