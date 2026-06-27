@@ -141,6 +141,7 @@ pub fn run() {
             commands::get_microphones,
             commands::get_app_info,
             commands::check_updates,
+            commands::test_groq_api,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -48,3 +48,25 @@ pub async fn check_updates<R: Runtime>(
     let current = app.package_info().version.to_string();
     crate::updater::check(&current).await
 }
+
+#[tauri::command]
+pub async fn test_groq_api(api_key: String) -> std::result::Result<(), AppError> {
+    let client = crate::util::http_client();
+    let resp = client
+        .get("https://api.groq.com/openai/v1/models")
+        .bearer_auth(&api_key)
+        .send()
+        .await
+        .map_err(|e| AppError::stt(format!("Network error: {e}")))?;
+
+    match resp.status() {
+        reqwest::StatusCode::OK => Ok(()),
+        reqwest::StatusCode::UNAUTHORIZED => Err(AppError::new(
+            crate::error::ErrorCode::SttApiKeyInvalid,
+            "Invalid Groq API key",
+        )),
+        status => Err(AppError::stt(format!(
+            "Groq API returned {status}"
+        ))),
+    }
+}
