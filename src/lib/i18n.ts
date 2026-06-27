@@ -176,7 +176,7 @@ const en: Dict = {
 
 const dictionaries: Record<string, Dict> = { id, en };
 
-let currentLang = "id";
+let currentLang = "en";
 
 export function setLanguage(lang: string) {
   if (dictionaries[lang]) currentLang = lang;

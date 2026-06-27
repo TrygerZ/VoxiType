@@ -35,6 +35,7 @@ rubato = "0.16"
 
 # --- HTTP client (Ollama, Groq) ---
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+open = "5"
 
 # --- Text injection ---
 enigo = "0.2"

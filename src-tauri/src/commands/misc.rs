@@ -50,6 +50,12 @@ pub async fn check_updates<R: Runtime>(
 }
 
 #[tauri::command]
+pub fn open_url(url: String) -> std::result::Result<(), AppError> {
+    open::that(&url).map_err(|e| AppError::stt(format!("Failed to open URL: {e}")))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn test_groq_api(api_key: String) -> std::result::Result<(), AppError> {
     let client = crate::util::http_client();
     let resp = client

@@ -111,7 +111,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('llm_engine', '"ollama"'),
     ('llm_model', '"qwen2.5:3b"'),
     ('active_mode', '"dictation"'),
-    ('language', '"id"'),
+    ('language', '"en"'),
     ('stt_language', '"auto"'),
     ('mic_device', '"default"'),
     ('auto_start', 'false'),

@@ -66,6 +66,10 @@ export const checkUpdates = () => invoke<UpdateInfo>("check_updates");
 export const setHotkey = (key: string, mode: string) =>
   invoke<void>("set_hotkey", { key, mode });
 
+// --- System Utilities ---
+export const openUrl = (url: string) =>
+  invoke<void>("open_url", { url });
+
 // --- Groq API ---
 export const testGroqApi = (key: string) =>
   invoke<void>("test_groq_api", { apiKey: key });

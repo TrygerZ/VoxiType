@@ -8,7 +8,7 @@ import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { useT } from "../../lib/i18n";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { testGroqApi, setHotkey } from "../../lib/tauri";
+import { testGroqApi, setHotkey, openUrl } from "../../lib/tauri";
 import { HotkeyRecorder } from "../settings/HotkeyRecorder";
 
 type Step = "welcome" | "quick_settings" | "groq_api" | "hotkey" | "complete";
@@ -229,21 +229,21 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           {t("onboarding.step3.body")}
         </p>
 
-        {/* External link to Groq Console */}
-        <a
-          href="https://console.groq.com"
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Groq Console link — uses backend open_url */}
+        <button
+          type="button"
+          onClick={() => void openUrl("https://console.groq.com")}
           className="inline-flex items-center gap-2 text-sm text-vx-accent hover:underline"
         >
           <ExternalLink className="h-4 w-4" />
           {t("onboarding.step3.get_key")}
-        </a>
+        </button>
 
         <div className="flex w-full max-w-sm flex-col gap-3">
           <Input
             label={t("onboarding.step3.api_key_label")}
             type="password"
+            showPasswordToggle
             placeholder="gsk_..."
             value={apiKey}
             onChange={(e) => {
@@ -257,14 +257,24 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             type="button"
             onClick={handleTestApi}
             disabled={!apiKey.trim() || testStatus === "testing"}
-            className="inline-flex items-center gap-2 text-xs text-vx-text-secondary hover:text-vx-text-primary disabled:opacity-40"
+            className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+              testStatus === "ok"
+                ? "border-green-500/40 bg-green-500/10 text-green-600"
+                : testStatus === "fail"
+                  ? "border-red-500/40 bg-red-500/10 text-red-600"
+                  : testStatus === "err"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-600"
+                    : testStatus === "testing"
+                      ? "border-vx-accent/40 bg-vx-accent/10 text-vx-accent"
+                      : "border-vx-border bg-vx-bg-tertiary/60 text-vx-text-secondary hover:border-vx-border-strong hover:text-vx-text-primary"
+            }`}
           >
             {testStatus === "testing" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : testStatus === "ok" ? (
-              <Check className="h-3.5 w-3.5 text-vx-success" />
+              <Check className="h-4 w-4" />
             ) : testStatus === "fail" || testStatus === "err" ? (
-              <XCircle className="h-3.5 w-3.5 text-vx-error" />
+              <XCircle className="h-4 w-4" />
             ) : null}
             {testStatus === "testing"
               ? t("onboarding.step3.testing")
