@@ -17,19 +17,20 @@ interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
-const features = [
-  { icon: Mic, title: "Dictate anywhere", body: "Press Ctrl+Space to dictate into any application." },
-  { icon: Cloud, title: "Cloud transcription", body: "Free Groq Whisper cloud transcription." },
-  { icon: Zap, title: "Smart formatting", body: "Dictation, Message, and Email modes clean up your text." },
-  { icon: Languages, title: "Bilingual", body: "Indonesian and English with optional translation." },
-];
-
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const t = useT();
   const [step, setStep] = useState<Step>("welcome");
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const loadSettings = useSettingsStore((s) => s.load);
+
+  // --- Step 1: Features (i18n'd inside component so t() is in scope) ---
+  const features = [
+    { icon: Mic, title: t("onboarding.feature.dictate.title"), body: t("onboarding.feature.dictate.body") },
+    { icon: Cloud, title: t("onboarding.feature.cloud.title"), body: t("onboarding.feature.cloud.body") },
+    { icon: Zap, title: t("onboarding.feature.formatting.title"), body: t("onboarding.feature.formatting.body") },
+    { icon: Languages, title: t("onboarding.feature.bilingual.title"), body: t("onboarding.feature.bilingual.body") },
+  ];
 
   // --- Step 2: Quick Settings local state ---
   const [lang, setLang] = useState((settings.language as string) ?? "id");
@@ -44,23 +45,38 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [hotkeyKey, setHotkeyKey] = useState(hotkeyRaw?.key ?? "Ctrl+Space");
   const [hotkeyMode, setHotkeyMode] = useState(hotkeyRaw?.mode ?? "ptt");
   const [hotkeyError, setHotkeyError] = useState("");
+  const [generalError, setGeneralError] = useState("");
 
   const finish = async () => {
-    await update("onboarding_completed", true);
-    onComplete();
+    try {
+      await update("onboarding_completed", true);
+      onComplete();
+    } catch (e: unknown) {
+      setGeneralError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const saveQuickSettings = async () => {
-    await update("language", lang);
-    await update("sound_cues", soundCues);
-    setStep("groq_api");
+    try {
+      setGeneralError("");
+      await update("language", lang);
+      await update("sound_cues", soundCues);
+      setStep("groq_api");
+    } catch (e: unknown) {
+      setGeneralError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const saveGroqApi = async () => {
-    if (apiKey.trim()) {
-      await update("groq_api_key", apiKey);
+    try {
+      setGeneralError("");
+      if (apiKey.trim()) {
+        await update("groq_api_key", apiKey);
+      }
+      setStep("hotkey");
+    } catch (e: unknown) {
+      setGeneralError(e instanceof Error ? e.message : String(e));
     }
-    setStep("hotkey");
   };
 
   const saveHotkey = async () => {
@@ -80,8 +96,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       await testGroqApi(apiKey.trim());
       setTestStatus("ok");
     } catch (e: unknown) {
-      const msg = String(e).toLowerCase();
-      if (msg.includes("invalid") || msg.includes("401")) {
+      const code = (e as { code?: string })?.code;
+      if (code === "SttApiKeyInvalid") {
         setTestStatus("fail");
       } else {
         setTestStatus("err");
@@ -124,6 +140,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             {t("onboarding.welcome.skip")}
           </Button>
         </div>
+        {generalError && (
+          <span className="text-xs text-vx-error">{generalError}</span>
+        )}
       </div>
     );
   }
@@ -189,6 +208,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           {t("onboarding.step2.continue")}
           <ChevronRight className="h-4 w-4" />
         </Button>
+        {generalError && (
+          <span className="text-xs text-vx-error">{generalError}</span>
+        )}
       </div>
     );
   }
@@ -265,6 +287,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             {t("onboarding.step3.skip")}
           </Button>
         </div>
+        {generalError && (
+          <span className="text-xs text-vx-error">{generalError}</span>
+        )}
       </div>
     );
   }
@@ -328,6 +353,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <Button variant="primary" size="lg" onClick={finish}>
         {t("onboarding.complete.start")}
       </Button>
+      {generalError && (
+        <span className="text-xs text-vx-error">{generalError}</span>
+      )}
     </div>
   );
 }
