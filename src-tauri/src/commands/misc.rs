@@ -71,8 +71,6 @@ pub async fn test_groq_api(api_key: String) -> std::result::Result<(), AppError>
             crate::error::ErrorCode::SttApiKeyInvalid,
             "Invalid Groq API key",
         )),
-        status => Err(AppError::stt(format!(
-            "Groq API returned {status}"
-        ))),
+        status => Err(AppError::stt(format!("Groq API returned {status}"))),
     }
 }

@@ -115,7 +115,6 @@ impl Resampler {
             .map_err(|e| AppError::audio(format!("Resample flush failed: {e}")))?;
         Ok(processed.into_iter().next().unwrap_or_default())
     }
-
 }
 
 #[cfg(test)]

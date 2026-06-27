@@ -33,4 +33,3 @@ pub fn delete_per_app_mode(
 pub fn get_active_app() -> Option<String> {
     crate::active_window::foreground_process_name()
 }
-
