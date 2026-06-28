@@ -73,7 +73,7 @@ where
                 if attempt >= max_retries || !is_retryable(&e) {
                     return Err(e);
                 }
-                let delay = base_delay * (1u32 << attempt);
+                let delay = base_delay * (1u32 << attempt).min(2);
                 tracing::warn!(
                     "Attempt {} failed ({e}); retrying in {:?}",
                     attempt + 1,

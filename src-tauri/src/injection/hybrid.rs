@@ -1,7 +1,6 @@
 //! Hybrid injector: clipboard paste with keystroke fallback.
 
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::{clipboard, keystroke, InjectResult, InjectStrategy, TextInjector};
 use crate::error::Result;
@@ -40,20 +39,11 @@ impl TextInjector for HybridInjector {
 
     fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
         let started = Instant::now();
-        let original = clipboard::read_text();
+        // ponytail: skip saving/restoring original clipboard. restoring creates race conditions
+        // and artificial delays (300ms sleep) trying to guess when the target app has consumed the paste.
 
         clipboard::write_text(text)?;
-
-        let paste_result = keystroke::paste();
-        // Give the target app time to consume the paste before restoring.
-        thread::sleep(Duration::from_millis(300));
-
-        // Restore clipboard regardless of paste success.
-        if let Some(orig) = original {
-            let _ = clipboard::write_text(&orig);
-        }
-
-        paste_result?;
+        keystroke::paste()?;
 
         Ok(InjectResult {
             success: true,

@@ -294,7 +294,7 @@ pub fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
         return Vec::new();
     }
     const THRESHOLD: f32 = 0.01;
-    let pad = (sample_rate as usize) / 20; // 50 ms
+    let pad = (sample_rate as usize) / 4; // 250 ms
 
     let first = samples.iter().position(|&s| s.abs() > THRESHOLD);
     let last = samples.iter().rposition(|&s| s.abs() > THRESHOLD);

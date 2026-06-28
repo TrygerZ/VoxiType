@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { FloatingDock, type View } from "./components/common/FloatingDock";
 import { HomeView } from "./components/common/HomeView";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -14,9 +15,11 @@ import { setLanguage } from "./lib/i18n";
 export default function App() {
   useTauriEvents();
 
-  const loadSettings = useSettingsStore((s) => s.load);
-  const loaded = useSettingsStore((s) => s.loaded);
-  const settings = useSettingsStore((s) => s.settings);
+  const { load: loadSettings, loaded, settings } = useSettingsStore(useShallow(s => ({
+    load: s.load,
+    loaded: s.loaded,
+    settings: s.settings
+  })));
   const [view, setView] = useState<View>("home");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
