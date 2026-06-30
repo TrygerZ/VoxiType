@@ -31,7 +31,8 @@ impl<'a> PerAppModeRepository<'a> {
     }
 
     pub fn upsert(&self, m: &PerAppMode) -> Result<()> {
-        let normalized = m.app_process_name
+        let normalized = m
+            .app_process_name
             .trim_end_matches(".exe")
             .trim_end_matches(".EXE")
             .to_lowercase();

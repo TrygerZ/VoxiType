@@ -41,7 +41,12 @@ impl OllamaFormatter {
             }
         });
 
-        let resp = self.client.post(&url).json(&body).send().await
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| {
                 if e.is_connect() {
                     AppError::llm_connection_refused(format!("Ollama connection refused: {e}"))

@@ -105,7 +105,9 @@ impl LlmFormatter for RuleBasedFormatter {
     }
 
     async fn translate(&self, text: &str, _source: &str, _target: &str) -> Result<String> {
-        tracing::warn!("Rule-based formatter does not support translation. Returning original text.");
+        tracing::warn!(
+            "Rule-based formatter does not support translation. Returning original text."
+        );
         Ok(text.to_string())
     }
 
