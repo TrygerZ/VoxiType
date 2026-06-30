@@ -74,8 +74,12 @@ impl SttEngine for GroqSttEngine {
                 let mut form = reqwest::multipart::Form::new()
                     .part("file", part)
                     .text("model", self.config.model.clone())
-                    .text("temperature", self.config.temperature.to_string())
+                    .text("temperature", config.temperature.to_string())
                     .text("response_format", "verbose_json");
+
+                if let Some(ref prompt) = config.initial_prompt {
+                    form = form.text("prompt", prompt.clone());
+                }
 
                 if let Some(lang) = language {
                     form = form.text("language", lang);

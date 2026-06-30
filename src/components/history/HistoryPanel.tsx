@@ -14,6 +14,14 @@ import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { PanelHeader } from "../common/PanelHeader";
 
+const formatDateTime = (dateStr?: string | null) => {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 export function HistoryPanel() {
   const items = useHistoryStore((s) => s.items);
   const loading = useHistoryStore((s) => s.loading);
@@ -177,7 +185,7 @@ export function HistoryPanel() {
                   </span>
                   <span>{item.word_count} words</span>
                   <span>&middot;</span>
-                  <span>{item.created_at?.slice(0, 16).replace("T", " ")}</span>
+                  <span>{formatDateTime(item.created_at)}</span>
                 </div>
               </div>
 

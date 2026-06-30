@@ -55,14 +55,39 @@ pub fn import_dictionary(
     data: String,
 ) -> std::result::Result<u32, AppError> {
     let mut entries: Vec<DictionaryEntry> = serde_json::from_str(&data)?;
-    let repo = DictionaryRepository::new(&state.db);
     let mut count = 0u32;
-    for entry in &mut entries {
-        if entry.id.is_empty() {
-            entry.id = Uuid::new_v4().to_string();
+    state.db.with_conn(|c| {
+        let tx = c.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO dictionary_entries
+                   (id, word, pronunciation, category, replacement, language, usage_count, is_active)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
+                 ON CONFLICT(word, language) DO UPDATE SET
+                   pronunciation=excluded.pronunciation,
+                   category=excluded.category,
+                   replacement=excluded.replacement,
+                   is_active=excluded.is_active,
+                   updated_at=datetime('now')",
+            )?;
+            for entry in &mut entries {
+                if entry.id.is_empty() {
+                    entry.id = Uuid::new_v4().to_string();
+                }
+                stmt.execute(rusqlite::params![
+                    entry.id,
+                    entry.word,
+                    entry.pronunciation,
+                    entry.category,
+                    entry.replacement,
+                    entry.language,
+                    entry.usage_count,
+                    entry.is_active as i32,
+                ])?;
+                count += 1;
+            }
         }
-        repo.upsert(entry)?;
-        count += 1;
-    }
-    Ok(count)
+        tx.commit()?;
+        Ok(count)
+    })
 }

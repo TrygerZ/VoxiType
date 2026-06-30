@@ -31,6 +31,10 @@ impl<'a> PerAppModeRepository<'a> {
     }
 
     pub fn upsert(&self, m: &PerAppMode) -> Result<()> {
+        let normalized = m.app_process_name
+            .trim_end_matches(".exe")
+            .trim_end_matches(".EXE")
+            .to_lowercase();
         self.db.with_conn(|c| {
             c.execute(
                 "INSERT INTO per_app_modes (app_process_name, app_display_name, mode_id)
@@ -38,7 +42,7 @@ impl<'a> PerAppModeRepository<'a> {
                  ON CONFLICT(app_process_name) DO UPDATE SET
                    app_display_name = excluded.app_display_name,
                    mode_id = excluded.mode_id",
-                rusqlite::params![m.app_process_name, m.app_display_name, m.mode_id],
+                rusqlite::params![normalized, m.app_display_name, m.mode_id],
             )?;
             Ok(())
         })

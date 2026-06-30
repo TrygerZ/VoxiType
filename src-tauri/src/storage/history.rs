@@ -194,15 +194,23 @@ impl<'a> HistoryRepository<'a> {
 
 /// Escape FTS5 special characters and operators from user input so queries
 /// containing AND/OR/NOT/NEAR/*/etc. are treated as literal text.
+/// Escape FTS5 special characters from user input and append `*` (prefix
+/// wildcard) to each word so that partial input matches completed words.
+///
+/// `"menye"` → `"menye"*` which matches `menyesuaikan`, `menyebutkan`, etc.
 fn sanitize_fts5(query: &str) -> String {
     // Characters that carry special meaning in FTS5 syntax.
     const SPECIAL: &[char] = &['"', '*', '^', '(', ')', ':', '~', ','];
     let cleaned: String = query.chars().filter(|c| !SPECIAL.contains(c)).collect();
-    // Quote the result so FTS5 can't interpret AND/OR/NOT/NEAR as operators.
-    if cleaned.is_empty() {
+    let words: Vec<&str> = cleaned.split_whitespace().collect();
+    if words.is_empty() {
         "\"\"".to_string()
     } else {
-        format!("\"{}\"", cleaned.replace('"', "\"\""))
+        words
+            .iter()
+            .map(|w| format!("\"{}\"*", w.replace('"', "\"\"")))
+            .collect::<Vec<String>>()
+            .join(" ")
     }
 }
 
@@ -263,6 +271,20 @@ mod tests {
         let found = repo.search("voxitype").unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "a");
+
+        // Multi-word search (non-consecutive) should find the matching entry
+        let found_multi = repo.search("halo voxitype").unwrap();
+        assert_eq!(found_multi.len(), 1);
+        assert_eq!(found_multi[0].id, "a");
+
+        // Prefix search — partial word matches completed words
+        let found_prefix = repo.search("voxi").unwrap();
+        assert_eq!(found_prefix.len(), 1);
+        assert_eq!(found_prefix[0].id, "a");
+
+        let found_prefix = repo.search("hal").unwrap();
+        assert_eq!(found_prefix.len(), 1);
+        assert_eq!(found_prefix[0].id, "a");
 
         repo.set_pinned("a", true).unwrap();
         let pinned = repo

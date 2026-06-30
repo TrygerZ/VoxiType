@@ -132,8 +132,6 @@ impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
             AppError::timeout(e.to_string())
-        } else if e.is_connect() {
-            AppError::llm_connection_refused(e.to_string())
         } else {
             AppError::network(e.to_string())
         }

@@ -51,7 +51,13 @@ pub fn clear_history(
 }
 
 #[tauri::command]
-pub fn re_inject(state: State<'_, AppStateInner>, id: String) -> std::result::Result<(), AppError> {
+pub fn re_inject(
+    window: tauri::Window,
+    state: State<'_, AppStateInner>,
+    id: String,
+) -> std::result::Result<(), AppError> {
+    let _ = window.minimize();
+    std::thread::sleep(std::time::Duration::from_millis(150));
     let entry = HistoryRepository::new(&state.db)
         .get(&id)?
         .ok_or_else(|| AppError::storage("History item not found"))?;

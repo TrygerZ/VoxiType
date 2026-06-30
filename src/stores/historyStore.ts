@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { debounce } from "../lib/debounce";
 import type { TranscriptionEntry } from "../types/app";
 import {
   clearHistory,
@@ -19,51 +20,67 @@ interface HistoryStore {
   togglePin: (id: string, pinned: boolean) => Promise<void>;
 }
 
-export const useHistoryStore = create<HistoryStore>((set) => ({
-  items: [],
-  loading: false,
-  query: "",
-
-  load: async () => {
-    set({ loading: true });
+export const useHistoryStore = create<HistoryStore>((set) => {
+  const doSearch = debounce(async (q: string) => {
     try {
-      const items = await getHistory();
-      set({ items, loading: false, query: "" });
-    } catch {
-      set({ loading: false });
-    }
-  },
-
-  search: async (query) => {
-    set({ query, loading: true });
-    try {
-      const items = query.trim()
-        ? await searchHistory(query)
+      const items = q.trim()
+        ? await searchHistory(q)
         : await getHistory();
-      set({ items, loading: false });
+      set({ items });
     } catch {
-      set({ loading: false });
+      // search failed silently — keep existing items
     }
-  },
+  }, 300);
 
-  remove: async (id) => {
-    await deleteHistory(id);
-    set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
-  },
+  return {
+    items: [],
+    loading: false,
+    query: "",
 
-  clear: async (keepPinned = true) => {
-    await clearHistory(keepPinned);
-    set((s) => ({
-      items: keepPinned ? s.items.filter((i) => i.is_pinned) : [],
-    }));
-  },
+    load: async () => {
+      set({ loading: true });
+      try {
+        const items = await getHistory();
+        set({ items, loading: false, query: "" });
+      } catch {
+        set({ loading: false });
+      }
+    },
 
-  togglePin: async (id, pinned) => {
-    await pinHistory(id, pinned);
-    set((s) => ({
-      items: s.items.map((i) =>
-        i.id === id ? { ...i, is_pinned: pinned } : i,
-      ),
-    }));
-  },
-}));
+    search: async (query) => {
+      set({ query });
+      if (!query.trim()) {
+        doSearch.cancel();
+        try {
+          const items = await getHistory();
+          set({ items });
+        } catch {
+          // silent
+        }
+        return;
+      }
+      doSearch(query);
+    },
+
+    remove: async (id) => {
+      await deleteHistory(id);
+      set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+    },
+
+    clear: async (keepPinned = true) => {
+      await clearHistory(keepPinned);
+      set((s) => ({
+        items: keepPinned ? s.items.filter((i) => i.is_pinned) : [],
+      }));
+    },
+
+    togglePin: async (id, pinned) => {
+      await pinHistory(id, pinned);
+      set((s) => ({
+        items: s.items.map((i) =>
+          i.id === id ? { ...i, is_pinned: pinned } : i,
+        ),
+      }));
+    },
+  };
+});

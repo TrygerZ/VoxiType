@@ -46,8 +46,15 @@ export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
     (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
       const combo = toAccelerator(e);
       if (combo) {
+        if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+          return;
+        }
         onChange(combo);
         setRecording(false);
       }

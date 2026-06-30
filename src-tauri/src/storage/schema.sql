@@ -5,7 +5,7 @@
 -- Transcription History
 CREATE TABLE IF NOT EXISTS transcriptions (
     id              TEXT PRIMARY KEY,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     text_raw        TEXT NOT NULL,
     text_formatted  TEXT NOT NULL,
     source_lang     TEXT NOT NULL DEFAULT 'id',
@@ -61,7 +61,7 @@ END;
 -- Custom Dictionary
 CREATE TABLE IF NOT EXISTS dictionary_entries (
     id              TEXT PRIMARY KEY,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
     word            TEXT NOT NULL,
     pronunciation   TEXT,
@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_dictionary_category
 -- Snippets (Voice Shortcuts)
 CREATE TABLE IF NOT EXISTS snippets (
     id              TEXT PRIMARY KEY,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
     name            TEXT NOT NULL,
     trigger_phrase  TEXT NOT NULL UNIQUE,

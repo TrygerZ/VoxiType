@@ -55,14 +55,14 @@ pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>
     }
 
     let groq = GroqSttConfig {
-        api_key,
+        api_key: api_key.clone(),
         language: string_setting(&state.db, "stt_language", "auto"),
         ..Default::default()
     };
 
     let kind = crate::stt::SttEngineKind::Groq;
     let new_engine = SttFactory::create(kind, groq);
-    *cache = Some((kind, String::new(), new_engine.clone()));
+    *cache = Some((kind, api_key.clone(), new_engine.clone()));
     Ok(new_engine)
 }
 
@@ -372,13 +372,23 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
 fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
         loop {
+            let mut stop = false;
             {
                 let state = app.state::<AppStateInner>();
                 if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Recording {
                     break;
                 }
+                if let Some(dur) = state.pipeline.recording_duration() {
+                    if dur.as_secs() > 300 {
+                        stop = true;
+                    }
+                }
                 let level = state.pipeline.audio_level();
                 events::emit_audio_level(&app, level);
+            }
+            if stop {
+                hotkey_stop(&app);
+                break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }

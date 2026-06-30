@@ -27,17 +27,41 @@
 | Util | Shared HTTP client + retry/backoff | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
 
+## Global Rules
+
+### RTK Proxy
+Always use **RTK (Rust Token Killer)** as a proxy for all terminal commands. RTK saves 60-90% tokens by filtering unnecessary output. Examples: `rtk cargo build`, `rtk git status`, `rtk npm run dev`. Use `rtk gain` to view token savings analytics.
+
+### Ask When Uncertain
+If you encounter unclear, ambiguous instructions or anything that needs clarification — **ASK ME FIRST**. Do not proceed on assumptions. This includes:
+- Incomplete or contradictory feature specifications
+- Design/architecture choices not explicitly stated
+- Priorities between implementation options
+- Whether a change is safe to make without side effects
+- Whether to use cloud vs local for a component
+
+### Clean Code
+All code in this project must follow **Clean Code** principles:
+- Clean, readable, and self-documenting code
+- Descriptive and meaningful variable, function, and type names
+- Small functions with a single responsibility
+- No magic numbers or string literals without named constants
+- Explicit and meaningful error handling, not panic
+- Comments only for "why", not "what" or "how"
+- DRY (Don't Repeat Yourself) — avoid code duplication
+- Testing as part of the definition of "done"
+
 ## Commands
 | Task | Command |
 |------|---------|
-| Dev server | npm run tauri dev |
-| Build app | npm run tauri build |
-| Rust tests | cargo test --no-default-features (in src-tauri/) |
-| Rust lint | cargo clippy --no-default-features -- -D warnings |
-| TypeScript check | npx tsc --noEmit |
-| Frontend build | npm run build |
-| Rust build check | cargo check (in src-tauri/) |
-| Rust single test | cargo test test_name |
+| Dev server | rtk npm run tauri dev |
+| Build app | rtk npm run tauri build |
+| Rust tests | rtk cargo test --no-default-features (in src-tauri/) |
+| Rust lint | rtk cargo clippy --no-default-features -- -D warnings |
+| TypeScript check | rtk npx tsc --noEmit |
+| Frontend build | rtk npm run build |
+| Rust build check | rtk cargo check (in src-tauri/) |
+| Rust single test | rtk cargo test test_name |
 
 ## IPC Commands (31 total across 7 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
@@ -141,6 +165,12 @@ mod.rs exports:
 - SQL: snake_case columns, plural tables
 - TypeScript strict - no `any`, prefer `unknown`
 - Frontend stores: Zustand with `create<T>((set, get) => ({...}))` pattern
+- Clean Code: functions ≤ 30 lines, one level of abstraction per function
+- Rust: use `Result<T, AppError>` over `unwrap()`/`expect()`, provide context with `.context()` or `.map_err()`
+- Rust: prefer `match` or `if let` over panic macros (`unwrap`, `expect`, `panic!`)
+- React: extract logic into custom hooks, keep components pure for UI
+- TypeScript: avoid `as` casting, use type guards or assertion functions
+- Imports: group by (standard library → third-party → internal), separate with blank lines
 
 ## Cloud APIs (Free Tier)
 | Endpoint | Model | API Key |

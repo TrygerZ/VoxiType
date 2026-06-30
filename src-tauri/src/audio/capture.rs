@@ -305,7 +305,7 @@ pub fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
             let end = (l + pad).min(samples.len());
             samples[start..end].to_vec()
         }
-        _ => samples.to_vec(),
+        _ => Vec::new(),
     }
 }
 
@@ -328,7 +328,7 @@ mod tests {
     fn trim_silence_handles_all_silent() {
         let samples = vec![0.0f32; 100];
         let trimmed = trim_silence(&samples, 16_000);
-        assert_eq!(trimmed.len(), samples.len());
+        assert!(trimmed.is_empty());
     }
 
     #[test]

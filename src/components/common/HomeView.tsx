@@ -364,10 +364,15 @@ export function HomeView() {
                         )}
                       </span>
                       <span>
-                        {new Date(item.created_at).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {(() => {
+                          if (!item.created_at) return "";
+                          const d = new Date(item.created_at);
+                          if (isNaN(d.getTime())) return "";
+                          return d.toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                        })()}
                       </span>
                     </div>
                   </div>
