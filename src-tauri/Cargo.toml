@@ -1,6 +1,6 @@
 [package]
 name = "voxitype"
-version = "0.3.0"
+version = "0.3.1"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
