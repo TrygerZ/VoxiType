@@ -1,6 +1,6 @@
 ﻿# VoxiType
 
-**Version 0.3.0** — Open-source voice-to-text for everyone.
+**Version 0.3.1** — Open-source voice-to-text for everyone.
 
 VoxiType is a free and open-source desktop application that converts your voice into text in real-time. Designed for productivity — just press a key, speak, and text appears instantly in any application.
 
@@ -34,7 +34,7 @@ VoxiType is a free and open-source desktop application that converts your voice 
 | State | Zustand 5.x |
 | Backend | Rust 1.85+ |
 | Storage | SQLite (via rusqlite, bundled) |
-| Audio | cpal + rubato + ringbuf |
+| Audio | cpal + rubato |
 | STT | Groq Whisper API (sole engine) |
 | LLM Local | Ollama (Qwen2.5 3B, fallback rule-based) |
 | LLM Cloud | Groq Llama 3.1 8B |
