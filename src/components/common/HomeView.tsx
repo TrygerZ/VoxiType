@@ -21,15 +21,10 @@ import ScrollTextIcon from "../../assets/icons/scroll-text.svg?react";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useHistoryStore } from "../../stores/historyStore";
+import { useStatsStore } from "../../stores/statsStore";
 import { useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
 import { Waveform } from "../floating-widget/Waveform";
-
-interface UsageStats {
-  total_words: number;
-  total_duration_ms: number;
-  total_sessions: number;
-}
 
 export function HomeView() {
   const t = useT();
@@ -51,16 +46,21 @@ export function HomeView() {
   const historyItems = useHistoryStore((s) => s.items);
   const togglePin = useHistoryStore((s) => s.togglePin);
 
+  // Stats store — lifetime totals aggregated server-side (uncapped)
+  const totals = useStatsStore((s) => s.totals);
+  const loadStats = useStatsStore((s) => s.load);
+
   // Local UI states
   const [greeting, setGreeting] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [injectedId, setInjectedId] = useState<string | null>(null);
 
-  // Load history and settings on mount
+  // Load history, settings, and lifetime stats on mount
   useEffect(() => {
     void loadHistory();
     void loadSettings();
-  }, [loadHistory, loadSettings]);
+    void loadStats();
+  }, [loadHistory, loadSettings, loadStats]);
   useEffect(() => {
     const hrs = new Date().getHours();
     if (hrs < 12) {
@@ -115,34 +115,53 @@ export function HomeView() {
     return historyItems.slice(0, 3);
   }, [historyItems]);
 
-  // Compute stats purely from historyItems (persisted in SQLite, survives restarts)
-  const computedStats: UsageStats = useMemo(() => {
-    let words = 0, dur = 0, sessions = 0;
-    for (const item of historyItems) {
-      words += item.word_count;
-      dur += item.duration_ms ?? 0;
-      sessions++;
-    }
-    return { total_words: words, total_duration_ms: dur, total_sessions: sessions };
-  }, [historyItems]);
-
-  // Per-session avg WPM over last 20 sessions — actually moves, unlike cumulative ratio
+  // Per-session avg WPM over the 20 most-recent sessions. historyItems is
+  // newest-first (ORDER BY created_at DESC), so the most recent sessions are at
+  // the HEAD — use slice(0, 20), not slice(-20) which would pick the oldest 20.
+  // Implausibly fast sessions (very short blips) are discarded so a stray
+  // 1-word / 40ms clip can't skew the average toward absurd values.
+  const MAX_PLAUSIBLE_WPM = 400;
   const avgWpm = useMemo(() => {
-    const valid = historyItems.filter(
-      (i) => i.word_count > 0 && (i.duration_ms ?? 0) > 0
-    ).slice(-20);
-    if (valid.length === 0) return 0;
-    const sum = valid.reduce((a, i) => a + i.word_count / ((i.duration_ms ?? 0) / 60000), 0);
-    return Math.round(sum / valid.length);
+    const rates: number[] = [];
+    for (const i of historyItems) {
+      const dur = i.duration_ms ?? 0;
+      if (i.word_count <= 0 || dur <= 0) continue;
+      const wpm = i.word_count / (dur / 60000);
+      if (wpm > MAX_PLAUSIBLE_WPM) continue;
+      rates.push(wpm);
+      if (rates.length >= 20) break;
+    }
+    if (rates.length === 0) return 0;
+    const sum = rates.reduce((a, w) => a + w, 0);
+    return Math.round(sum / rates.length);
   }, [historyItems]);
 
-  const formatMsDuration = (ms: number) => {
+  const hasStats = totals.total_sessions > 0;
+
+  // Split a duration into a numeric value + unit so the value can carry the
+  // display weight while the unit stays quiet — reads more like a designed
+  // metric than a single "1h 20m" string.
+  const splitDuration = (ms: number): { value: string; unit: string } => {
     const totalSec = Math.floor(ms / 1000);
-    const hrs = Math.floor(totalSec / 3600);
-    const mins = Math.floor((totalSec % 3600) / 60);
-    if (hrs > 0) return `${hrs}h ${mins}m`;
-    return `${mins}m`;
+    if (totalSec < 60) return { value: String(totalSec), unit: "sec" };
+    const totalMin = Math.floor(totalSec / 60);
+    if (totalMin < 60) return { value: String(totalMin), unit: totalMin === 1 ? "min" : "mins" };
+    const hrs = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    return { value: mins > 0 ? `${hrs}.${Math.round((mins / 60) * 10)}` : String(hrs), unit: hrs === 1 && mins === 0 ? "hr" : "hrs" };
   };
+
+  // Condense large counts (12,400 → 12.4k) so the ledger stays visually calm.
+  // Boundaries are chosen so a value never rounds into the next unit's range
+  // (e.g. 999,999 shows "1.0M", not "1000k").
+  const formatCompact = (n: number): string => {
+    if (n < 1000) return n.toLocaleString();
+    if (n < 9_950) return `${(n / 1000).toFixed(1)}k`;
+    if (n < 999_500) return `${Math.round(n / 1000)}k`;
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  };
+
+  const recordingTime = splitDuration(totals.total_duration_ms);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
@@ -242,70 +261,85 @@ export function HomeView() {
         {/* Right Column: Controls & Clipboard history */}
         <div className="flex flex-col gap-6 lg:col-span-7">
 
-          {/* Usage Stats Card */}
-          <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
-              <BarChart3 className="h-4 w-4 text-vx-accent" />
-              {t("home.usage_stats")}
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              {/* WPM — Half Ring Gauge */}
-              <div className="group flex flex-col items-center rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40">
-                <WpmHalfRing value={avgWpm} />
-                <div className="mt-1 w-full border-t border-vx-divider pt-2 text-center">
-                  <span className="text-xs text-vx-text-dim">{t("home.avg_wpm")}</span>
-                </div>
-              </div>
-              {/* Recording Time */}
-              <div className="group rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40 border-l-2 border-l-vx-accent/50">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-vx-accent/20 to-vx-accent/5 text-vx-accent">
-                    <HourglassIcon className="h-6 w-6" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                      {formatMsDuration(computedStats.total_duration_ms)}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 border-t border-vx-divider pt-2">
-                  <span className="text-xs text-vx-text-dim">{t("home.total_time")}</span>
-                </div>
-              </div>
-              {/* Tokens Used */}
-              <div className="group rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40 border-l-2 border-l-vx-accent/50">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-vx-accent/20 to-vx-accent/5 text-vx-accent">
-                    <SparkleIcon className="h-6 w-6" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                      {/* ponytail: word_count * 1.3 heuristic — replace with real token counts when LLM captures usage */}
-                      {Math.round(computedStats.total_words * 1.3).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 border-t border-vx-divider pt-2">
-                  <span className="text-xs text-vx-text-dim">{t("home.tokens_used")}</span>
-                </div>
-              </div>
-              {/* Total Words */}
-              <div className="group rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40 border-l-2 border-l-vx-accent/50">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-vx-accent/20 to-vx-accent/5 text-vx-accent">
-                    <ScrollTextIcon className="h-6 w-6" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                      {computedStats.total_words.toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 border-t border-vx-divider pt-2">
-                  <span className="text-xs text-vx-text-dim">{t("home.total_words")}</span>
-                </div>
-              </div>
+          {/* Usage Stats Card — editorial ledger: one hero gauge + a hairline
+              stat column, instead of four identical badge tiles. */}
+          <div className="group/stats relative overflow-hidden rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">
+            {/* Soft corner wash — atmosphere without a colored glow */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-vx-accent/[0.06] blur-3xl"
+            />
+
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
+                <BarChart3 className="h-4 w-4 text-vx-accent" />
+                {t("home.usage_stats")}
+              </h3>
+              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-vx-text-dim">
+                {t("home.lifetime")}
+              </span>
             </div>
+
+            <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,0.9fr)_1px_minmax(0,1.1fr)]">
+              {/* Hero — WPM gauge */}
+              <div className="flex flex-col items-center justify-center">
+                <WpmHalfRing value={avgWpm} />
+                <span className="mt-1 text-[11px] uppercase tracking-[0.18em] text-vx-text-dim">
+                  {t("home.words_per_minute")}
+                </span>
+              </div>
+
+              {/* Vertical hairline (only on the 3-col layout) */}
+              <div aria-hidden className="hidden bg-vx-divider sm:block" />
+
+              {/* Stat ledger — hairline-separated rows, tabular figures */}
+              <dl className="flex flex-col justify-center divide-y divide-vx-divider">
+                {[
+                  {
+                    key: "time",
+                    Icon: HourglassIcon,
+                    label: t("home.total_time"),
+                    value: recordingTime.value,
+                    unit: recordingTime.unit,
+                  },
+                  {
+                    key: "words",
+                    Icon: ScrollTextIcon,
+                    label: t("home.total_words"),
+                    value: formatCompact(totals.total_words),
+                    unit: "",
+                  },
+                  {
+                    key: "sessions",
+                    Icon: SparkleIcon,
+                    label: t("home.sessions"),
+                    value: formatCompact(totals.total_sessions),
+                    unit: "",
+                  },
+                ].map(({ key, Icon, label, value, unit }) => (
+                  <div key={key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-vx-border/40 bg-vx-bg-tertiary/40 text-vx-accent transition-colors duration-300 group-hover/stats:border-vx-accent/40">
+                      <Icon className="h-[18px] w-[18px]" />
+                    </div>
+                    <dt className="flex-1 text-xs text-vx-text-secondary">{label}</dt>
+                    <dd className="flex items-baseline gap-1">
+                      <span className="text-xl font-semibold tabular-nums tracking-tight text-vx-text-primary">
+                        {value}
+                      </span>
+                      {unit && (
+                        <span className="text-[11px] font-medium text-vx-text-dim">{unit}</span>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            {!hasStats && (
+              <p className="mt-5 border-t border-vx-divider pt-4 text-center text-xs text-vx-text-dim">
+                {t("home.stats_empty")}
+              </p>
+            )}
           </div>
 
           {/* Quick Settings Card */}

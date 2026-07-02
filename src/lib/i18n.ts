@@ -91,6 +91,10 @@ const id: Dict = {
   "home.total_time": "Waktu Rekaman",
   "home.avg_wpm": "Rata-rata WPM",
   "home.tokens_used": "Token Digunakan",
+  "home.sessions": "Sesi",
+  "home.words_per_minute": "Kata / menit",
+  "home.stats_empty": "Mulai mendikte untuk melihat statistikmu",
+  "home.lifetime": "Sepanjang waktu",
 };
 
 const en: Dict = {
@@ -182,6 +186,10 @@ const en: Dict = {
   "home.total_time": "Recording Time",
   "home.avg_wpm": "Avg WPM",
   "home.tokens_used": "Tokens Used",
+  "home.sessions": "Sessions",
+  "home.words_per_minute": "Words / minute",
+  "home.stats_empty": "Start dictating to see your stats",
+  "home.lifetime": "All time",
 };
 
 const dictionaries: Record<string, Dict> = { id, en };

@@ -13,7 +13,7 @@ pub mod stats;
 
 pub use db::Database;
 pub use dictionary::{apply_replacements, DictFilter, DictionaryEntry, DictionaryRepository};
-pub use history::{HistoryFilter, HistoryRepository, TranscriptionEntry};
+pub use history::{HistoryFilter, HistoryRepository, HistoryTotals, TranscriptionEntry};
 pub use per_app_modes::{PerAppMode, PerAppModeRepository};
 pub use settings::SettingsManager;
 pub use snippets::{expand_snippets, Snippet, SnippetRepository};

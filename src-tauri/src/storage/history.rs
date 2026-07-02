@@ -53,6 +53,14 @@ pub struct HistoryFilter {
     pub offset: Option<u32>,
 }
 
+/// Lifetime usage totals aggregated over the whole transcriptions table.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HistoryTotals {
+    pub total_sessions: i64,
+    pub total_words: i64,
+    pub total_duration_ms: i64,
+}
+
 pub struct HistoryRepository<'a> {
     db: &'a Database,
 }
@@ -125,6 +133,30 @@ impl<'a> HistoryRepository<'a> {
             }
             let rows = stmt.query_map(params.as_slice(), row_to_entry)?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+    }
+
+    /// Lifetime totals aggregated over the whole table — independent of the
+    /// list `LIMIT` used for the paginated history view. Powers the usage
+    /// dashboard so totals never silently cap or shrink as old rows scroll
+    /// past the 100-row list window.
+    pub fn totals(&self) -> Result<HistoryTotals> {
+        self.db.with_conn(|c| {
+            let row = c.query_row(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(word_count), 0),
+                        COALESCE(SUM(duration_ms), 0)
+                 FROM transcriptions",
+                [],
+                |r| {
+                    Ok(HistoryTotals {
+                        total_sessions: r.get(0)?,
+                        total_words: r.get(1)?,
+                        total_duration_ms: r.get(2)?,
+                    })
+                },
+            )?;
+            Ok(row)
         })
     }
 
@@ -297,6 +329,27 @@ mod tests {
 
         repo.delete("b").unwrap();
         assert_eq!(repo.list(&HistoryFilter::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn totals_aggregate_over_full_table() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = HistoryRepository::new(&db);
+
+        // Empty table → all zeros (COALESCE guards the NULL SUM).
+        let empty = repo.totals().unwrap();
+        assert_eq!(empty.total_sessions, 0);
+        assert_eq!(empty.total_words, 0);
+        assert_eq!(empty.total_duration_ms, 0);
+
+        // sample() has word_count = split_whitespace().count(), duration_ms = 1000.
+        repo.insert(&sample("a", "satu dua tiga")).unwrap(); // 3 words
+        repo.insert(&sample("b", "empat lima")).unwrap(); // 2 words
+
+        let t = repo.totals().unwrap();
+        assert_eq!(t.total_sessions, 2);
+        assert_eq!(t.total_words, 5);
+        assert_eq!(t.total_duration_ms, 2000);
     }
 
     #[test]

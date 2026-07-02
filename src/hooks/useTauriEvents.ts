@@ -3,6 +3,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { onEvent } from "../lib/tauri";
 import { useAppStore } from "../stores/appStore";
 import { useHistoryStore } from "../stores/historyStore";
+import { useStatsStore } from "../stores/statsStore";
 import type {
   AudioLevelEvent,
   StateChangedEvent,
@@ -21,6 +22,7 @@ export function useTauriEvents() {
   const setResult = useAppStore((s) => s.setResult);
   const setError = useAppStore((s) => s.setError);
   const reloadHistory = useHistoryStore((s) => s.load);
+  const reloadStats = useStatsStore((s) => s.load);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -56,6 +58,7 @@ export function useTauriEvents() {
       onEvent<TranscriptionCompleteEvent>("transcription_complete", (p) => {
         setResult(p.text, p.word_count);
         void reloadHistory();
+        void reloadStats();
       }),
     );
     unlisteners.push(
@@ -68,5 +71,5 @@ export function useTauriEvents() {
       clearTimer();
       unlisteners.forEach((u) => void u.then((fn) => fn()));
     };
-  }, [setState, setAudioLevel, setDuration, setResult, setError, reloadHistory]);
+  }, [setState, setAudioLevel, setDuration, setResult, setError, reloadHistory, reloadStats]);
 }
