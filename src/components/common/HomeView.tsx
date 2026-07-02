@@ -13,10 +13,11 @@ import {
   ArrowRight,
   Volume2,
   BarChart3,
-  Timer,
-  Brain,
-  Activity,
 } from "lucide-react";
+import { WpmHalfRing } from "./WpmHalfRing";
+import HourglassIcon from "../../assets/icons/hourglass.svg?react";
+import SparkleIcon from "../../assets/icons/sparkle.svg?react";
+import ScrollTextIcon from "../../assets/icons/scroll-text.svg?react";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useHistoryStore } from "../../stores/historyStore";
@@ -125,17 +126,22 @@ export function HomeView() {
     return { total_words: words, total_duration_ms: dur, total_sessions: sessions };
   }, [historyItems]);
 
+  // Per-session avg WPM over last 20 sessions — actually moves, unlike cumulative ratio
+  const avgWpm = useMemo(() => {
+    const valid = historyItems.filter(
+      (i) => i.word_count > 0 && (i.duration_ms ?? 0) > 0
+    ).slice(-20);
+    if (valid.length === 0) return 0;
+    const sum = valid.reduce((a, i) => a + i.word_count / ((i.duration_ms ?? 0) / 60000), 0);
+    return Math.round(sum / valid.length);
+  }, [historyItems]);
+
   const formatMsDuration = (ms: number) => {
     const totalSec = Math.floor(ms / 1000);
     const hrs = Math.floor(totalSec / 3600);
     const mins = Math.floor((totalSec % 3600) / 60);
     if (hrs > 0) return `${hrs}h ${mins}m`;
     return `${mins}m`;
-  };
-
-  const calcWpm = (words: number, ms: number) => {
-    if (ms <= 0 || words <= 0) return 0;
-    return Math.round(words / (ms / 60000));
   };
 
   return (
@@ -243,47 +249,62 @@ export function HomeView() {
               {t("home.usage_stats")}
             </h3>
             <div className="grid grid-cols-2 gap-4">
-                {/* WPM */}
-                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
-                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
-                    <Activity className="h-5 w-5" />
-                  </div>
-                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                    {calcWpm(computedStats.total_words, computedStats.total_duration_ms)}
-                  </div>
-                  <div className="text-xs text-vx-text-dim">{t("home.avg_wpm")}</div>
+              {/* WPM — Half Ring Gauge */}
+              <div className="group flex flex-col items-center rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40">
+                <WpmHalfRing value={avgWpm} />
+                <div className="mt-1 w-full border-t border-vx-divider pt-2 text-center">
+                  <span className="text-xs text-vx-text-dim">{t("home.avg_wpm")}</span>
                 </div>
-                {/* Recording Time */}
-                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
-                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
-                    <Timer className="h-5 w-5" />
+              </div>
+              {/* Recording Time */}
+              <div className="group rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40 border-l-2 border-l-vx-accent/50">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-vx-accent/20 to-vx-accent/5 text-vx-accent">
+                    <HourglassIcon className="h-6 w-6" />
                   </div>
-                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                    {formatMsDuration(computedStats.total_duration_ms)}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                      {formatMsDuration(computedStats.total_duration_ms)}
+                    </div>
                   </div>
-                  <div className="text-xs text-vx-text-dim">{t("home.total_time")}</div>
                 </div>
-                {/* Tokens Used */}
-                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
-                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
-                    <Brain className="h-5 w-5" />
-                  </div>
-                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                    {/* ponytail: word_count * 1.3 heuristic — replace with real token counts when LLM captures usage */}
-                    {Math.round(computedStats.total_words * 1.3).toLocaleString()}
-                  </div>
-                  <div className="text-xs text-vx-text-dim">{t("home.tokens_used")}</div>
+                <div className="mt-3 border-t border-vx-divider pt-2">
+                  <span className="text-xs text-vx-text-dim">{t("home.total_time")}</span>
                 </div>
-                {/* Total Words */}
-                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
-                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
-                    <FileText className="h-5 w-5" />
+              </div>
+              {/* Tokens Used */}
+              <div className="group rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40 border-l-2 border-l-vx-accent/50">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-vx-accent/20 to-vx-accent/5 text-vx-accent">
+                    <SparkleIcon className="h-6 w-6" />
                   </div>
-                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
-                    {computedStats.total_words.toLocaleString()}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                      {/* ponytail: word_count * 1.3 heuristic — replace with real token counts when LLM captures usage */}
+                      {Math.round(computedStats.total_words * 1.3).toLocaleString()}
+                    </div>
                   </div>
-                  <div className="text-xs text-vx-text-dim">{t("home.total_words")}</div>
                 </div>
+                <div className="mt-3 border-t border-vx-divider pt-2">
+                  <span className="text-xs text-vx-text-dim">{t("home.tokens_used")}</span>
+                </div>
+              </div>
+              {/* Total Words */}
+              <div className="group rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 min-h-[170px] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-vx-md hover:border-vx-accent/40 border-l-2 border-l-vx-accent/50">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-vx-accent/20 to-vx-accent/5 text-vx-accent">
+                    <ScrollTextIcon className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                      {computedStats.total_words.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 border-t border-vx-divider pt-2">
+                  <span className="text-xs text-vx-text-dim">{t("home.total_words")}</span>
+                </div>
+              </div>
             </div>
           </div>
 
