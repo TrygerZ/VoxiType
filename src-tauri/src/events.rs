@@ -15,6 +15,7 @@ pub struct TranscriptionComplete {
     pub id: String,
     pub text: String,
     pub word_count: u32,
+    pub duration_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +39,7 @@ pub fn emit_transcription_complete<R: Runtime>(
     id: &str,
     text: &str,
     word_count: u32,
+    duration_ms: i64,
 ) {
     let _ = app.emit(
         "transcription_complete",
@@ -45,6 +47,7 @@ pub fn emit_transcription_complete<R: Runtime>(
             id: id.to_string(),
             text: text.to_string(),
             word_count,
+            duration_ms,
         },
     );
 }

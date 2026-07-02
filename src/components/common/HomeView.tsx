@@ -12,6 +12,10 @@ import {
   FileText,
   ArrowRight,
   Volume2,
+  BarChart3,
+  Timer,
+  Brain,
+  Activity,
 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -19,6 +23,12 @@ import { useHistoryStore } from "../../stores/historyStore";
 import { useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
 import { Waveform } from "../floating-widget/Waveform";
+
+interface UsageStats {
+  total_words: number;
+  total_duration_ms: number;
+  total_sessions: number;
+}
 
 export function HomeView() {
   const t = useT();
@@ -50,8 +60,6 @@ export function HomeView() {
     void loadHistory();
     void loadSettings();
   }, [loadHistory, loadSettings]);
-
-  // Set greeting according to local time
   useEffect(() => {
     const hrs = new Date().getHours();
     if (hrs < 12) {
@@ -106,6 +114,30 @@ export function HomeView() {
     return historyItems.slice(0, 3);
   }, [historyItems]);
 
+  // Compute stats purely from historyItems (persisted in SQLite, survives restarts)
+  const computedStats: UsageStats = useMemo(() => {
+    let words = 0, dur = 0, sessions = 0;
+    for (const item of historyItems) {
+      words += item.word_count;
+      dur += item.duration_ms ?? 0;
+      sessions++;
+    }
+    return { total_words: words, total_duration_ms: dur, total_sessions: sessions };
+  }, [historyItems]);
+
+  const formatMsDuration = (ms: number) => {
+    const totalSec = Math.floor(ms / 1000);
+    const hrs = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m`;
+  };
+
+  const calcWpm = (words: number, ms: number) => {
+    if (ms <= 0 || words <= 0) return 0;
+    return Math.round(words / (ms / 60000));
+  };
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       {/* Grid Dashboard */}
@@ -130,17 +162,17 @@ export function HomeView() {
           >
             {/* Outer soft state ring — calm tint, no colored bloom */}
             <span
-              className={`absolute inset-0 rounded-full transition-all duration-700 ease-out ${
+              className={`absolute inset-0 rounded-full transition-all duration-300 ease-out ${
                 isRecording
-                  ? "bg-vx-accent/10 scale-105 blur-md animate-pulse"
+                  ? "bg-vx-accent/10 scale-105 blur-md"
                   : isProcessing
-                    ? "bg-vx-success/10 scale-100 blur-md animate-pulse"
+                    ? "bg-vx-success/10 scale-100 blur-md"
                     : "bg-vx-accent/5 scale-90 blur-xl group-hover:scale-110 group-hover:bg-vx-accent/10"
               }`}
             />
             {/* Inner Core button */}
             <span
-              className={`relative flex h-24 w-24 items-center justify-center rounded-full transition-all duration-500 ease-out border ${
+              className={`relative flex h-24 w-24 items-center justify-center rounded-full transition-all duration-200 ease-out border ${
                 isRecording
                   ? "bg-vx-accent scale-105 border-vx-accent/50 shadow-vx-lg text-white"
                   : isProcessing
@@ -178,7 +210,7 @@ export function HomeView() {
                 </div>
               </div>
             ) : isProcessing ? (
-              <span className="text-sm font-medium tracking-wide uppercase text-vx-success animate-pulse">
+              <span className="text-sm font-medium tracking-wide uppercase text-vx-success/80">
                 {t("processing")}
               </span>
             ) : (
@@ -203,6 +235,57 @@ export function HomeView() {
 
         {/* Right Column: Controls & Clipboard history */}
         <div className="flex flex-col gap-6 lg:col-span-7">
+
+          {/* Usage Stats Card */}
+          <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">
+            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
+              <BarChart3 className="h-4 w-4 text-vx-accent" />
+              {t("home.usage_stats")}
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+                {/* WPM */}
+                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                    {calcWpm(computedStats.total_words, computedStats.total_duration_ms)}
+                  </div>
+                  <div className="text-xs text-vx-text-dim">{t("home.avg_wpm")}</div>
+                </div>
+                {/* Recording Time */}
+                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
+                    <Timer className="h-5 w-5" />
+                  </div>
+                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                    {formatMsDuration(computedStats.total_duration_ms)}
+                  </div>
+                  <div className="text-xs text-vx-text-dim">{t("home.total_time")}</div>
+                </div>
+                {/* Tokens Used */}
+                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
+                    <Brain className="h-5 w-5" />
+                  </div>
+                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                    {/* ponytail: word_count * 1.3 heuristic — replace with real token counts when LLM captures usage */}
+                    {Math.round(computedStats.total_words * 1.3).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-vx-text-dim">{t("home.tokens_used")}</div>
+                </div>
+                {/* Total Words */}
+                <div className="rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="text-2xl font-bold tracking-tight text-vx-text-primary">
+                    {computedStats.total_words.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-vx-text-dim">{t("home.total_words")}</div>
+                </div>
+            </div>
+          </div>
 
           {/* Quick Settings Card */}
           <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">

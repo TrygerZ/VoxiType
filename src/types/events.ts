@@ -10,6 +10,7 @@ export interface TranscriptionCompleteEvent {
   id: string;
   text: string;
   word_count: number;
+  duration_ms: number;
 }
 
 export interface TranscriptionErrorEvent {

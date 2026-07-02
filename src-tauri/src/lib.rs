@@ -143,6 +143,7 @@ pub fn run() {
             commands::check_updates,
             commands::open_url,
             commands::test_groq_api,
+            commands::get_usage_stats,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

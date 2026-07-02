@@ -12,6 +12,7 @@ mod recording;
 pub mod runtime;
 mod settings;
 mod snippets;
+mod stats;
 
 pub use dictionary::*;
 pub use history::*;
@@ -20,3 +21,4 @@ pub use per_app::*;
 pub use recording::*;
 pub use settings::*;
 pub use snippets::*;
+pub use stats::*;

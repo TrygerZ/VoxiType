@@ -86,6 +86,11 @@ const id: Dict = {
   "home.unpin_tooltip": "Lepas pin",
   "home.engine": "Mesin",
   "home.shortcut_tip": "Tekan {shortcut} untuk mendikte",
+  "home.usage_stats": "Statistik Penggunaan",
+  "home.total_words": "Total Kata",
+  "home.total_time": "Waktu Rekaman",
+  "home.avg_wpm": "Rata-rata WPM",
+  "home.tokens_used": "Token Digunakan",
 };
 
 const en: Dict = {
@@ -172,6 +177,11 @@ const en: Dict = {
   "home.unpin_tooltip": "Unpin transcription",
   "home.engine": "Engine",
   "home.shortcut_tip": "Press {shortcut} to dictate",
+  "home.usage_stats": "Usage Stats",
+  "home.total_words": "Total Words",
+  "home.total_time": "Recording Time",
+  "home.avg_wpm": "Avg WPM",
+  "home.tokens_used": "Tokens Used",
 };
 
 const dictionaries: Record<string, Dict> = { id, en };

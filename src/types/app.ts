@@ -54,6 +54,12 @@ export interface Snippet {
   is_active: boolean;
 }
 
+export interface UsageStats {
+  total_words: number;
+  total_duration_ms: number;
+  total_sessions: number;
+}
+
 export interface UpdateInfo {
   available: boolean;
   current_version: string;

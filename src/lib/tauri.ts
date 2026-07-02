@@ -9,6 +9,7 @@ import type {
   Snippet,
   TranscriptionEntry,
   UpdateInfo,
+  UsageStats,
 } from "../types/app";
 
 // --- Recording ---
@@ -73,6 +74,9 @@ export const openUrl = (url: string) =>
 // --- Groq API ---
 export const testGroqApi = (key: string) =>
   invoke<void>("test_groq_api", { apiKey: key });
+
+// --- Stats ---
+export const getUsageStats = () => invoke<UsageStats>("get_usage_stats");
 
 // --- Events ---
 export function onEvent<T>(
