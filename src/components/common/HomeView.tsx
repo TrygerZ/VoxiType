@@ -322,13 +322,13 @@ export function HomeView() {
                       <Icon className="h-[18px] w-[18px]" />
                     </div>
                     <dt className="flex-1 text-xs text-vx-text-secondary">{label}</dt>
-                    <dd className="flex items-baseline gap-1">
-                      <span className="text-xl font-semibold tabular-nums tracking-tight text-vx-text-primary">
+                    <dd className="grid w-24 grid-cols-[1fr_auto] items-baseline gap-1">
+                      <span className="text-right text-xl font-semibold tabular-nums tracking-tight text-vx-text-primary">
                         {value}
                       </span>
-                      {unit && (
-                        <span className="text-[11px] font-medium text-vx-text-dim">{unit}</span>
-                      )}
+                      <span className="w-8 text-left text-[11px] font-medium text-vx-text-dim">
+                        {unit}
+                      </span>
                     </dd>
                   </div>
                 ))}
