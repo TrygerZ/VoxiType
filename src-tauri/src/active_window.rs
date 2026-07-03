@@ -17,10 +17,7 @@ pub fn foreground_process_name() -> Option<String> {
 /// agree on the same key.
 pub fn normalize_process_name(name: &str) -> String {
     let lowered = name.to_lowercase();
-    lowered
-        .strip_suffix(".exe")
-        .unwrap_or(&lowered)
-        .to_string()
+    lowered.strip_suffix(".exe").unwrap_or(&lowered).to_string()
 }
 
 #[cfg(windows)]

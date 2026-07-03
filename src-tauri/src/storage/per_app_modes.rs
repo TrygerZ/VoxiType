@@ -128,8 +128,14 @@ mod tests {
 
         // Lookups by any casing / with-or-without extension resolve the same row.
         assert_eq!(repo.mode_for("code").unwrap(), Some("email".to_string()));
-        assert_eq!(repo.mode_for("Code.exe").unwrap(), Some("email".to_string()));
-        assert_eq!(repo.mode_for("CODE.EXE").unwrap(), Some("email".to_string()));
+        assert_eq!(
+            repo.mode_for("Code.exe").unwrap(),
+            Some("email".to_string())
+        );
+        assert_eq!(
+            repo.mode_for("CODE.EXE").unwrap(),
+            Some("email".to_string())
+        );
         // A second upsert with different casing updates in place (no duplicate).
         repo.upsert(&PerAppMode {
             id: 0,

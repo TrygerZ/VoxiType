@@ -299,7 +299,11 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
 
             let _ = state.pipeline.finish_processing();
             events::emit_transcription_complete(
-                &app, &id, &out.formatted_text, word_count, out.transcription.duration_ms as i64,
+                &app,
+                &id,
+                &out.formatted_text,
+                word_count,
+                out.transcription.duration_ms as i64,
             );
             events::emit_state(&app, state.pipeline.state_tag());
             hide_overlay_soon(app.clone());

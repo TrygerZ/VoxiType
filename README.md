@@ -1,6 +1,6 @@
 ﻿# VoxiType
 
-**Version 0.3.1** — Open-source voice-to-text for everyone.
+**Version 0.3.2** — Open-source voice-to-text for everyone.
 
 VoxiType is a free and open-source desktop application that converts your voice into text in real-time. Designed for productivity — just press a key, speak, and text appears instantly in any application.
 
