@@ -143,12 +143,12 @@ export function HomeView() {
   // metric than a single "1h 20m" string.
   const splitDuration = (ms: number): { value: string; unit: string } => {
     const totalSec = Math.floor(ms / 1000);
-    if (totalSec < 60) return { value: String(totalSec), unit: "sec" };
+    if (totalSec < 60) return { value: String(totalSec), unit: t("home.unit_sec") };
     const totalMin = Math.floor(totalSec / 60);
-    if (totalMin < 60) return { value: String(totalMin), unit: totalMin === 1 ? "min" : "mins" };
+    if (totalMin < 60) return { value: String(totalMin), unit: totalMin === 1 ? t("home.unit_min") : t("home.unit_mins") };
     const hrs = Math.floor(totalMin / 60);
     const mins = totalMin % 60;
-    return { value: mins > 0 ? `${hrs}.${Math.round((mins / 60) * 10)}` : String(hrs), unit: hrs === 1 && mins === 0 ? "hr" : "hrs" };
+    return { value: mins > 0 ? `${hrs}.${Math.round((mins / 60) * 10)}` : String(hrs), unit: hrs === 1 && mins === 0 ? t("home.unit_hr") : t("home.unit_hrs") };
   };
 
   // Condense large counts (12,400 → 12.4k) so the ledger stays visually calm.
@@ -307,14 +307,14 @@ export function HomeView() {
                     Icon: ScrollTextIcon,
                     label: t("home.total_words"),
                     value: formatCompact(totals.total_words),
-                    unit: "",
+                    unit: t("home.unit_words"),
                   },
                   {
                     key: "sessions",
                     Icon: SparkleIcon,
                     label: t("home.sessions"),
                     value: formatCompact(totals.total_sessions),
-                    unit: "",
+                    unit: t("home.unit_sessions"),
                   },
                 ].map(({ key, Icon, label, value, unit }) => (
                   <div key={key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
