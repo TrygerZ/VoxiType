@@ -21,23 +21,42 @@ const ENC_PREFIX: &str = "enc:v1:";
 const NONCE_LEN: usize = 12;
 
 /// Load or create the 32-byte master key under `app_data_dir`.
+///
+/// If the key file exists but cannot be read or is not exactly 32 bytes, this
+/// returns an error rather than overwriting it. Silently regenerating would
+/// permanently orphan every already-encrypted API key, so a corrupt/locked key
+/// file must surface as a failure the user can act on (e.g. restore a backup).
 pub fn get_master_key(app_data_dir: &Path) -> Result<[u8; 32]> {
     let path = key_path(app_data_dir);
-    if let Ok(bytes) = std::fs::read(&path) {
-        if bytes.len() == 32 {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&bytes);
-            return Ok(key);
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            if bytes.len() == 32 {
+                let mut key = [0u8; 32];
+                key.copy_from_slice(&bytes);
+                Ok(key)
+            } else {
+                Err(AppError::internal(format!(
+                    "master.key is corrupt: expected 32 bytes, found {}",
+                    bytes.len()
+                )))
+            }
         }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => generate_master_key(&path),
+        Err(e) => Err(AppError::internal(format!(
+            "failed to read master.key: {e}"
+        ))),
     }
-    // Generate a fresh key.
+}
+
+/// Generate, persist, and return a fresh 32-byte master key at `path`.
+fn generate_master_key(path: &Path) -> Result<[u8; 32]> {
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, key)?;
-    restrict_permissions(&path);
+    std::fs::write(path, key)?;
+    restrict_permissions(path);
     Ok(key)
 }
 
@@ -138,5 +157,29 @@ mod tests {
     fn wrong_key_fails() {
         let enc = encrypt_api_key("secret", &[2u8; 32]).unwrap();
         assert!(decrypt_api_key(&enc, &[3u8; 32]).is_err());
+    }
+
+    #[test]
+    fn generates_then_reloads_same_key() {
+        let dir = std::env::temp_dir().join(format!("voxitype_key_ok_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let first = get_master_key(&dir).unwrap();
+        // Second call must load the persisted key, not regenerate a new one.
+        let second = get_master_key(&dir).unwrap();
+        assert_eq!(first, second);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_key_file_errors_instead_of_overwriting() {
+        let dir = std::env::temp_dir().join(format!("voxitype_key_bad_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Write a too-short key file: must NOT be silently regenerated.
+        std::fs::write(key_path(&dir), [1u8; 16]).unwrap();
+        assert!(get_master_key(&dir).is_err());
+        // The corrupt file is left intact for recovery.
+        assert_eq!(std::fs::read(key_path(&dir)).unwrap().len(), 16);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

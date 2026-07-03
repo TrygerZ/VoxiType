@@ -56,7 +56,7 @@ export function useTauriEvents() {
     );
     unlisteners.push(
       onEvent<TranscriptionCompleteEvent>("transcription_complete", (p) => {
-        setResult(p.text, p.word_count);
+        setResult(p.word_count);
         void reloadHistory();
         void reloadStats();
       }),

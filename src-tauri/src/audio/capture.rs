@@ -174,11 +174,15 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
     };
 
     let mut resampler = shared.resampler.lock_recover();
-    if let Ok(out) = resampler.process(&processed) {
-        drop(resampler);
-        if !out.is_empty() {
-            shared.ring.lock_recover().extend_from_slice(&out);
+    match resampler.process(&processed) {
+        Ok(out) => {
+            drop(resampler);
+            if !out.is_empty() {
+                shared.ring.lock_recover().extend_from_slice(&out);
+            }
         }
+        // Don't silently swallow: a dropped block is lost audio, so surface it.
+        Err(e) => tracing::warn!("Resampler dropped an audio block: {e}"),
     }
 }
 
@@ -248,13 +252,16 @@ impl AudioCaptureImpl {
     /// Stop capturing and return the captured 16 kHz mono samples.
     pub fn stop(&mut self) -> Result<Vec<f32>> {
         self.active = false;
+        // Signal the capture thread to stop, then *join it* before touching the
+        // resampler/ring. The cpal callback runs on that thread, so joining
+        // guarantees no `process_samples` call can race the flush below —
+        // otherwise the final audio block could be dropped or the resampler
+        // tail corrupted mid-`process`.
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
         }
         if let Some(handle) = self.handle.take() {
-            std::thread::spawn(move || {
-                let _ = handle.join();
-            });
+            let _ = handle.join();
         }
         let samples = if let Some(shared) = self.shared.take() {
             let tail = shared.resampler.lock_recover().flush().unwrap_or_default();
@@ -273,10 +280,10 @@ impl AudioCaptureImpl {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
         }
+        // Join so the stream is fully paused/dropped before we release `shared`;
+        // avoids a lingering callback writing into a soon-to-be-freed buffer.
         if let Some(handle) = self.handle.take() {
-            std::thread::spawn(move || {
-                let _ = handle.join();
-            });
+            let _ = handle.join();
         }
         self.shared = None;
         Ok(())
@@ -288,7 +295,7 @@ impl AudioCaptureImpl {
     }
 }
 
-/// Trim leading/trailing near-silence, keeping ~50ms of padding on each side.
+/// Trim leading/trailing near-silence, keeping ~250ms of padding on each side.
 pub fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     if samples.is_empty() {
         return Vec::new();

@@ -11,6 +11,18 @@ pub fn foreground_process_name() -> Option<String> {
     platform::foreground_process_name()
 }
 
+/// Normalize a process executable name to the canonical stored form: lowercased
+/// with a trailing `.exe` removed (case-insensitively). Shared by the
+/// foreground detector and the per-app mode store so lookups and inserts always
+/// agree on the same key.
+pub fn normalize_process_name(name: &str) -> String {
+    let lowered = name.to_lowercase();
+    lowered
+        .strip_suffix(".exe")
+        .unwrap_or(&lowered)
+        .to_string()
+}
+
 #[cfg(windows)]
 mod platform {
     use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
@@ -45,14 +57,8 @@ mod platform {
             }
 
             let name = String::from_utf16_lossy(&buf[..len as usize]);
-            Some(normalize(&name))
+            Some(super::normalize_process_name(&name))
         }
-    }
-
-    fn normalize(name: &str) -> String {
-        name.trim_end_matches(".exe")
-            .trim_end_matches(".EXE")
-            .to_lowercase()
     }
 }
 

@@ -21,19 +21,46 @@ impl RuleBasedFormatter {
     }
 
     fn clean(&self, text: &str) -> String {
-        let lowered_fillers: Vec<String> =
-            self.filler_words.iter().map(|w| w.to_lowercase()).collect();
-
-        // Tokenize on whitespace, drop filler words (word-boundary, case-insensitive).
-        let kept: Vec<&str> = text
-            .split_whitespace()
-            .filter(|tok| {
-                let stripped = tok
-                    .trim_matches(|c: char| !c.is_alphanumeric())
-                    .to_lowercase();
-                !lowered_fillers.contains(&stripped)
+        // Pre-split each filler into its normalized token sequence so both
+        // single-word ("um") and multi-word ("you know") fillers are matched
+        // against the tokenized input by a sliding window.
+        let filler_seqs: Vec<Vec<String>> = self
+            .filler_words
+            .iter()
+            .map(|w| {
+                w.split_whitespace()
+                    .map(normalize_token)
+                    .filter(|t| !t.is_empty())
+                    .collect::<Vec<_>>()
             })
+            .filter(|seq| !seq.is_empty())
             .collect();
+
+        // Original tokens (kept verbatim) paired with their normalized form.
+        let tokens: Vec<&str> = text.split_whitespace().collect();
+        let normalized: Vec<String> = tokens.iter().map(|t| normalize_token(t)).collect();
+
+        let mut kept: Vec<&str> = Vec::with_capacity(tokens.len());
+        let mut i = 0;
+        while i < tokens.len() {
+            // Greedily match the longest filler phrase starting at `i`.
+            let mut matched_len = 0;
+            for seq in &filler_seqs {
+                let len = seq.len();
+                if len > matched_len
+                    && i + len <= normalized.len()
+                    && normalized[i..i + len] == seq[..]
+                {
+                    matched_len = len;
+                }
+            }
+            if matched_len > 0 {
+                i += matched_len;
+            } else {
+                kept.push(tokens[i]);
+                i += 1;
+            }
+        }
 
         let mut joined = kept.join(" ");
         joined = fix_punctuation_spacing(&joined);
@@ -41,6 +68,13 @@ impl RuleBasedFormatter {
         joined = ensure_terminal_period(&joined);
         joined.trim().to_string()
     }
+}
+
+/// Normalize a token for filler matching: strip surrounding non-alphanumerics
+/// and lowercase.
+fn normalize_token(tok: &str) -> String {
+    tok.trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase()
 }
 
 /// Ensure a single space after sentence punctuation, no space before it.
@@ -140,5 +174,13 @@ mod tests {
     fn fixes_punctuation_spacing() {
         let out = fmt().clean("halo ,dunia");
         assert_eq!(out, "Halo, dunia.");
+    }
+
+    #[test]
+    fn removes_multi_word_fillers() {
+        // "you know" is a two-token default filler; it must be dropped as a
+        // phrase, not left behind because it isn't a single token.
+        let out = fmt().clean("i think you know this works");
+        assert_eq!(out, "I think this works.");
     }
 }

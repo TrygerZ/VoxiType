@@ -21,12 +21,18 @@ interface HistoryStore {
 }
 
 export const useHistoryStore = create<HistoryStore>((set) => {
+  // Monotonic token: every fetch captures the current value and only commits
+  // its result if it is still the latest. Prevents a slow in-flight request
+  // (e.g. an earlier search) from overwriting fresher results out of order.
+  let requestSeq = 0;
+
   const doSearch = debounce(async (q: string) => {
+    const seq = ++requestSeq;
     try {
       const items = q.trim()
         ? await searchHistory(q)
         : await getHistory();
-      set({ items });
+      if (seq === requestSeq) set({ items });
     } catch {
       // search failed silently — keep existing items
     }
@@ -38,10 +44,12 @@ export const useHistoryStore = create<HistoryStore>((set) => {
     query: "",
 
     load: async () => {
+      const seq = ++requestSeq;
       set({ loading: true });
       try {
         const items = await getHistory();
-        set({ items, loading: false, query: "" });
+        if (seq === requestSeq) set({ items, loading: false, query: "" });
+        else set({ loading: false });
       } catch {
         set({ loading: false });
       }
@@ -51,9 +59,10 @@ export const useHistoryStore = create<HistoryStore>((set) => {
       set({ query });
       if (!query.trim()) {
         doSearch.cancel();
+        const seq = ++requestSeq;
         try {
           const items = await getHistory();
-          set({ items });
+          if (seq === requestSeq) set({ items });
         } catch {
           // silent
         }

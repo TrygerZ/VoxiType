@@ -7,10 +7,9 @@ interface SettingsStore {
   loaded: boolean;
   load: () => Promise<void>;
   update: (key: string, value: unknown) => Promise<void>;
-  get: <T>(key: string, fallback: T) => T;
 }
 
-export const useSettingsStore = create<SettingsStore>((set, getState) => ({
+export const useSettingsStore = create<SettingsStore>((set) => ({
   settings: {},
   loaded: false,
 
@@ -26,10 +25,5 @@ export const useSettingsStore = create<SettingsStore>((set, getState) => ({
   update: async (key, value) => {
     set((s) => ({ settings: { ...s.settings, [key]: value } }));
     await updateSetting(key, value);
-  },
-
-  get: <T,>(key: string, fallback: T): T => {
-    const v = getState().settings[key];
-    return (v === undefined ? fallback : v) as T;
   },
 }));

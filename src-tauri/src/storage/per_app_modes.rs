@@ -31,11 +31,7 @@ impl<'a> PerAppModeRepository<'a> {
     }
 
     pub fn upsert(&self, m: &PerAppMode) -> Result<()> {
-        let normalized = m
-            .app_process_name
-            .trim_end_matches(".exe")
-            .trim_end_matches(".EXE")
-            .to_lowercase();
+        let normalized = crate::active_window::normalize_process_name(&m.app_process_name);
         self.db.with_conn(|c| {
             c.execute(
                 "INSERT INTO per_app_modes (app_process_name, app_display_name, mode_id)
@@ -67,14 +63,16 @@ impl<'a> PerAppModeRepository<'a> {
         })
     }
 
-    /// Look up the mode mapped to a process name, if any.
+    /// Look up the mode mapped to a process name, if any. The name is
+    /// normalized to match the canonical form stored by [`Self::upsert`].
     pub fn mode_for(&self, process_name: &str) -> Result<Option<String>> {
+        let normalized = crate::active_window::normalize_process_name(process_name);
         self.db.with_conn(|c| {
             let mut stmt = c.prepare(
                 "SELECT mode_id FROM per_app_modes
                  WHERE app_process_name = ?1 AND is_active = 1",
             )?;
-            let mut rows = stmt.query_map([process_name], |r| r.get::<_, String>(0))?;
+            let mut rows = stmt.query_map([&normalized], |r| r.get::<_, String>(0))?;
             match rows.next() {
                 Some(v) => Ok(Some(v?)),
                 None => Ok(None),
@@ -113,5 +111,34 @@ mod tests {
         assert_eq!(all.len(), 1);
         repo.delete(all[0].id).unwrap();
         assert!(repo.get_all().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lookup_is_case_and_extension_insensitive() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = PerAppModeRepository::new(&db);
+        // Store using a mixed-case name with an uppercase extension.
+        repo.upsert(&PerAppMode {
+            id: 0,
+            app_process_name: "Code.EXE".into(),
+            app_display_name: None,
+            mode_id: "email".into(),
+        })
+        .unwrap();
+
+        // Lookups by any casing / with-or-without extension resolve the same row.
+        assert_eq!(repo.mode_for("code").unwrap(), Some("email".to_string()));
+        assert_eq!(repo.mode_for("Code.exe").unwrap(), Some("email".to_string()));
+        assert_eq!(repo.mode_for("CODE.EXE").unwrap(), Some("email".to_string()));
+        // A second upsert with different casing updates in place (no duplicate).
+        repo.upsert(&PerAppMode {
+            id: 0,
+            app_process_name: "CODE".into(),
+            app_display_name: None,
+            mode_id: "message".into(),
+        })
+        .unwrap();
+        assert_eq!(repo.get_all().unwrap().len(), 1);
+        assert_eq!(repo.mode_for("code").unwrap(), Some("message".to_string()));
     }
 }

@@ -54,8 +54,9 @@ pub fn is_retryable(err: &AppError) -> bool {
 /// Run an async operation with exponential backoff.
 ///
 /// Retries up to `max_retries` times (so `max_retries + 1` total attempts),
-/// sleeping `base_delay * 2^attempt` between retries. Only retryable errors
-/// trigger a retry; everything else fails fast.
+/// sleeping `base_delay * 2^attempt` between retries, capped at `8 * base_delay`
+/// so a large `max_retries` can't produce an unbounded wait. Only retryable
+/// errors trigger a retry; everything else fails fast.
 pub async fn retry_with_backoff<T, F, Fut>(
     max_retries: u32,
     base_delay: Duration,
@@ -73,7 +74,7 @@ where
                 if attempt >= max_retries || !is_retryable(&e) {
                     return Err(e);
                 }
-                let delay = base_delay * (1u32 << attempt).min(2);
+                let delay = base_delay * (1u32 << attempt).min(8);
                 tracing::warn!(
                     "Attempt {} failed ({e}); retrying in {:?}",
                     attempt + 1,

@@ -238,9 +238,11 @@ fn sanitize_fts5(query: &str) -> String {
     if words.is_empty() {
         "\"\"".to_string()
     } else {
+        // `"` is already removed by the SPECIAL filter above, so each word is
+        // safe to wrap directly in a quoted prefix token.
         words
             .iter()
-            .map(|w| format!("\"{}\"*", w.replace('"', "\"\"")))
+            .map(|w| format!("\"{w}\"*"))
             .collect::<Vec<String>>()
             .join(" ")
     }

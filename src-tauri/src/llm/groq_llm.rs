@@ -77,7 +77,14 @@ impl GroqLlmFormatter {
             .next()
             .map(|c| c.message.content)
             .unwrap_or_default();
-        Ok(content.trim().to_string())
+        let trimmed = content.trim();
+        // An empty completion is a failure, not a valid result. Returning
+        // `Ok("")` here would suppress the FallbackFormatter (which only
+        // triggers on `Err`) and hand the user blank text.
+        if trimmed.is_empty() {
+            return Err(AppError::llm("Groq returned an empty completion"));
+        }
+        Ok(trimmed.to_string())
     }
 }
 

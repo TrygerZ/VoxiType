@@ -16,8 +16,6 @@ pub struct DeviceInfo {
 /// List all available input devices, marking the system default.
 pub fn list_input_devices() -> Result<Vec<DeviceInfo>> {
     let host = cpal::default_host();
-    let default_name = host.default_input_device().and_then(|d| d.name().ok());
-
     let devices = host
         .input_devices()
         .map_err(|e| AppError::audio(format!("Failed to enumerate input devices: {e}")))?;
@@ -31,11 +29,13 @@ pub fn list_input_devices() -> Result<Vec<DeviceInfo>> {
 
     for device in devices {
         if let Ok(name) = device.name() {
-            let is_default = default_name.as_deref() == Some(name.as_str());
+            // The synthetic "System Default" entry above already represents the
+            // default device, so don't also flag the concrete duplicate as
+            // default — that would show two default-marked rows in the picker.
             out.push(DeviceInfo {
                 id: name.clone(),
                 name,
-                is_default,
+                is_default: false,
             });
         }
     }

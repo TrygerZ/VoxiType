@@ -8,14 +8,21 @@ interface PanelHeaderProps {
 }
 
 /** Consistent header used across History / Dictionary / Snippets panels. */
-export function PanelHeader({ title, subtitle, actions }: PanelHeaderProps) {
+export function PanelHeader({ title, subtitle, icon, actions }: PanelHeaderProps) {
   return (
     <div className="flex items-end justify-between gap-4 px-10 pb-5 pt-9">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-vx-text-primary">
-          {title}
-        </h1>
-        {subtitle && <p className="text-sm text-vx-text-dim">{subtitle}</p>}
+      <div className="flex items-center gap-3">
+        {icon && (
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-vx-accent-soft text-vx-accent">
+            {icon}
+          </span>
+        )}
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-vx-text-primary">
+            {title}
+          </h1>
+          {subtitle && <p className="text-sm text-vx-text-dim">{subtitle}</p>}
+        </div>
       </div>
       {actions && <div className="flex items-center gap-1.5">{actions}</div>}
     </div>
