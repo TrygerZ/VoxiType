@@ -23,7 +23,14 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   },
 
   update: async (key, value) => {
+    const prev = useSettingsStore.getState().settings[key];
     set((s) => ({ settings: { ...s.settings, [key]: value } }));
-    await updateSetting(key, value);
+    try {
+      await updateSetting(key, value);
+    } catch (err) {
+      // ponytail: rollback optimistic update on backend failure
+      set((s) => ({ settings: { ...s.settings, [key]: prev } }));
+      throw err;
+    }
   },
 }));

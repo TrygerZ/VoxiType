@@ -42,6 +42,8 @@ export function Waveform({ level, active, barClassName }: WaveformProps) {
 
   return (
     <div className="flex h-5 flex-1 items-center gap-[2px]" aria-hidden>
+      {/* ponytail: index key is intentional — bars are stateless identical spans,
+          stable IDs would fight the sliding-window animation */}
       {bars.map((v, i) => (
         <span
           key={i}

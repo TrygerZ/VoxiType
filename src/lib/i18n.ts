@@ -219,16 +219,19 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   let value = dict[key] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
-      value = value.replace(`{${k}}`, String(v));
+      value = value.split(`{${k}}`).join(String(v));
     }
   }
   return value;
 }
 
 // ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
+import { useEffect } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 export function useT() {
   const lang = useSettingsStore((s) => s.settings.language) as string | undefined;
-  if (lang && dictionaries[lang]) setLanguage(lang);
+  useEffect(() => {
+    if (lang && dictionaries[lang]) setLanguage(lang);
+  }, [lang]);
   return t;
 }

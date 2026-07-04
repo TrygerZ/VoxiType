@@ -10,6 +10,7 @@ interface Toast {
 }
 
 let addToastFn: ((message: string, type?: ToastType) => void) | null = null;
+let nextToastId = 0;
 
 export function toast(message: string, type: ToastType = "success") {
   addToastFn?.(message, type);
@@ -19,7 +20,7 @@ export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((message: string, type: ToastType = "success") => {
-    const id = Date.now();
+    const id = ++nextToastId;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));

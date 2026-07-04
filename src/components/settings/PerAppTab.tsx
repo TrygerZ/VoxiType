@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Plus, Trash2, Crosshair } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
@@ -24,12 +24,12 @@ export function PerAppTab() {
   const [proc, setProc] = useState("");
   const [mode, setMode] = useState("message");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await invoke<PerAppMode[]>("get_per_app_modes");
       setModes(res);
     } catch {}
-  };
+  }, []);
 
   const getActive = async () => {
     try {
@@ -43,7 +43,7 @@ export function PerAppTab() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const handleAdd = async () => {
     if (!proc.trim()) return;

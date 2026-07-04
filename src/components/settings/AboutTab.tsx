@@ -75,7 +75,7 @@ export function AboutTab() {
                 <a
                   href={update.url}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-vx-accent hover:underline"
                 >
                   Update available: v{update.latest_version}

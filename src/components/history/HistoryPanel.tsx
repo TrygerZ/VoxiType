@@ -177,7 +177,7 @@ export function HistoryPanel() {
             >
               <div className="min-w-0 flex-1">
                 <p className="text-sm leading-relaxed text-vx-text-primary line-clamp-2">
-                  {item.text_formatted}
+                  {item.text_formatted || item.text_raw}
                 </p>
                 <div className="mt-1.5 flex items-center gap-2 text-xs text-vx-text-dim">
                   <span className="rounded-full bg-vx-bg-tertiary px-2 py-0.5 capitalize">
@@ -204,7 +204,7 @@ export function HistoryPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleCopy(item.id, item.text_formatted)}
+                  onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
                   className={`rounded-lg p-1.5 transition-colors ${
                     copied === item.id
                       ? "bg-vx-success/15 text-vx-success"

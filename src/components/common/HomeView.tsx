@@ -61,6 +61,7 @@ export function HomeView() {
     void loadSettings();
     void loadStats();
   }, [loadHistory, loadSettings, loadStats]);
+  const lang = useSettingsStore((s) => s.settings.language);
   useEffect(() => {
     const hrs = new Date().getHours();
     if (hrs < 12) {
@@ -70,7 +71,7 @@ export function HomeView() {
     } else {
       setGreeting(t("home.greeting.evening"));
     }
-  }, [t]);
+  }, [t, lang]);
 
   // Toggle record from GUI
   const handleMicClick = () => {
