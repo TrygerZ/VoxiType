@@ -2,6 +2,16 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+/** Extract a human-readable message from Tauri IPC errors (which are plain
+ *  objects, not Error instances). */
+export function formatTauriError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
+}
 import type {
   AppInfo,
   DeviceInfo,

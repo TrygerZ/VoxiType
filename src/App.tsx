@@ -11,6 +11,7 @@ import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { onEvent } from "./lib/tauri";
 import { setLanguage } from "./lib/i18n";
+import { ToastContainer } from "./components/ui/Toast";
 
 export default function App() {
   useTauriEvents();
@@ -83,6 +84,7 @@ export default function App() {
 
       {/* Absolute floating dock at the bottom */}
       <FloatingDock active={view} onChange={setView} />
+      <ToastContainer />
     </div>
   );
 }

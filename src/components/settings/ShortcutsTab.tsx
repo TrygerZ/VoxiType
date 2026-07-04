@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { setHotkey } from "../../lib/tauri";
+import { setHotkey, formatTauriError } from "../../lib/tauri";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 
@@ -33,7 +33,7 @@ export function ShortcutsTab() {
       setStatus("ok");
       setTimeout(() => setStatus("idle"), 2000);
     } catch (e: unknown) {
-      setStatus(e instanceof Error ? e.message : String(e));
+      setStatus(formatTauriError(e));
     }
   };
 

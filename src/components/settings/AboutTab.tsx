@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, RefreshCw, CheckCircle2 } from "lucide-react";
-import { getAppInfo, checkUpdates } from "../../lib/tauri";
+import { getAppInfo, checkUpdates, formatTauriError } from "../../lib/tauri";
 import type { AppInfo, UpdateInfo } from "../../types/app";
 import { Button } from "../ui/Button";
 import { SettingsHeader } from "./SettingsLayout";
@@ -23,7 +23,7 @@ export function AboutTab() {
     try {
       setUpdate(await checkUpdates());
     } catch (e: unknown) {
-      setCheckError(e instanceof Error ? e.message : String(e));
+      setCheckError(formatTauriError(e));
     } finally {
       setChecking(false);
     }

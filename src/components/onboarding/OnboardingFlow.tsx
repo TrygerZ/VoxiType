@@ -8,7 +8,7 @@ import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { useT } from "../../lib/i18n";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { testGroqApi, setHotkey, openUrl } from "../../lib/tauri";
+import { testGroqApi, setHotkey, openUrl, formatTauriError } from "../../lib/tauri";
 import { HotkeyRecorder } from "../settings/HotkeyRecorder";
 
 type Step = "welcome" | "quick_settings" | "groq_api" | "hotkey" | "complete";
@@ -52,7 +52,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       await update("onboarding_completed", true);
       onComplete();
     } catch (e: unknown) {
-      setGeneralError(e instanceof Error ? e.message : String(e));
+      setGeneralError(formatTauriError(e));
     }
   };
 
@@ -63,7 +63,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       await update("sound_cues", soundCues);
       setStep("groq_api");
     } catch (e: unknown) {
-      setGeneralError(e instanceof Error ? e.message : String(e));
+      setGeneralError(formatTauriError(e));
     }
   };
 
@@ -75,7 +75,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       }
       setStep("hotkey");
     } catch (e: unknown) {
-      setGeneralError(e instanceof Error ? e.message : String(e));
+      setGeneralError(formatTauriError(e));
     }
   };
 
@@ -85,7 +85,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       await loadSettings();
       setStep("complete");
     } catch (e: unknown) {
-      setHotkeyError(e instanceof Error ? e.message : String(e));
+      setHotkeyError(formatTauriError(e));
     }
   };
 
