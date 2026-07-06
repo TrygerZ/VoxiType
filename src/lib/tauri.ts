@@ -84,6 +84,18 @@ export const openUrl = (url: string) =>
 // --- Groq API ---
 export const testGroqApi = (key: string) =>
   invoke<void>("test_groq_api", { apiKey: key });
+export const testWhisperCpp = (
+  binaryPath: string,
+  modelPath: string,
+  language: string,
+  threads: number,
+) =>
+  invoke<void>("test_whisper_cpp", {
+    binaryPath,
+    modelPath,
+    language,
+    threads,
+  });
 
 // --- Stats ---
 export const getUsageStats = () => invoke<UsageStats>("get_usage_stats");

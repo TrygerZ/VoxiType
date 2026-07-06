@@ -1,11 +1,12 @@
 //! Microphone, hotkey, app-info, and update commands.
 
 use serde_json::Value;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::audio::DeviceInfo;
 use crate::error::AppError;
 use crate::hotkey;
+use crate::stt::{SttConfig, SttEngine, WhisperCppConfig};
 use crate::AppStateInner;
 
 #[tauri::command]
@@ -56,11 +57,23 @@ pub fn open_url(url: String) -> std::result::Result<(), AppError> {
 }
 
 #[tauri::command]
-pub async fn test_groq_api(api_key: String) -> std::result::Result<(), AppError> {
+pub async fn test_groq_api(
+    state: State<'_, AppStateInner>,
+    api_key: String,
+) -> std::result::Result<(), AppError> {
+    let api_key = if api_key.trim().is_empty() {
+        super::runtime::decrypted_api_key(&state)
+    } else {
+        api_key
+    };
+    if api_key.trim().is_empty() {
+        return Err(AppError::api_key_missing("Groq API key is not set"));
+    }
+
     let client = crate::util::http_client();
     let resp = client
         .get("https://api.groq.com/openai/v1/models")
-        .bearer_auth(&api_key)
+        .bearer_auth(api_key.trim())
         .send()
         .await
         .map_err(|e| AppError::stt(format!("Network error: {e}")))?;
@@ -73,4 +86,25 @@ pub async fn test_groq_api(api_key: String) -> std::result::Result<(), AppError>
         )),
         status => Err(AppError::stt(format!("Groq API returned {status}"))),
     }
+}
+
+#[tauri::command]
+pub async fn test_whisper_cpp(
+    binary_path: String,
+    model_path: String,
+    language: String,
+    threads: u32,
+) -> std::result::Result<(), AppError> {
+    let engine = crate::stt::whisper_cpp::WhisperCppEngine::new(WhisperCppConfig {
+        binary_path,
+        model_path,
+        threads: threads.max(1),
+    });
+    let config = SttConfig {
+        language,
+        initial_prompt: None,
+        temperature: 0.0,
+    };
+    let silence = vec![0.0; 16_000];
+    engine.transcribe(&silence, &config).await.map(|_| ())
 }

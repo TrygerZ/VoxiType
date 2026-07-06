@@ -1,17 +1,45 @@
-import { useState } from "react";
+import { type ButtonHTMLAttributes, type ReactNode, useState } from "react";
 import {
-  Mic, Check, ChevronRight, Zap, Cloud, Languages,
-  Key, Keyboard, Settings, ExternalLink, Loader2, XCircle,
+  Check,
+  ChevronRight,
+  Cloud,
+  Cpu,
+  Download,
+  ExternalLink,
+  HardDrive,
+  Keyboard,
+  Key,
+  Languages,
+  Loader2,
+  Mic,
+  Settings,
+  Terminal,
+  XCircle,
+  Zap,
 } from "lucide-react";
+
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { useT } from "../../lib/i18n";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { testGroqApi, setHotkey, openUrl, formatTauriError } from "../../lib/tauri";
+import {
+  formatTauriError,
+  openUrl,
+  setHotkey,
+  testGroqApi,
+  testWhisperCpp,
+} from "../../lib/tauri";
 import { HotkeyRecorder } from "../settings/HotkeyRecorder";
 
-type Step = "welcome" | "quick_settings" | "groq_api" | "hotkey" | "complete";
+type Step = "welcome" | "quick_settings" | "stt_setup" | "hotkey" | "complete";
+type SttEngine = "groq" | "whisper_cpp";
+type TestStatus = "idle" | "testing" | "ok" | "fail" | "err";
+
+const GROQ_URL = "https://console.groq.com";
+const WHISPER_RELEASES_URL = "https://github.com/ggml-org/whisper.cpp/releases";
+const WHISPER_SOURCE_URL = "https://github.com/ggml-org/whisper.cpp";
+const WHISPER_MODELS_URL = "https://huggingface.co/ggerganov/whisper.cpp/tree/main";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -24,23 +52,51 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const update = useSettingsStore((s) => s.update);
   const loadSettings = useSettingsStore((s) => s.load);
 
-  // --- Step 1: Features (i18n'd inside component so t() is in scope) ---
   const features = [
-    { icon: Mic, title: t("onboarding.feature.dictate.title"), body: t("onboarding.feature.dictate.body") },
-    { icon: Cloud, title: t("onboarding.feature.cloud.title"), body: t("onboarding.feature.cloud.body") },
-    { icon: Zap, title: t("onboarding.feature.formatting.title"), body: t("onboarding.feature.formatting.body") },
-    { icon: Languages, title: t("onboarding.feature.bilingual.title"), body: t("onboarding.feature.bilingual.body") },
+    {
+      icon: Mic,
+      title: t("onboarding.feature.dictate.title"),
+      body: t("onboarding.feature.dictate.body"),
+    },
+    {
+      icon: Cloud,
+      title: t("onboarding.feature.cloud.title"),
+      body: t("onboarding.feature.cloud.body"),
+    },
+    {
+      icon: HardDrive,
+      title: t("onboarding.feature.offline.title"),
+      body: t("onboarding.feature.offline.body"),
+    },
+    {
+      icon: Zap,
+      title: t("onboarding.feature.formatting.title"),
+      body: t("onboarding.feature.formatting.body"),
+    },
+    {
+      icon: Languages,
+      title: t("onboarding.feature.bilingual.title"),
+      body: t("onboarding.feature.bilingual.body"),
+    },
   ];
 
-  // --- Step 2: Quick Settings local state ---
-  const [lang, setLang] = useState((settings.language as string) ?? "id");
-  const [soundCues, setSoundCues] = useState((settings.sound_cues as boolean) ?? false);
-
-  // --- Step 3: Groq API local state ---
+  const [lang, setLang] = useState(stringSetting(settings.language, "id"));
+  const [soundCues, setSoundCues] = useState(booleanSetting(settings.sound_cues, false));
+  const [sttEngine, setSttEngine] = useState<SttEngine>(sttEngineSetting(settings.stt_engine));
+  const [sttLanguage, setSttLanguage] = useState(stringSetting(settings.stt_language, "auto"));
   const [apiKey, setApiKey] = useState("");
-  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail" | "err">("idle");
+  const [groqStatus, setGroqStatus] = useState<TestStatus>("idle");
+  const [whisperStatus, setWhisperStatus] = useState<TestStatus>("idle");
+  const [whisperBinary, setWhisperBinary] = useState(
+    stringSetting(settings.whisper_cpp_binary_path, "whisper-cli"),
+  );
+  const [whisperModel, setWhisperModel] = useState(
+    stringSetting(settings.whisper_cpp_model_path, ""),
+  );
+  const [whisperThreads, setWhisperThreads] = useState(
+    numberSetting(settings.whisper_cpp_threads, 4),
+  );
 
-  // --- Step 4: Hotkey local state ---
   const hotkeyRaw = settings.hotkey as { key: string; mode: string } | undefined;
   const [hotkeyKey, setHotkeyKey] = useState(hotkeyRaw?.key ?? "Ctrl+Space");
   const [hotkeyMode, setHotkeyMode] = useState(hotkeyRaw?.mode ?? "ptt");
@@ -61,17 +117,32 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       setGeneralError("");
       await update("language", lang);
       await update("sound_cues", soundCues);
-      setStep("groq_api");
+      setStep("stt_setup");
     } catch (e: unknown) {
       setGeneralError(formatTauriError(e));
     }
   };
 
-  const saveGroqApi = async () => {
+  const saveSttSetup = async () => {
     try {
       setGeneralError("");
-      if (apiKey.trim()) {
-        await update("groq_api_key", apiKey);
+      if (sttEngine === "whisper_cpp") {
+        const missing = validateWhisperSetup(whisperBinary, whisperModel, t);
+        if (missing) {
+          setGeneralError(missing);
+          return;
+        }
+      }
+
+      await update("stt_engine", sttEngine);
+      await update("stt_language", sttLanguage);
+      if (sttEngine === "groq" && apiKey.trim()) {
+        await update("groq_api_key", apiKey.trim());
+      }
+      if (sttEngine === "whisper_cpp") {
+        await update("whisper_cpp_binary_path", whisperBinary.trim());
+        await update("whisper_cpp_model_path", whisperModel.trim());
+        await update("whisper_cpp_threads", whisperThreads);
       }
       setStep("hotkey");
     } catch (e: unknown) {
@@ -91,24 +162,24 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   const handleTestApi = async () => {
     if (!apiKey.trim()) return;
-    setTestStatus("testing");
-    try {
-      await testGroqApi(apiKey.trim());
-      setTestStatus("ok");
-    } catch (e: unknown) {
-      const code = (e as { code?: string })?.code;
-      if (code === "SttApiKeyInvalid") {
-        setTestStatus("fail");
-      } else {
-        setTestStatus("err");
-      }
-    }
+    await runStatus(setGroqStatus, async () => testGroqApi(apiKey.trim()));
   };
 
-  // ============ Step 1: Welcome ============
+  const handleTestWhisper = async () => {
+    const missing = validateWhisperSetup(whisperBinary, whisperModel, t);
+    if (missing) {
+      setGeneralError(missing);
+      setWhisperStatus("fail");
+      return;
+    }
+    await runStatus(setWhisperStatus, async () =>
+      testWhisperCpp(whisperBinary.trim(), whisperModel.trim(), sttLanguage, whisperThreads),
+    );
+  };
+
   if (step === "welcome") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-10 p-10">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-10 overflow-y-auto p-10">
         <div className="flex flex-col items-center gap-4 text-center">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
             <Mic className="h-7 w-7" />
@@ -121,7 +192,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           </p>
         </div>
 
-        <div className="grid w-full max-w-md grid-cols-2 gap-4">
+        <div className="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map(({ icon: Icon, title, body }) => (
             <div key={title} className="flex flex-col gap-1.5 rounded-xl bg-vx-bg-secondary p-5">
               <Icon className="h-5 w-5 text-vx-accent" />
@@ -140,17 +211,14 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             {t("onboarding.welcome.skip")}
           </Button>
         </div>
-        {generalError && (
-          <span className="text-xs text-vx-error">{generalError}</span>
-        )}
+        {generalError && <span className="text-xs text-vx-error">{generalError}</span>}
       </div>
     );
   }
 
-  // ============ Step 2: Quick Settings ============
   if (step === "quick_settings") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
           <Settings className="h-7 w-7" />
         </span>
@@ -162,7 +230,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         </p>
 
         <div className="flex w-full max-w-sm flex-col gap-4 text-left">
-          {/* Language */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-vx-text-secondary">
               {t("onboarding.ui_language")}
@@ -178,7 +245,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             />
           </div>
 
-          {/* Sound Cues */}
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs font-medium text-vx-text-secondary">
@@ -208,106 +274,125 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           {t("onboarding.step2.continue")}
           <ChevronRight className="h-4 w-4" />
         </Button>
-        {generalError && (
-          <span className="text-xs text-vx-error">{generalError}</span>
-        )}
+        {generalError && <span className="text-xs text-vx-error">{generalError}</span>}
       </div>
     );
   }
 
-  // ============ Step 3: Groq API Setup ============
-  if (step === "groq_api") {
+  if (step === "stt_setup") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
-          <Key className="h-7 w-7" />
-        </span>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          {t("onboarding.step3.title")}
-        </h1>
-        <p className="max-w-sm text-sm text-vx-text-dim">
-          {t("onboarding.step3.body")}
-        </p>
+      <div className="vx-app-bg h-full overflow-y-auto p-6 sm:p-8">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
+              {sttEngine === "groq" ? <Key className="h-7 w-7" /> : <HardDrive className="h-7 w-7" />}
+            </span>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {t("onboarding.stt.title")}
+            </h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-vx-text-dim">
+              {t("onboarding.stt.body")}
+            </p>
+          </div>
 
-        {/* Groq Console link — uses backend open_url */}
-        <button
-          type="button"
-          onClick={() => void openUrl("https://console.groq.com")}
-          className="inline-flex items-center gap-2 text-sm text-vx-accent hover:underline"
-        >
-          <ExternalLink className="h-4 w-4" />
-          {t("onboarding.step3.get_key")}
-        </button>
+          <div className="grid gap-4 md:grid-cols-2">
+            <SetupChoice
+              active={sttEngine === "groq"}
+              icon={<Cloud className="h-5 w-5" />}
+              title={t("onboarding.stt.groq.choice_title")}
+              body={t("onboarding.stt.groq.choice_body")}
+              onClick={() => {
+                setGeneralError("");
+                setSttEngine("groq");
+              }}
+            />
+            <SetupChoice
+              active={sttEngine === "whisper_cpp"}
+              icon={<HardDrive className="h-5 w-5" />}
+              title={t("onboarding.stt.offline.choice_title")}
+              body={t("onboarding.stt.offline.choice_body")}
+              onClick={() => {
+                setGeneralError("");
+                setSttEngine("whisper_cpp");
+              }}
+            />
+          </div>
 
-        <div className="flex w-full max-w-sm flex-col gap-3">
-          <Input
-            label={t("onboarding.step3.api_key_label")}
-            type="password"
-            showPasswordToggle
-            placeholder="gsk_..."
-            value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              if (testStatus !== "idle") setTestStatus("idle");
-            }}
-          />
+          <div className="rounded-xl border border-vx-border bg-vx-bg-secondary p-5">
+            <div className="mb-5 grid gap-4 md:grid-cols-[1fr_220px]">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  {sttEngine === "groq"
+                    ? t("onboarding.stt.groq.title")
+                    : t("onboarding.stt.offline.title")}
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-vx-text-dim">
+                  {sttEngine === "groq"
+                    ? t("onboarding.stt.groq.body")
+                    : t("onboarding.stt.offline.body")}
+                </p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-vx-text-secondary">
+                  {t("onboarding.stt.language")}
+                </label>
+                <Select
+                  options={[
+                    { value: "auto", label: t("onboarding.stt.language_auto") },
+                    { value: "id", label: "Bahasa Indonesia" },
+                    { value: "en", label: "English" },
+                  ]}
+                  value={sttLanguage}
+                  onChange={(e) => setSttLanguage(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+            </div>
 
-          {/* Test connection button */}
-          <button
-            type="button"
-            onClick={handleTestApi}
-            disabled={!apiKey.trim() || testStatus === "testing"}
-            className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
-              testStatus === "ok"
-                ? "border-green-500/40 bg-green-500/10 text-green-600"
-                : testStatus === "fail"
-                  ? "border-red-500/40 bg-red-500/10 text-red-600"
-                  : testStatus === "err"
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-600"
-                    : testStatus === "testing"
-                      ? "border-vx-accent/40 bg-vx-accent/10 text-vx-accent"
-                      : "border-vx-border bg-vx-bg-tertiary/60 text-vx-text-secondary hover:border-vx-border-strong hover:text-vx-text-primary"
-            }`}
-          >
-            {testStatus === "testing" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : testStatus === "ok" ? (
-              <Check className="h-4 w-4" />
-            ) : testStatus === "fail" || testStatus === "err" ? (
-              <XCircle className="h-4 w-4" />
-            ) : null}
-            {testStatus === "testing"
-              ? t("onboarding.step3.testing")
-              : testStatus === "ok"
-                ? t("onboarding.step3.test_ok")
-                : testStatus === "fail"
-                  ? t("onboarding.step3.test_fail")
-                  : testStatus === "err"
-                    ? t("onboarding.step3.test_err")
-                    : t("onboarding.step3.test")}
-          </button>
+            {sttEngine === "groq" ? (
+              <GroqSetup
+                apiKey={apiKey}
+                status={groqStatus}
+                t={t}
+                onApiKeyChange={(value) => {
+                  setApiKey(value);
+                  if (groqStatus !== "idle") setGroqStatus("idle");
+                }}
+                onTest={handleTestApi}
+              />
+            ) : (
+              <OfflineSetup
+                binaryPath={whisperBinary}
+                modelPath={whisperModel}
+                threads={whisperThreads}
+                status={whisperStatus}
+                t={t}
+                onBinaryPathChange={setWhisperBinary}
+                onModelPathChange={setWhisperModel}
+                onThreadsChange={setWhisperThreads}
+                onTest={handleTestWhisper}
+              />
+            )}
+          </div>
+
+          <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <Button variant="ghost" size="lg" onClick={() => setStep("hotkey")}>
+              {t("onboarding.stt.skip")}
+            </Button>
+            <Button variant="primary" size="lg" onClick={saveSttSetup}>
+              {t("onboarding.stt.save")}
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          {generalError && <span className="text-center text-xs text-vx-error">{generalError}</span>}
         </div>
-
-        <div className="flex gap-3">
-          <Button variant="primary" size="lg" onClick={saveGroqApi}>
-            {t("onboarding.step3.continue")}
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="lg" onClick={() => setStep("hotkey")}>
-            {t("onboarding.step3.skip")}
-          </Button>
-        </div>
-        {generalError && (
-          <span className="text-xs text-vx-error">{generalError}</span>
-        )}
       </div>
     );
   }
 
-  // ============ Step 4: Hotkey Setup ============
   if (step === "hotkey") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
           <Keyboard className="h-7 w-7" />
         </span>
@@ -340,17 +425,13 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           {t("onboarding.step4.continue")}
           <ChevronRight className="h-4 w-4" />
         </Button>
-        {hotkeyError && (
-          <span className="text-xs text-vx-error">{hotkeyError}</span>
-        )}
+        {hotkeyError && <span className="text-xs text-vx-error">{hotkeyError}</span>}
       </div>
     );
   }
 
-  // ============ Step 5: Complete ============
-  const currentHotkey = hotkeyKey ?? "Ctrl+Space";
   return (
-    <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 p-10 text-center">
+    <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-success/10 text-vx-success">
         <Check className="h-7 w-7" />
       </span>
@@ -358,14 +439,409 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {t("onboarding.complete.title")}
       </h1>
       <p className="max-w-sm text-sm text-vx-text-dim">
-        {t("onboarding.complete.body", { key: currentHotkey })}
+        {t("onboarding.complete.body", { key: hotkeyKey ?? "Ctrl+Space" })}
       </p>
       <Button variant="primary" size="lg" onClick={finish}>
         {t("onboarding.complete.start")}
       </Button>
-      {generalError && (
-        <span className="text-xs text-vx-error">{generalError}</span>
-      )}
+      {generalError && <span className="text-xs text-vx-error">{generalError}</span>}
     </div>
   );
+}
+
+function GroqSetup({
+  apiKey,
+  status,
+  t,
+  onApiKeyChange,
+  onTest,
+}: {
+  apiKey: string;
+  status: TestStatus;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  onApiKeyChange: (value: string) => void;
+  onTest: () => void;
+}) {
+  return (
+    <div className="grid gap-5 md:grid-cols-[1fr_320px]">
+      <GuideList
+        items={[
+          t("onboarding.stt.groq.step1"),
+          t("onboarding.stt.groq.step2"),
+          t("onboarding.stt.groq.step3"),
+        ]}
+      />
+      <div className="flex flex-col gap-3">
+        <Button variant="secondary" type="button" onClick={() => void openUrl(GROQ_URL)}>
+          <ExternalLink className="h-4 w-4" />
+          {t("onboarding.stt.groq.open")}
+        </Button>
+        <Input
+          label={t("onboarding.stt.groq.api_key")}
+          type="password"
+          showPasswordToggle
+          placeholder="gsk_..."
+          value={apiKey}
+          onChange={(e) => onApiKeyChange(e.target.value)}
+        />
+        <StatusButton
+          status={status}
+          idleLabel={t("onboarding.stt.test")}
+          okLabel={t("onboarding.stt.test_ok")}
+          failLabel={t("onboarding.stt.groq.test_fail")}
+          errLabel={t("onboarding.stt.test_err")}
+          onClick={onTest}
+          disabled={!apiKey.trim() || status === "testing"}
+        />
+      </div>
+    </div>
+  );
+}
+
+function OfflineSetup({
+  binaryPath,
+  modelPath,
+  threads,
+  status,
+  t,
+  onBinaryPathChange,
+  onModelPathChange,
+  onThreadsChange,
+  onTest,
+}: {
+  binaryPath: string;
+  modelPath: string;
+  threads: number;
+  status: TestStatus;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  onBinaryPathChange: (value: string) => void;
+  onModelPathChange: (value: string) => void;
+  onThreadsChange: (value: number) => void;
+  onTest: () => void;
+}) {
+  return (
+    <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+      <div className="flex flex-col gap-4">
+        <InstructionBlock
+          icon={<Download className="h-4 w-4" />}
+          title={t("onboarding.stt.offline.no_cmake_title")}
+          body={t("onboarding.stt.offline.no_cmake_body")}
+          actions={[
+            {
+              label: t("onboarding.stt.offline.open_releases"),
+              url: WHISPER_RELEASES_URL,
+            },
+          ]}
+        />
+        <InstructionBlock
+          icon={<Terminal className="h-4 w-4" />}
+          title={t("onboarding.stt.offline.cmake_title")}
+          body={t("onboarding.stt.offline.cmake_body")}
+          actions={[
+            {
+              label: t("onboarding.stt.offline.open_source"),
+              url: WHISPER_SOURCE_URL,
+            },
+          ]}
+        >
+          <CodeBlock lines={["git clone https://github.com/ggml-org/whisper.cpp.git", "cd whisper.cpp", "cmake -B build", "cmake --build build -j --config Release"]} />
+        </InstructionBlock>
+        <InstructionBlock
+          icon={<Cpu className="h-4 w-4" />}
+          title={t("onboarding.stt.offline.model_title")}
+          body={t("onboarding.stt.offline.model_body")}
+          actions={[
+            {
+              label: t("onboarding.stt.offline.open_models"),
+              url: WHISPER_MODELS_URL,
+            },
+          ]}
+        >
+          <ModelGuide t={t} />
+        </InstructionBlock>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <Input
+          label={t("onboarding.stt.offline.binary")}
+          placeholder="whisper-cli"
+          value={binaryPath}
+          onChange={(e) => onBinaryPathChange(e.target.value)}
+          hint={t("onboarding.stt.offline.binary_hint")}
+        />
+        <Input
+          label={t("onboarding.stt.offline.model")}
+          placeholder="C:\\models\\ggml-base.bin"
+          value={modelPath}
+          onChange={(e) => onModelPathChange(e.target.value)}
+          hint={t("onboarding.stt.offline.model_hint")}
+        />
+        <Input
+          label={t("onboarding.stt.offline.threads")}
+          type="number"
+          min={1}
+          max={32}
+          value={threads}
+          onChange={(e) => onThreadsChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+        />
+        <StatusButton
+          status={status}
+          idleLabel={t("onboarding.stt.offline.test")}
+          okLabel={t("onboarding.stt.offline.test_ok")}
+          failLabel={t("onboarding.stt.offline.test_fail")}
+          errLabel={t("onboarding.stt.test_err")}
+          onClick={onTest}
+          disabled={status === "testing" || !binaryPath.trim() || !modelPath.trim()}
+        />
+        <p className="text-xs leading-relaxed text-vx-text-dim">
+          {t("onboarding.stt.offline.full_offline_note")}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SetupChoice({
+  active,
+  icon,
+  title,
+  body,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  title: string;
+  body: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-32 items-start gap-4 rounded-xl border p-5 text-left transition-colors ${
+        active
+          ? "border-vx-accent/60 bg-vx-accent-soft text-vx-text-primary"
+          : "border-vx-border bg-vx-bg-secondary text-vx-text-secondary hover:border-vx-border-strong hover:text-vx-text-primary"
+      }`}
+    >
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-vx-bg-tertiary text-vx-accent">
+        {icon}
+      </span>
+      <span className="flex flex-col gap-1">
+        <span className="text-sm font-semibold">{title}</span>
+        <span className="text-xs leading-relaxed text-vx-text-dim">{body}</span>
+      </span>
+    </button>
+  );
+}
+
+function InstructionBlock({
+  icon,
+  title,
+  body,
+  actions,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: string;
+  actions?: Array<{ label: string; url: string }>;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-vx-border bg-vx-bg-primary/40 p-4">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 text-vx-accent">{icon}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-vx-text-dim">{body}</p>
+          {children && <div className="mt-3">{children}</div>}
+          {actions && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {actions.map((action) => (
+                <Button
+                  key={action.url}
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => void openUrl(action.url)}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuideList({ items }: { items: string[] }) {
+  return (
+    <ol className="flex flex-col gap-3">
+      {items.map((item, index) => (
+        <li key={item} className="flex gap-3 text-sm leading-relaxed">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-vx-accent-soft text-xs font-semibold text-vx-accent">
+            {index + 1}
+          </span>
+          <span className="text-vx-text-secondary">{item}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function CodeBlock({ lines }: { lines: string[] }) {
+  return (
+    <pre className="overflow-x-auto rounded-lg bg-vx-bg-tertiary p-3 text-xs leading-relaxed text-vx-text-secondary">
+      {lines.join("\n")}
+    </pre>
+  );
+}
+
+function ModelGuide({ t }: { t: (key: string) => string }) {
+  const rows = [
+    ["tiny", t("onboarding.stt.offline.model_tiny")],
+    ["base", t("onboarding.stt.offline.model_base")],
+    ["small", t("onboarding.stt.offline.model_small")],
+  ];
+  return (
+    <div className="grid gap-2">
+      {rows.map(([name, desc]) => (
+        <div key={name} className="grid grid-cols-[64px_1fr] gap-3 text-xs">
+          <span className="rounded bg-vx-bg-tertiary px-2 py-1 font-mono text-vx-text-primary">
+            {name}
+          </span>
+          <span className="py-1 text-vx-text-dim">{desc}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatusButton({
+  status,
+  idleLabel,
+  okLabel,
+  failLabel,
+  errLabel,
+  className = "",
+  ...rest
+}: {
+  status: TestStatus;
+  idleLabel: string;
+  okLabel: string;
+  failLabel: string;
+  errLabel: string;
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${statusClasses(
+        status,
+      )} ${className}`}
+      {...rest}
+    >
+      {status === "testing" ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : status === "ok" ? (
+        <Check className="h-4 w-4" />
+      ) : status === "fail" || status === "err" ? (
+        <XCircle className="h-4 w-4" />
+      ) : null}
+      {statusLabel(status, idleLabel, okLabel, failLabel, errLabel)}
+    </button>
+  );
+}
+
+function statusLabel(
+  status: TestStatus,
+  idle: string,
+  ok: string,
+  fail: string,
+  err: string,
+) {
+  if (status === "testing") return "Testing...";
+  if (status === "ok") return ok;
+  if (status === "fail") return fail;
+  if (status === "err") return err;
+  return idle;
+}
+
+function statusClasses(status: TestStatus) {
+  if (status === "ok") {
+    return "border-green-500/40 bg-green-500/10 text-green-600";
+  }
+  if (status === "fail") {
+    return "border-red-500/40 bg-red-500/10 text-red-600";
+  }
+  if (status === "err") {
+    return "border-amber-500/40 bg-amber-500/10 text-amber-600";
+  }
+  if (status === "testing") {
+    return "border-vx-accent/40 bg-vx-accent/10 text-vx-accent";
+  }
+  return "border-vx-border bg-vx-bg-tertiary/60 text-vx-text-secondary hover:border-vx-border-strong hover:text-vx-text-primary";
+}
+
+async function runStatus(
+  setStatus: (status: TestStatus) => void,
+  test: () => Promise<void>,
+) {
+  setStatus("testing");
+  try {
+    await test();
+    setStatus("ok");
+  } catch (e: unknown) {
+    const code = errorCode(e);
+    setStatus(
+      code === "SttApiKeyInvalid" ||
+        code === "SttModelNotFound" ||
+        code === "SttEngineError"
+        ? "fail"
+        : "err",
+    );
+  } finally {
+    setTimeout(() => setStatus("idle"), 3000);
+  }
+}
+
+function errorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object" || !("code" in err)) {
+    return undefined;
+  }
+  const code = err.code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function stringSetting(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function numberSetting(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function sttEngineSetting(value: unknown): SttEngine {
+  return value === "whisper_cpp" ? "whisper_cpp" : "groq";
+}
+
+function validateWhisperSetup(
+  binaryPath: string,
+  modelPath: string,
+  t: (key: string) => string,
+): string {
+  if (!binaryPath.trim()) {
+    return t("onboarding.stt.offline.binary_required");
+  }
+  if (!modelPath.trim()) {
+    return t("onboarding.stt.offline.model_required");
+  }
+  return "";
 }

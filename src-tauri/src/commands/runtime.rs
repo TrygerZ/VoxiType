@@ -16,7 +16,7 @@ use crate::pipeline::{batch, PipelineOrchestrator};
 use crate::storage::{
     Database, DictionaryRepository, HistoryRepository, SettingsManager, TranscriptionEntry,
 };
-use crate::stt::{GroqSttConfig, SttConfig, SttFactory};
+use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCppConfig};
 use crate::util::MutexExt;
 use crate::{events, AppStateInner};
 
@@ -30,6 +30,14 @@ pub fn string_setting(db: &Database, key: &str, default: &str) -> String {
         .ok()
         .flatten()
         .unwrap_or_else(|| default.to_string())
+}
+
+pub fn u32_setting(db: &Database, key: &str, default: u32) -> u32 {
+    SettingsManager::new(db)
+        .get::<u32>(key)
+        .ok()
+        .flatten()
+        .unwrap_or(default)
 }
 
 pub fn build_audio_config(db: &Database) -> AudioConfig {
@@ -46,10 +54,17 @@ pub fn decrypted_api_key(state: &AppStateInner) -> String {
 
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
     let api_key = decrypted_api_key(state);
+    let kind = stt_engine_kind(&string_setting(&state.db, "stt_engine", "groq"));
+    let whisper_cpp = WhisperCppConfig {
+        binary_path: string_setting(&state.db, "whisper_cpp_binary_path", "whisper-cli"),
+        model_path: string_setting(&state.db, "whisper_cpp_model_path", ""),
+        threads: u32_setting(&state.db, "whisper_cpp_threads", 4),
+    };
+    let cache_key = stt_cache_key(kind, &api_key, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
     if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
-        if *cached_kind == crate::stt::SttEngineKind::Groq && *cached_key == api_key {
+        if *cached_kind == kind && *cached_key == cache_key {
             return Ok(cached_engine.clone());
         }
     }
@@ -60,10 +75,26 @@ pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>
         ..Default::default()
     };
 
-    let kind = crate::stt::SttEngineKind::Groq;
-    let new_engine = SttFactory::create(kind, groq);
-    *cache = Some((kind, api_key.clone(), new_engine.clone()));
+    let new_engine = SttFactory::create(kind, groq, whisper_cpp);
+    *cache = Some((kind, cache_key, new_engine.clone()));
     Ok(new_engine)
+}
+
+fn stt_engine_kind(value: &str) -> SttEngineKind {
+    match value {
+        "whisper_cpp" => SttEngineKind::WhisperCpp,
+        _ => SttEngineKind::Groq,
+    }
+}
+
+fn stt_cache_key(kind: SttEngineKind, api_key: &str, whisper_cpp: &WhisperCppConfig) -> String {
+    match kind {
+        SttEngineKind::Groq => api_key.to_string(),
+        SttEngineKind::WhisperCpp => format!(
+            "{}|{}|{}",
+            whisper_cpp.binary_path, whisper_cpp.model_path, whisper_cpp.threads
+        ),
+    }
 }
 
 pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {

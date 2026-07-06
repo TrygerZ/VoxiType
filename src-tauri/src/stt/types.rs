@@ -26,11 +26,12 @@ impl TranscriptionResult {
     }
 }
 
-/// Engine selection — Groq only.
+/// Engine selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SttEngineKind {
     Groq,
+    WhisperCpp,
 }
 
 /// Runtime config passed to a transcription call.
@@ -70,6 +71,24 @@ impl Default for GroqSttConfig {
             model: "whisper-large-v3-turbo".to_string(),
             language: "id".to_string(),
             temperature: 0.0,
+        }
+    }
+}
+
+/// Local whisper.cpp CLI configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhisperCppConfig {
+    pub binary_path: String,
+    pub model_path: String,
+    pub threads: u32,
+}
+
+impl Default for WhisperCppConfig {
+    fn default() -> Self {
+        Self {
+            binary_path: "whisper-cli".to_string(),
+            model_path: String::new(),
+            threads: 4,
         }
     }
 }

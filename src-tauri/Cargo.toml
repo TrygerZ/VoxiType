@@ -1,6 +1,6 @@
 [package]
 name = "voxitype"
-version = "0.3.2"
+version = "0.4.0"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
@@ -74,3 +74,4 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+

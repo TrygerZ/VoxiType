@@ -3,9 +3,10 @@
 pub mod factory;
 pub mod groq_stt;
 pub mod types;
+pub mod whisper_cpp;
 
 pub use factory::SttFactory;
-pub use types::{GroqSttConfig, SttConfig, SttEngineKind, TranscriptionResult};
+pub use types::{GroqSttConfig, SttConfig, SttEngineKind, TranscriptionResult, WhisperCppConfig};
 
 use async_trait::async_trait;
 

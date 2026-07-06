@@ -11,6 +11,7 @@ VoxiType is a free and open-source desktop application that converts your voice 
 
 - **Real-time Speech-to-Text** — Speak, text appears instantly
 - **Cloud Transcription** — Fast and accurate transcription via Groq Whisper API
+- **Offline Transcription** — Local dictation with whisper.cpp and GGML models
 - **AI-Powered Formatting** — Automatic text correction and formatting (local Ollama or Groq cloud)
 - **Global Hotkey** — Start/stop recording from any application (Push-to-Talk or Toggle)
 - **Smart Text Injection** — Automatic text injection via keystroke, clipboard, or hybrid mode
@@ -36,7 +37,7 @@ VoxiType is a free and open-source desktop application that converts your voice 
 | Backend | Rust 1.85+ |
 | Storage | SQLite (via rusqlite, bundled) |
 | Audio | cpal + rubato |
-| STT | Groq Whisper API (sole engine) |
+| STT | Groq Whisper API + offline whisper.cpp CLI |
 | LLM Local | Ollama (Qwen2.5 3B, fallback rule-based) |
 | LLM Cloud | Groq Llama 3.1 8B |
 | Text Injection | enigo (keystroke) + arboard (clipboard) + hybrid |
@@ -69,6 +70,9 @@ npm run tauri dev
 ```
 
 > Set your Groq API key in the application settings (Settings → STT) to start using transcription.
+
+> For offline dictation without Groq STT, follow
+> [docs/offline-whisper-cpp.md](docs/offline-whisper-cpp.md).
 
 #### Commands
 
@@ -118,7 +122,7 @@ src-tauri/src/        # Rust backend
 │   ├── snippets.rs   # SnippetRepository (trigger expansion)
 │   ├── per_app.rs    # PerAppModeRepository
 │   └── stats.rs      # Local-only usage stats
-├── stt/              # Speech-to-text (Groq Whisper, sole engine)
+├── stt/              # Speech-to-text (Groq Whisper + whisper.cpp)
 ├── tray/             # System tray icon + context menu
 ├── updater.rs        # GitHub Releases version checker
 └── util.rs           # Shared HTTP client + retry/backoff helpers
@@ -149,7 +153,7 @@ src/
 |-----|---------|
 | **General** | UI language, command mode toggle, usage stats opt-in, onboarding |
 | **Audio** | Microphone device selection, input device list |
-| **STT** | Groq API key (encrypted at rest, masked in UI), language |
+| **STT** | Groq API key, offline whisper.cpp paths, language |
 | **LLM** | Engine selection (Off / Ollama / Groq / Rule-based), model config |
 | **Modes** | Active formatting mode, translation toggle + target language |
 | **App Rules** | Per-app mode mapping: detect active app → auto-switch format mode |
@@ -188,7 +192,7 @@ User presses hotkey
 [Idle → Recording]  — Audio capture via cpal, resample 48k→16k to ring buffer
        ↓ (VAD detects silence / hotkey toggle)
 [Recording → Processing]
-       ├── STT: Groq Whisper API (with retry/backoff + hotword boosting)
+       ├── STT: Groq Whisper API or local whisper.cpp (with hotword boosting)
        ├── LLM: Format text (Ollama / Groq / rule-based, with fallback chain)
        ├── Translation: Optional, translate to target language
        └── Post-Process: Dictionary replacements → Snippet expansion

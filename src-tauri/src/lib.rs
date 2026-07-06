@@ -143,6 +143,7 @@ pub fn run() {
             commands::check_updates,
             commands::open_url,
             commands::test_groq_api,
+            commands::test_whisper_cpp,
             commands::get_usage_stats,
         ])
         .on_window_event(|window, event| {
