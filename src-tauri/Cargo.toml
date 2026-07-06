@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # --- Tauri core + plugins ---
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["image-png", "tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 
 # --- Serialization ---
@@ -74,4 +74,3 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
-

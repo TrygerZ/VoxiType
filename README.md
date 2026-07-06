@@ -1,4 +1,8 @@
-﻿# VoxiType
+﻿<p align="center">
+  <img src="icon/VoxiType_Icon.png" alt="VoxiType icon" width="120" />
+</p>
+
+# VoxiType
 
 **Version 0.4.0** — Open-source voice-to-text for every app.
 

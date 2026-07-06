@@ -24,7 +24,7 @@ pub mod util;
 
 use std::path::PathBuf;
 
-use tauri::Manager;
+use tauri::{Manager, Runtime};
 
 use hotkey::HotkeyConfig;
 use pipeline::PipelineOrchestrator;
@@ -94,6 +94,8 @@ pub fn run() {
 
             app.manage(state);
 
+            apply_window_icon(handle);
+
             // System tray.
             if let Err(e) = tray::setup(handle) {
                 tracing::warn!("Tray setup failed: {e}");
@@ -157,4 +159,20 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn apply_window_icon<R: Runtime>(app: &tauri::AppHandle<R>) {
+    let icon = match tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png")) {
+        Ok(icon) => icon,
+        Err(e) => {
+            tracing::warn!("Window icon load failed: {e}");
+            return;
+        }
+    };
+
+    for window in app.webview_windows().values() {
+        if let Err(e) = window.set_icon(icon.clone()) {
+            tracing::warn!("Window icon apply failed for {}: {e}", window.label());
+        }
+    }
 }
