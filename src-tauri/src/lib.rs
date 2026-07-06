@@ -142,6 +142,7 @@ pub fn run() {
             commands::get_app_info,
             commands::check_updates,
             commands::open_url,
+            commands::pick_setup_file,
             commands::test_groq_api,
             commands::test_whisper_cpp,
             commands::get_usage_stats,

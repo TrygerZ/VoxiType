@@ -1,4 +1,6 @@
-//! Microphone, hotkey, app-info, and update commands.
+//! Microphone, hotkey, app-info, file picker, and update commands.
+
+use std::process::Command;
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -8,6 +10,12 @@ use crate::error::AppError;
 use crate::hotkey;
 use crate::stt::{SttConfig, SttEngine, WhisperCppConfig};
 use crate::AppStateInner;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
 pub fn get_microphones() -> std::result::Result<Vec<DeviceInfo>, AppError> {
@@ -54,6 +62,71 @@ pub async fn check_updates<R: Runtime>(
 pub fn open_url(url: String) -> std::result::Result<(), AppError> {
     open::that(&url).map_err(|e| AppError::stt(format!("Failed to open URL: {e}")))?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn pick_setup_file(kind: String) -> std::result::Result<Option<String>, AppError> {
+    tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind))
+        .await
+        .map_err(|e| AppError::internal(format!("File picker failed: {e}")))?
+}
+
+fn pick_setup_file_blocking(kind: &str) -> std::result::Result<Option<String>, AppError> {
+    let (title, filter) = match kind {
+        "whisper_binary" => (
+            "Select whisper-cli.exe",
+            "whisper-cli.exe|whisper-cli.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
+        ),
+        "whisper_model" => (
+            "Select whisper.cpp GGML model",
+            "GGML model files (ggml-*.bin)|ggml-*.bin|Binary model files (*.bin)|*.bin|All files (*.*)|*.*",
+        ),
+        _ => return Err(AppError::internal("Unknown setup file picker kind")),
+    };
+
+    let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = $env:VX_PICK_TITLE
+$dialog.Filter = $env:VX_PICK_FILTER
+$dialog.CheckFileExists = $true
+$dialog.Multiselect = $false
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Out.Write($dialog.FileName)
+}
+"#;
+
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-STA",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .env("VX_PICK_TITLE", title)
+        .env("VX_PICK_FILTER", filter);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let output = command
+        .output()
+        .map_err(|e| AppError::internal(format!("Failed to open file picker: {e}")))?;
+    if !output.status.success() {
+        return Err(AppError::internal(format!(
+            "File picker failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(path))
+    }
 }
 
 #[tauri::command]

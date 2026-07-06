@@ -80,6 +80,8 @@ export const setHotkey = (key: string, mode: string) =>
 // --- System Utilities ---
 export const openUrl = (url: string) =>
   invoke<void>("open_url", { url });
+export const pickSetupFile = (kind: "whisper_binary" | "whisper_model") =>
+  invoke<string | null>("pick_setup_file", { kind });
 
 // --- Groq API ---
 export const testGroqApi = (key: string) =>

@@ -1,10 +1,15 @@
 import { type ButtonHTMLAttributes, useState } from "react";
-import { Check, Loader2, XCircle } from "lucide-react";
+import { Check, FolderOpen, Loader2, XCircle } from "lucide-react";
 
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { formatTauriError, testGroqApi, testWhisperCpp } from "../../lib/tauri";
+import {
+  formatTauriError,
+  pickSetupFile,
+  testGroqApi,
+  testWhisperCpp,
+} from "../../lib/tauri";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -59,6 +64,28 @@ export function STTTab() {
     });
   };
 
+  const handlePickBinary = async () => {
+    try {
+      const file = await pickSetupFile("whisper_binary");
+      if (file) {
+        await update("whisper_cpp_binary_path", file);
+      }
+    } catch (e: unknown) {
+      toast(formatTauriError(e), "error");
+    }
+  };
+
+  const handlePickModel = async () => {
+    try {
+      const file = await pickSetupFile("whisper_model");
+      if (file) {
+        await update("whisper_cpp_model_path", file);
+      }
+    } catch (e: unknown) {
+      toast(formatTauriError(e), "error");
+    }
+  };
+
   return (
     <div className="max-w-xl">
       <SettingsHeader
@@ -95,22 +122,22 @@ export function STTTab() {
       {engine === "whisper_cpp" ? (
         <SettingsGroup title="Offline whisper.cpp">
           <div className="flex flex-col gap-4 px-4 py-3.5">
-            <Input
+            <PathPickerField
               label="whisper-cli path"
               placeholder="whisper-cli or C:\\tools\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"
               value={whisperBinary}
-              onChange={(e) =>
-                void update("whisper_cpp_binary_path", e.target.value)
-              }
+              onChange={(value) => void update("whisper_cpp_binary_path", value)}
+              onBrowse={handlePickBinary}
+              browseLabel="Browse"
               hint="Use whisper-cli when it is available in PATH."
             />
-            <Input
+            <PathPickerField
               label="Model path"
               placeholder="C:\\models\\ggml-base.bin"
               value={whisperModel}
-              onChange={(e) =>
-                void update("whisper_cpp_model_path", e.target.value)
-              }
+              onChange={(value) => void update("whisper_cpp_model_path", value)}
+              onBrowse={handlePickModel}
+              browseLabel="Browse"
               hint="Use a ggml model file from whisper.cpp models."
             />
             <Input
@@ -208,6 +235,44 @@ function errorCode(err: unknown): string | undefined {
   }
   const code = err.code;
   return typeof code === "string" ? code : undefined;
+}
+
+function PathPickerField({
+  label,
+  placeholder,
+  value,
+  hint,
+  browseLabel,
+  onChange,
+  onBrowse,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  hint: string;
+  browseLabel: string;
+  onChange: (value: string) => void;
+  onBrowse: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+      <Input
+        label={label}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        hint={hint}
+      />
+      <button
+        type="button"
+        onClick={onBrowse}
+        className="mt-6 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-vx-bg-tertiary px-4 py-2.5 text-sm font-medium text-vx-text-primary transition-colors duration-150 hover:bg-vx-bg-elevated"
+      >
+        <FolderOpen className="h-4 w-4" />
+        {browseLabel}
+      </button>
+    </div>
+  );
 }
 
 function StatusButton({

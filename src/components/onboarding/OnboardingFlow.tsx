@@ -6,6 +6,7 @@ import {
   Cpu,
   Download,
   ExternalLink,
+  FolderOpen,
   HardDrive,
   Keyboard,
   Key,
@@ -26,6 +27,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import {
   formatTauriError,
   openUrl,
+  pickSetupFile,
   setHotkey,
   testGroqApi,
   testWhisperCpp,
@@ -175,6 +177,30 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     await runStatus(setWhisperStatus, async () =>
       testWhisperCpp(whisperBinary.trim(), whisperModel.trim(), sttLanguage, whisperThreads),
     );
+  };
+
+  const handlePickWhisperBinary = async () => {
+    try {
+      setGeneralError("");
+      const file = await pickSetupFile("whisper_binary");
+      if (file) {
+        setWhisperBinary(file);
+      }
+    } catch (e: unknown) {
+      setGeneralError(formatTauriError(e));
+    }
+  };
+
+  const handlePickWhisperModel = async () => {
+    try {
+      setGeneralError("");
+      const file = await pickSetupFile("whisper_model");
+      if (file) {
+        setWhisperModel(file);
+      }
+    } catch (e: unknown) {
+      setGeneralError(formatTauriError(e));
+    }
   };
 
   if (step === "welcome") {
@@ -370,6 +396,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 onBinaryPathChange={setWhisperBinary}
                 onModelPathChange={setWhisperModel}
                 onThreadsChange={setWhisperThreads}
+                onPickBinary={handlePickWhisperBinary}
+                onPickModel={handlePickWhisperModel}
                 onTest={handleTestWhisper}
               />
             )}
@@ -507,6 +535,8 @@ function OfflineSetup({
   onBinaryPathChange,
   onModelPathChange,
   onThreadsChange,
+  onPickBinary,
+  onPickModel,
   onTest,
 }: {
   binaryPath: string;
@@ -517,6 +547,8 @@ function OfflineSetup({
   onBinaryPathChange: (value: string) => void;
   onModelPathChange: (value: string) => void;
   onThreadsChange: (value: number) => void;
+  onPickBinary: () => void;
+  onPickModel: () => void;
   onTest: () => void;
 }) {
   return (
@@ -559,21 +591,38 @@ function OfflineSetup({
         >
           <ModelGuide t={t} />
         </InstructionBlock>
+        <InstructionBlock
+          icon={<FolderOpen className="h-4 w-4" />}
+          title={t("onboarding.stt.offline.path_title")}
+          body={t("onboarding.stt.offline.path_body")}
+        >
+          <GuideList
+            items={[
+              t("onboarding.stt.offline.path_step1"),
+              t("onboarding.stt.offline.path_step2"),
+              t("onboarding.stt.offline.path_step3"),
+            ]}
+          />
+        </InstructionBlock>
       </div>
 
       <div className="flex flex-col gap-3">
-        <Input
+        <PathPickerField
           label={t("onboarding.stt.offline.binary")}
           placeholder="whisper-cli"
           value={binaryPath}
-          onChange={(e) => onBinaryPathChange(e.target.value)}
+          onChange={onBinaryPathChange}
+          onBrowse={onPickBinary}
+          browseLabel={t("onboarding.stt.offline.browse_binary")}
           hint={t("onboarding.stt.offline.binary_hint")}
         />
-        <Input
+        <PathPickerField
           label={t("onboarding.stt.offline.model")}
           placeholder="C:\\models\\ggml-base.bin"
           value={modelPath}
-          onChange={(e) => onModelPathChange(e.target.value)}
+          onChange={onModelPathChange}
+          onBrowse={onPickModel}
+          browseLabel={t("onboarding.stt.offline.browse_model")}
           hint={t("onboarding.stt.offline.model_hint")}
         />
         <Input
@@ -632,6 +681,45 @@ function SetupChoice({
         <span className="text-xs leading-relaxed text-vx-text-dim">{body}</span>
       </span>
     </button>
+  );
+}
+
+function PathPickerField({
+  label,
+  placeholder,
+  value,
+  hint,
+  browseLabel,
+  onChange,
+  onBrowse,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  hint: string;
+  browseLabel: string;
+  onChange: (value: string) => void;
+  onBrowse: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+      <Input
+        label={label}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        hint={hint}
+      />
+      <Button
+        variant="secondary"
+        type="button"
+        className="mt-6 whitespace-nowrap"
+        onClick={onBrowse}
+      >
+        <FolderOpen className="h-4 w-4" />
+        {browseLabel}
+      </Button>
+    </div>
   );
 }
 
