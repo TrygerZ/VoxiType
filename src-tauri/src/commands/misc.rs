@@ -34,11 +34,12 @@ pub fn set_hotkey<R: Runtime>(
     };
     let cfg = hotkey::HotkeyConfig { key, mode: hk_mode };
 
+    hotkey::rebind(&app, &cfg)?;
     {
         let state = app.state::<AppStateInner>();
         crate::storage::SettingsManager::new(&state.db).set("hotkey", &cfg)?;
     }
-    hotkey::rebind(&app, &cfg)
+    Ok(())
 }
 
 #[tauri::command]
@@ -60,7 +61,7 @@ pub async fn check_updates<R: Runtime>(
 
 #[tauri::command]
 pub fn open_url(url: String) -> std::result::Result<(), AppError> {
-    open::that(&url).map_err(|e| AppError::stt(format!("Failed to open URL: {e}")))?;
+    open::that(&url).map_err(|e| AppError::internal(format!("Failed to open URL: {e}")))?;
     Ok(())
 }
 

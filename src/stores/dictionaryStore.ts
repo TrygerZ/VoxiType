@@ -29,13 +29,9 @@ export const useDictionaryStore = create<DictionaryStore>((set) => ({
   },
 
   add: async (entry) => {
-    try {
-      await addDictionaryWord(entry);
-      const entries = await getDictionary();
-      set({ entries });
-    } catch {
-      // ponytail: surface via caller; keep list unchanged on failure
-    }
+    await addDictionaryWord(entry);
+    const entries = await getDictionary();
+    set({ entries });
   },
 
   remove: async (id) => {

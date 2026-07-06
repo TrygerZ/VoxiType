@@ -49,16 +49,7 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()
     Ok(())
 }
 
-/// Unregister all global shortcuts.
-pub fn unregister_all<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
-    app.global_shortcut()
-        .unregister_all()
-        .map_err(|e| AppError::hotkey_conflict(format!("Failed to unregister: {e}")))?;
-    Ok(())
-}
-
 /// Rebind to a new hotkey: unregister old, register new.
 pub fn rebind<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()> {
-    unregister_all(app)?;
     register(app, cfg)
 }

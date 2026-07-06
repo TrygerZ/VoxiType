@@ -144,16 +144,6 @@ impl<'a> DictionaryRepository<'a> {
             Ok(())
         })
     }
-
-    pub fn increment_usage(&self, id: &str) -> Result<()> {
-        self.db.with_conn(|c| {
-            c.execute(
-                "UPDATE dictionary_entries SET usage_count = usage_count + 1 WHERE id = ?1",
-                [id],
-            )?;
-            Ok(())
-        })
-    }
 }
 
 /// Apply `(word -> replacement)` substitutions to `text`.

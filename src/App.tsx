@@ -7,6 +7,7 @@ import { HistoryPanel } from "./components/history/HistoryPanel";
 import { DictionaryPanel } from "./components/dictionary/DictionaryPanel";
 import { SnippetsPanel } from "./components/dictionary/SnippetsPanel";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
+import { AboutTab } from "./components/settings/AboutTab";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { onEvent } from "./lib/tauri";
@@ -44,7 +45,7 @@ export default function App() {
   useEffect(() => {
     const unsub = onEvent<string>("navigate", (route) => {
       if (
-        ["settings", "history", "dictionary", "snippets"].includes(
+        ["settings", "history", "dictionary", "snippets", "about"].includes(
           route,
         )
       ) {
@@ -80,6 +81,7 @@ export default function App() {
         {view === "history" && <HistoryPanel />}
         {view === "dictionary" && <DictionaryPanel />}
         {view === "snippets" && <SnippetsPanel />}
+        {view === "about" && <AboutTab />}
       </main>
 
       {/* Absolute floating dock at the bottom */}

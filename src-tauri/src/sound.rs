@@ -70,6 +70,9 @@ fn parse_wav(bytes: &[u8]) -> Result<WavData, String> {
             _ => {}
         }
         pos += chunk_size;
+        if chunk_size % 2 == 1 && pos < bytes.len() {
+            pos += 1;
+        }
     }
 
     let channels = channels.ok_or("Missing fmt chunk")?;
@@ -215,5 +218,31 @@ mod tests {
     fn test_parse_wav_invalid() {
         let invalid_bytes = b"RIFFxxxxWAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\xbb\x00\x00\x00\x77\x01\x00\x02\x00\x10\x00data\x01\x00\x00";
         assert!(parse_wav(invalid_bytes).is_err());
+    }
+
+    #[test]
+    fn test_parse_wav_skips_odd_chunk_padding() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"JUNK");
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&48_000u32.to_le_bytes());
+        bytes.extend_from_slice(&96_000u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&0i16.to_le_bytes());
+
+        let parsed = parse_wav(&bytes).unwrap();
+        assert_eq!(parsed.sample_rate, 48_000);
+        assert_eq!(parsed.samples, vec![0]);
     }
 }

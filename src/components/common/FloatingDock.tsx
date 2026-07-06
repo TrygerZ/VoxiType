@@ -8,7 +8,13 @@ import {
 import { useT } from "../../lib/i18n";
 
 // Re-defining View locally to avoid circular import with App.tsx
-export type View = "home" | "settings" | "history" | "dictionary" | "snippets";
+export type View =
+  | "home"
+  | "settings"
+  | "history"
+  | "dictionary"
+  | "snippets"
+  | "about";
 
 interface FloatingDockProps {
   active: View;

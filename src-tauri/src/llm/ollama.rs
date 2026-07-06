@@ -59,14 +59,22 @@ impl OllamaFormatter {
         if !status.is_success() {
             return Err(AppError::llm(format!("Ollama error {status}: {text}")));
         }
-        let parsed: OllamaResponse = serde_json::from_str(&text)?;
-        Ok(parsed.response.trim().to_string())
+        parse_response_text(&text)
     }
 }
 
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
     response: String,
+}
+
+fn parse_response_text(text: &str) -> Result<String> {
+    let parsed: OllamaResponse = serde_json::from_str(text)?;
+    let trimmed = parsed.response.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::llm("Ollama returned an empty response"));
+    }
+    Ok(trimmed.to_string())
 }
 
 #[async_trait]
@@ -83,5 +91,24 @@ impl LlmFormatter for OllamaFormatter {
 
     fn name(&self) -> &'static str {
         "ollama"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_response_is_an_error() {
+        assert!(parse_response_text(r#"{"response":""}"#).is_err());
+        assert!(parse_response_text(r#"{"response":"   "}"#).is_err());
+    }
+
+    #[test]
+    fn response_is_trimmed() {
+        assert_eq!(
+            parse_response_text(r#"{"response":"  Halo dunia. \n"}"#).unwrap(),
+            "Halo dunia."
+        );
     }
 }

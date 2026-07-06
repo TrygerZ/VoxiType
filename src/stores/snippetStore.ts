@@ -25,13 +25,9 @@ export const useSnippetStore = create<SnippetStore>((set) => ({
   },
 
   add: async (snippet) => {
-    try {
-      await addSnippet(snippet);
-      const snippets = await getSnippets();
-      set({ snippets });
-    } catch {
-      // ponytail: surface via caller; keep list unchanged on failure
-    }
+    await addSnippet(snippet);
+    const snippets = await getSnippets();
+    set({ snippets });
   },
 
   remove: async (id) => {

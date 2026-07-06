@@ -4,6 +4,8 @@ import { useSnippetStore } from "../../stores/snippetStore";
 import { Button } from "../ui/Button";
 import { PanelHeader } from "../common/PanelHeader";
 import type { Snippet } from "../../types/app";
+import { formatTauriError } from "../../lib/tauri";
+import { toast } from "../ui/Toast";
 
 export function SnippetsPanel() {
   const snippets = useSnippetStore((s) => s.snippets);
@@ -19,7 +21,7 @@ export function SnippetsPanel() {
     void load();
   }, [load]);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!trigger.trim() || !content.trim()) return;
     const snippet: Snippet = {
       id: "",
@@ -31,9 +33,13 @@ export function SnippetsPanel() {
       usage_count: 0,
       is_active: true,
     };
-    void add(snippet);
-    setTrigger("");
-    setContent("");
+    try {
+      await add(snippet);
+      setTrigger("");
+      setContent("");
+    } catch (e: unknown) {
+      toast(formatTauriError(e), "error");
+    }
   };
 
   const inputCls =
@@ -61,7 +67,7 @@ export function SnippetsPanel() {
           onChange={(e) => setContent(e.target.value)}
         />
         <div className="flex justify-end">
-          <Button variant="primary" size="sm" onClick={handleAdd}>
+          <Button variant="primary" size="sm" onClick={() => void handleAdd()}>
             <Plus className="h-4 w-4" /> Add snippet
           </Button>
         </div>

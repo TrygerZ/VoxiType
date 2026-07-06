@@ -14,9 +14,11 @@ import { PanelHeader } from "../common/PanelHeader";
 import type { DictionaryEntry } from "../../types/app";
 import {
   exportDictionary,
+  formatTauriError,
   importDictionary,
   setDictionaryActive,
 } from "../../lib/tauri";
+import { toast } from "../ui/Toast";
 
 export function DictionaryPanel() {
   const entries = useDictionaryStore((s) => s.entries);
@@ -32,7 +34,7 @@ export function DictionaryPanel() {
     void load();
   }, [load]);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!word.trim()) return;
     const entry: DictionaryEntry = {
       id: "",
@@ -44,9 +46,13 @@ export function DictionaryPanel() {
       usage_count: 0,
       is_active: true,
     };
-    void add(entry);
-    setWord("");
-    setReplacement("");
+    try {
+      await add(entry);
+      setWord("");
+      setReplacement("");
+    } catch (e: unknown) {
+      toast(formatTauriError(e), "error");
+    }
   };
 
   const handleToggle = async (id: string, current: boolean) => {
@@ -117,16 +123,20 @@ export function DictionaryPanel() {
           placeholder="Word"
           value={word}
           onChange={(e) => setWord(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void handleAdd();
+          }}
         />
         <input
           className="w-44 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
           placeholder="Replacement (optional)"
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void handleAdd();
+          }}
         />
-        <Button variant="primary" size="sm" onClick={handleAdd}>
+        <Button variant="primary" size="sm" onClick={() => void handleAdd()}>
           <Plus className="h-4 w-4" /> Add
         </Button>
       </div>

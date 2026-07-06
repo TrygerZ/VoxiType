@@ -166,4 +166,29 @@ mod tests {
         // "sign off" should expand to Y, not "X off".
         assert_eq!(expand_snippets("sign off", &exp), "Y");
     }
+
+    #[test]
+    fn duplicate_trigger_is_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = SnippetRepository::new(&db);
+        let first = Snippet {
+            id: "1".into(),
+            name: "Sign off".into(),
+            trigger_phrase: "sign off".into(),
+            content: "Best regards".into(),
+            category: None,
+            mode: None,
+            usage_count: 0,
+            is_active: true,
+        };
+        let second = Snippet {
+            id: "2".into(),
+            content: "Thanks".into(),
+            ..first.clone()
+        };
+
+        repo.upsert(&first).unwrap();
+        assert!(repo.upsert(&second).is_err());
+        assert_eq!(repo.get_all().unwrap().len(), 1);
+    }
 }
