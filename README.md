@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.4.0** — Open-source voice-to-text for every app.
+**Version 0.4.1** — Open-source voice-to-text for every app.
 
 VoxiType is a free and open-source desktop app that turns speech into text from anywhere on Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
 
@@ -211,7 +211,7 @@ User presses hotkey
 
 ### IPC Surface
 
-VoxiType exposes **35 Tauri commands** organized into 8 IPC groups:
+VoxiType exposes **34 Tauri commands** organized into 8 IPC groups:
 
 | Group | Commands |
 |-------|----------|

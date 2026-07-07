@@ -3,8 +3,10 @@ import { setFloatingWidgetEnabled } from "../../lib/tauri";
 import { Switch } from "../ui/Switch";
 import { Select } from "../ui/Select";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
+import { useT } from "../../lib/i18n";
 
 export function GeneralTab() {
+  const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
 
@@ -20,25 +22,25 @@ export function GeneralTab() {
   return (
     <div className="max-w-xl">
       <SettingsHeader
-        title="General"
-        description="Language, startup behavior, and privacy preferences."
+        title={t("settings.general.title")}
+        description={t("settings.general.desc")}
       />
 
-      <SettingsGroup title="Appearance">
-        <SettingsRow label="Interface language">
+      <SettingsGroup title={t("settings.general.appearance")}>
+        <SettingsRow label={t("settings.general.lang")}>
           <Select
             options={[
               { value: "id", label: "Bahasa Indonesia" },
               { value: "en", label: "English" },
             ]}
-            value={(settings.language as string) ?? "id"}
+            value={(settings.language as string) ?? "en"}
             onChange={(e) => void update("language", e.target.value)}
             className="w-48"
           />
         </SettingsRow>
         <SettingsRow
-          label="Floating widget"
-          description="Show a draggable status pill on top of other apps. It animates while transcribing."
+          label={t("settings.general.widget")}
+          description={t("settings.general.widget.desc")}
         >
           <Switch
             checked={(settings.floating_widget as boolean) ?? true}
@@ -47,10 +49,10 @@ export function GeneralTab() {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="System">
+      <SettingsGroup title={t("settings.general.system")}>
         <SettingsRow
-          label="Start with Windows"
-          description="Launch VoxiType automatically on login."
+          label={t("settings.general.startup")}
+          description={t("settings.general.startup.desc")}
         >
           <Switch
             checked={(settings.auto_start as boolean) ?? false}
@@ -58,8 +60,8 @@ export function GeneralTab() {
           />
         </SettingsRow>
         <SettingsRow
-          label="Automatic updates"
-          description="Check for new versions on launch."
+          label={t("settings.general.updates")}
+          description={t("settings.general.updates.desc")}
         >
           <Switch
             checked={(settings.auto_update as boolean) ?? true}
@@ -67,8 +69,8 @@ export function GeneralTab() {
           />
         </SettingsRow>
         <SettingsRow
-          label="Sound cues"
-          description="Play a tone when recording starts and stops."
+          label={t("settings.general.sound")}
+          description={t("settings.general.sound.desc")}
         >
           <Switch
             checked={(settings.sound_cues as boolean) ?? false}
@@ -77,10 +79,10 @@ export function GeneralTab() {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Input &amp; privacy">
+      <SettingsGroup title={t("settings.general.privacy")}>
         <SettingsRow
-          label="Command mode"
-          description="Spoken commands like 'new line' trigger keystrokes."
+          label={t("settings.general.command")}
+          description={t("settings.general.command.desc")}
         >
           <Switch
             checked={(settings.command_mode as boolean) ?? false}
@@ -88,8 +90,8 @@ export function GeneralTab() {
           />
         </SettingsRow>
         <SettingsRow
-          label="Anonymous usage stats"
-          description="Stored locally only — never transmitted."
+          label={t("settings.general.stats")}
+          description={t("settings.general.stats.desc")}
         >
           <Switch
             checked={(settings.telemetry as boolean) ?? false}

@@ -3,11 +3,13 @@ import { Check } from "lucide-react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import { setHotkey, formatTauriError } from "../../lib/tauri";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 
 export function ShortcutsTab() {
+  const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const loadSettings = useSettingsStore((s) => s.load);
 
@@ -40,17 +42,17 @@ export function ShortcutsTab() {
   return (
     <div className="max-w-xl">
       <SettingsHeader
-        title="Shortcuts"
-        description="Set the global hotkey used to start dictation in any app."
+        title={t("settings.shortcuts.title")}
+        description={t("settings.shortcuts.desc")}
       />
 
-      <SettingsGroup title="Global hotkey">
+      <SettingsGroup title={t("settings.shortcuts.group")}>
         <div className="px-4 py-3.5">
           <HotkeyRecorder value={key} onChange={setKey} />
         </div>
         <SettingsRow
-          label="Recording mode"
-          description="Push-to-talk holds; toggle starts/stops on press."
+          label={t("settings.shortcuts.mode")}
+          description={t("settings.shortcuts.mode_desc")}
         >
           <Select
             options={[
@@ -66,11 +68,11 @@ export function ShortcutsTab() {
 
       <div className="flex items-center gap-3">
         <Button variant="primary" size="sm" onClick={() => void handleApply()}>
-          Apply hotkey
+          {t("settings.shortcuts.apply_btn")}
         </Button>
         {status === "ok" && (
           <span className="flex items-center gap-1 text-xs text-vx-success">
-            <Check className="h-3.5 w-3.5" /> Applied
+            <Check className="h-3.5 w-3.5" /> {t("settings.shortcuts.applied")}
           </span>
         )}
         {status !== "ok" && status !== "idle" && (

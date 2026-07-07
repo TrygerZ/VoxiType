@@ -1,9 +1,11 @@
 import { Select } from "../ui/Select";
 import { Switch } from "../ui/Switch";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
 export function ModesTab() {
+  const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const translationOn = (settings.translation_enabled as boolean) ?? false;
@@ -11,20 +13,20 @@ export function ModesTab() {
   return (
     <div className="max-w-xl">
       <SettingsHeader
-        title="Modes"
-        description="Control how transcribed text is formatted and translated."
+        title={t("settings.modes.title")}
+        description={t("settings.modes.desc")}
       />
 
-      <SettingsGroup title="Formatting mode">
+      <SettingsGroup title={t("settings.modes.format_group")}>
         <SettingsRow
-          label="Active mode"
-          description="Dictation is raw, Message is casual, Email is formal."
+          label={t("settings.modes.active")}
+          description={t("settings.modes.active_desc")}
         >
           <Select
             options={[
-              { value: "dictation", label: "Dictation" },
-              { value: "message", label: "Message" },
-              { value: "email", label: "Email" },
+              { value: "dictation", label: t("settings.modes.dictation") },
+              { value: "message", label: t("settings.modes.message") },
+              { value: "email", label: t("settings.modes.email") },
             ]}
             value={(settings.active_mode as string) ?? "dictation"}
             onChange={(e) => void update("active_mode", e.target.value)}
@@ -33,10 +35,10 @@ export function ModesTab() {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Translation">
+      <SettingsGroup title={t("settings.modes.trans_group")}>
         <SettingsRow
-          label="Translate after transcription"
-          description="Convert dictated text to another language before inserting."
+          label={t("settings.modes.trans_after")}
+          description={t("settings.modes.trans_desc")}
         >
           <Switch
             checked={translationOn}
@@ -44,7 +46,7 @@ export function ModesTab() {
           />
         </SettingsRow>
         {translationOn && (
-          <SettingsRow label="Target language">
+          <SettingsRow label={t("settings.modes.target")}>
             <Select
               options={[
                 { value: "en", label: "English" },

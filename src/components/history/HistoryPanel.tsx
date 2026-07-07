@@ -9,6 +9,7 @@ import {
   History as HistoryIcon,
 } from "lucide-react";
 import { useHistoryStore } from "../../stores/historyStore";
+import { useT } from "../../lib/i18n";
 import { reInject, exportHistory } from "../../lib/tauri";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
@@ -23,6 +24,7 @@ const formatDateTime = (dateStr?: string | null) => {
 };
 
 export function HistoryPanel() {
+  const t = useT();
   const items = useHistoryStore((s) => s.items);
   const loading = useHistoryStore((s) => s.loading);
   const query = useHistoryStore((s) => s.query);
@@ -78,8 +80,8 @@ export function HistoryPanel() {
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col">
       <PanelHeader
-        title="History"
-        subtitle="Your recent transcriptions"
+        title={t("history.title")}
+        subtitle={t("history.subtitle")}
         icon={<HistoryIcon className="h-4.5 w-4.5" />}
         actions={
           <>
@@ -87,7 +89,7 @@ export function HistoryPanel() {
               variant="ghost"
               size="sm"
               onClick={() => void handleExport("json")}
-              title="Export JSON"
+              title={t("history.export_json")}
             >
               <Download className="h-3.5 w-3.5" /> JSON
             </Button>
@@ -95,7 +97,7 @@ export function HistoryPanel() {
               variant="ghost"
               size="sm"
               onClick={() => void handleExport("csv")}
-              title="Export CSV"
+              title={t("history.export_csv")}
             >
               <Download className="h-3.5 w-3.5" /> CSV
             </Button>
@@ -106,19 +108,19 @@ export function HistoryPanel() {
                   size="sm"
                   onClick={() => void handleClear()}
                   disabled={clearing}
-                  title="Confirm clearing history (pinned items are kept)"
+                  title={t("history.clear_confirm_tooltip")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />{" "}
-                  {clearing ? "Clearing..." : "Confirm"}
+                  {clearing ? t("history.clearing") : t("history.confirm")}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setConfirmingClear(false)}
                   disabled={clearing}
-                  title="Cancel"
+                  title={t("history.cancel")}
                 >
-                  Cancel
+                  {t("history.cancel")}
                 </Button>
               </>
             ) : (
@@ -127,9 +129,9 @@ export function HistoryPanel() {
                 size="sm"
                 onClick={() => setConfirmingClear(true)}
                 disabled={items.length === 0}
-                title="Clear history (pinned items are kept)"
+                title={t("history.clear_tooltip")}
               >
-                <Trash2 className="h-3.5 w-3.5" /> Clear
+                <Trash2 className="h-3.5 w-3.5" /> {t("history.clear")}
               </Button>
             )}
           </>
@@ -141,17 +143,17 @@ export function HistoryPanel() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
           <input
             className="w-full rounded-lg bg-vx-bg-tertiary py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
-            placeholder="Search transcriptions..."
+            placeholder={t("history.search_placeholder")}
             value={query}
             onChange={(e) => void search(e.target.value)}
           />
         </div>
         <Select
           options={[
-            { value: "", label: "All modes" },
-            { value: "dictation", label: "Dictation" },
-            { value: "message", label: "Message" },
-            { value: "email", label: "Email" },
+            { value: "", label: t("history.all_modes") },
+            { value: "dictation", label: t("settings.modes.dictation") },
+            { value: "message", label: t("settings.modes.message") },
+            { value: "email", label: t("settings.modes.email") },
           ]}
           value={modeFilter}
           onChange={(e) => setModeFilter(e.target.value)}
@@ -160,12 +162,12 @@ export function HistoryPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 pb-8">
-        {loading && <p className="text-sm text-vx-text-dim">Loading...</p>}
+        {loading && <p className="text-sm text-vx-text-dim">{t("history.loading")}</p>}
 
         {filtered.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <HistoryIcon className="h-10 w-10 text-vx-text-dim/40" />
-            <p className="text-sm text-vx-text-dim">No transcriptions yet</p>
+            <p className="text-sm text-vx-text-dim">{t("history.empty")}</p>
           </div>
         )}
 
@@ -181,9 +183,9 @@ export function HistoryPanel() {
                 </p>
                 <div className="mt-1.5 flex items-center gap-2 text-xs text-vx-text-dim">
                   <span className="rounded-full bg-vx-bg-tertiary px-2 py-0.5 capitalize">
-                    {item.mode}
+                    {t(`settings.modes.${item.mode}`)}
                   </span>
-                  <span>{item.word_count} words</span>
+                  <span>{t("history.words_suffix", { count: item.word_count })}</span>
                   <span>&middot;</span>
                   <span>{formatDateTime(item.created_at)}</span>
                 </div>
@@ -198,7 +200,7 @@ export function HistoryPanel() {
                       ? "bg-vx-accent-soft text-vx-accent"
                       : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                   }`}
-                  title={item.is_pinned ? "Unpin" : "Pin"}
+                  title={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
                 >
                   <Pin className="h-4 w-4" />
                 </button>
@@ -210,7 +212,7 @@ export function HistoryPanel() {
                       ? "bg-vx-success/15 text-vx-success"
                       : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                   }`}
-                  title="Copy"
+                  title={t("history.copy_tooltip")}
                 >
                   <Copy className="h-4 w-4" />
                 </button>
@@ -218,7 +220,7 @@ export function HistoryPanel() {
                   type="button"
                   onClick={() => void reInject(item.id)}
                   className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
-                  title="Re-inject"
+                  title={t("history.re_inject_tooltip")}
                 >
                   <RefreshCw className="h-4 w-4" />
                 </button>
@@ -226,7 +228,7 @@ export function HistoryPanel() {
                   type="button"
                   onClick={() => void remove(item.id)}
                   className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
-                  title="Delete"
+                  title={t("history.delete_tooltip")}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

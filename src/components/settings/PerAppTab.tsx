@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Trash2, Crosshair } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -16,6 +17,7 @@ interface PerAppMode {
 }
 
 export function PerAppTab() {
+  const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const [modes, setModes] = useState<PerAppMode[]>([]);
@@ -73,14 +75,14 @@ export function PerAppTab() {
   return (
     <div className="max-w-xl">
       <SettingsHeader
-        title="App Rules"
-        description="Automatically switch the active formatting mode based on which app you are dictating into."
+        title={t("settings.app_rules.title")}
+        description={t("settings.app_rules.desc")}
       />
 
-      <SettingsGroup title="Feature">
+      <SettingsGroup title={t("settings.app_rules.feature_group")}>
         <SettingsRow
-          label="Enable App Rules"
-          description="If an app isn't mapped, the default mode is used."
+          label={t("settings.app_rules.enable")}
+          description={t("settings.app_rules.enable_desc")}
         >
           <Switch
             checked={perAppOn}
@@ -90,49 +92,51 @@ export function PerAppTab() {
       </SettingsGroup>
 
       <div className={`transition-opacity ${!perAppOn ? "pointer-events-none opacity-50" : ""}`}>
-        <SettingsGroup title="Add Mapping">
+        <SettingsGroup title={t("settings.app_rules.add_group")}>
           <div className="flex flex-col gap-3 px-4 py-3.5">
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <Input
-                  label="Process name (e.g. code, chrome, slack)"
+                  label={t("settings.app_rules.proc_name")}
                   placeholder="slack"
                   value={proc}
                   onChange={(e) => setProc(e.target.value)}
                 />
               </div>
-              <Button variant="ghost" onClick={() => void getActive()} title="Detect active app">
-                <Crosshair className="h-4 w-4" /> Detect
+              <Button variant="ghost" onClick={() => void getActive()} title={t("settings.app_rules.detect_btn")}>
+                <Crosshair className="h-4 w-4" /> {t("settings.app_rules.detect_btn")}
               </Button>
             </div>
-            
+
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <Select
-                  label="Mode to apply"
+                  label={t("settings.app_rules.mode_apply")}
                   options={[
-                    { value: "dictation", label: "Dictation" },
-                    { value: "message", label: "Message" },
-                    { value: "email", label: "Email" },
+                    { value: "dictation", label: t("settings.modes.dictation") },
+                    { value: "message", label: t("settings.modes.message") },
+                    { value: "email", label: t("settings.modes.email") },
                   ]}
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
                 />
               </div>
               <Button variant="primary" onClick={() => void handleAdd()}>
-                <Plus className="h-4 w-4" /> Add Rule
+                <Plus className="h-4 w-4" /> {t("settings.app_rules.add_btn")}
               </Button>
             </div>
             {activeApp && (
-              <p className="text-xs text-vx-accent">Detected currently active app: {activeApp}</p>
+              <p className="text-xs text-vx-accent">
+                {t("settings.app_rules.detected_app", { app: activeApp })}
+              </p>
             )}
           </div>
         </SettingsGroup>
 
-        <SettingsGroup title="Active Rules">
+        <SettingsGroup title={t("settings.app_rules.active_group")}>
           {modes.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-vx-text-dim">
-              No app rules configured.
+              {t("settings.app_rules.empty")}
             </div>
           ) : (
             modes.map((m) => (
@@ -142,7 +146,7 @@ export function PerAppTab() {
                     {m.app_process_name}
                   </span>
                   <span className="text-xs text-vx-text-dim capitalize">
-                    Applies mode: {m.mode_id}
+                    {t("settings.app_rules.applies_mode", { mode: t(`settings.modes.${m.mode_id}`) })}
                   </span>
                 </div>
                 <button

@@ -3,11 +3,13 @@ import { Check, Loader2, XCircle } from "lucide-react";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import { testGroqApi, formatTauriError } from "../../lib/tauri";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
 export function LLMTab() {
+  const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const engine = (settings.llm_engine as string) ?? "ollama";
@@ -17,7 +19,7 @@ export function LLMTab() {
     try {
       await update("groq_api_key", value);
       if (value.trim()) {
-        toast("API key saved");
+        toast(t("settings.stt.saved"));
       }
     } catch (e: unknown) {
       toast(formatTauriError(e), "error");
@@ -31,13 +33,13 @@ export function LLMTab() {
     try {
       await testGroqApi(key.trim());
       setTestStatus("ok");
-      toast("Connection successful!");
+      toast(t("settings.llm.connected"));
       setTimeout(() => setTestStatus("idle"), 3000);
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
       if (code === "SttApiKeyInvalid") {
         setTestStatus("fail");
-        toast("Invalid API key", "error");
+        toast(t("settings.llm.invalid_key"), "error");
       } else {
         setTestStatus("err");
         toast(formatTauriError(e), "error");
@@ -49,12 +51,12 @@ export function LLMTab() {
   return (
     <div className="max-w-xl">
       <SettingsHeader
-        title="AI Formatting"
-        description="Clean up and format transcribed text. Falls back to rule-based if unavailable."
+        title={t("settings.llm.title")}
+        description={t("settings.llm.desc")}
       />
 
-      <SettingsGroup title="Engine">
-        <SettingsRow label="Formatter">
+      <SettingsGroup title={t("settings.llm.engine_group")}>
+        <SettingsRow label={t("settings.llm.formatter")}>
           <Select
             options={[
               { value: "ollama", label: "Ollama (Local)" },
@@ -70,30 +72,30 @@ export function LLMTab() {
         {engine === "ollama" && (
           <div className="px-4 py-3.5">
             <Input
-              label="Ollama Model"
+              label={t("settings.llm.ollama_model")}
               placeholder="qwen2.5:3b"
               value={(settings.llm_model as string) ?? "qwen2.5:3b"}
               onChange={(e) => void update("llm_model", e.target.value)}
-              hint="Make sure Ollama is running locally on port 11434."
+              hint={t("settings.llm.ollama_hint")}
             />
           </div>
         )}
       </SettingsGroup>
 
       {engine === "groq" && (
-        <SettingsGroup title="Groq credentials">
+        <SettingsGroup title={t("settings.llm.groq_group")}>
           <div className="px-4 py-3.5">
             <Input
-              label="Groq API Key"
+              label={t("settings.llm.api_key")}
               type="password"
               placeholder={
                 (settings.groq_api_key_set as boolean)
-                  ? "•••••••• (saved)"
+                  ? t("settings.llm.saved_placeholder")
                   : "gsk_..."
               }
               value={(settings.groq_api_key as string) ?? ""}
               onChange={(e) => void handleApiKeyChange(e.target.value)}
-              hint="Shared with the STT setting — stored encrypted."
+              hint={t("settings.llm.api_key_hint")}
             />
             <button
               type="button"
@@ -119,14 +121,14 @@ export function LLMTab() {
                 <XCircle className="h-4 w-4" />
               ) : null}
               {testStatus === "testing"
-                ? "Testing..."
+                ? t("settings.llm.testing")
                 : testStatus === "ok"
-                  ? "Connected!"
+                  ? t("settings.llm.connected")
                   : testStatus === "fail"
-                    ? "Invalid key"
+                    ? t("settings.llm.invalid_key")
                     : testStatus === "err"
-                      ? "Connection failed"
-                      : "Test Connection"}
+                      ? t("settings.llm.conn_fail")
+                      : t("settings.llm.test_conn")}
             </button>
           </div>
         </SettingsGroup>

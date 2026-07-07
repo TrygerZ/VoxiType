@@ -14,6 +14,8 @@ const id: Dict = {
   "processing": "Memproses...",
   "done": "Selesai ({count} kata)",
   "idle.hint": "Tekan {shortcut} untuk mulai merekam",
+
+  // Settings Tab Labels
   "settings.general": "Umum",
   "settings.audio": "Audio",
   "settings.stt": "STT",
@@ -23,6 +25,172 @@ const id: Dict = {
   "settings.dictionary": "Kamus",
   "settings.shortcuts": "Pintasan",
   "settings.about": "Tentang",
+
+  // General Tab
+  "settings.general.title": "Umum",
+  "settings.general.desc": "Bahasa, perilaku saat startup, dan preferensi privasi.",
+  "settings.general.appearance": "Tampilan",
+  "settings.general.lang": "Bahasa antarmuka",
+  "settings.general.widget": "Widget melayang",
+  "settings.general.widget.desc": "Tampilkan pil status yang dapat diseret di atas aplikasi lain. Animasi berjalan saat merekam.",
+  "settings.general.system": "Sistem",
+  "settings.general.startup": "Mulai dengan Windows",
+  "settings.general.startup.desc": "Jalankan VoxiType otomatis saat login.",
+  "settings.general.updates": "Pembaruan otomatis",
+  "settings.general.updates.desc": "Periksa versi baru saat aplikasi dibuka.",
+  "settings.general.sound": "Suara perekaman",
+  "settings.general.sound.desc": "Putar nada saat rekaman mulai dan selesai.",
+  "settings.general.privacy": "Input & Privasi",
+  "settings.general.command": "Mode perintah",
+  "settings.general.command.desc": "Perintah suara seperti 'baris baru' memicu tombol keyboard.",
+  "settings.general.stats": "Statistik penggunaan anonim",
+  "settings.general.stats.desc": "Hanya disimpan secara lokal — tidak pernah dikirim.",
+
+  // Audio Tab
+  "settings.audio.title": "Audio",
+  "settings.audio.desc": "Pilih mikrofon yang digunakan untuk mendikte.",
+  "settings.audio.device_group": "Perangkat input",
+  "settings.audio.mic": "Mikrofon",
+
+  // STT Tab
+  "settings.stt.title": "Speech-to-Text",
+  "settings.stt.desc": "Pilih transkripsi awan Groq atau whisper.cpp lokal.",
+  "settings.stt.engine_group": "Mesin",
+  "settings.stt.engine": "Mesin transkripsi",
+  "settings.stt.lang": "Bahasa",
+  "settings.stt.lang_auto": "Deteksi otomatis",
+  "settings.stt.offline_group": "Offline whisper.cpp",
+  "settings.stt.binary_path": "Path whisper-cli",
+  "settings.stt.binary_hint": "Gunakan whisper-cli jika sudah ada di PATH.",
+  "settings.stt.model_path": "Path model",
+  "settings.stt.model_hint": "Gunakan file model ggml dari model whisper.cpp.",
+  "settings.stt.threads": "Thread",
+  "settings.stt.test_offline": "Tes Offline Engine",
+  "settings.stt.groq_group": "Kredensial Groq",
+  "settings.stt.api_key": "Groq API Key",
+  "settings.stt.api_key_hint": "Disimpan terenkripsi.",
+  "settings.stt.test_connection": "Tes Koneksi",
+  "settings.stt.saved": "Tersimpan",
+  "settings.stt.connected": "Terhubung",
+  "settings.stt.invalid_key": "Key tidak valid",
+  "settings.stt.conn_fail": "Koneksi gagal",
+  "settings.stt.testing": "Menguji...",
+  "settings.stt.ready": "Siap",
+  "settings.stt.check_setup": "Cek setup",
+  "settings.stt.test_fail": "Tes gagal",
+
+  // LLM Tab
+  "settings.llm.title": "Format AI",
+  "settings.llm.desc": "Rapikan dan format teks transkripsi. Kembali ke berbasis aturan jika tidak tersedia.",
+  "settings.llm.engine_group": "Mesin",
+  "settings.llm.formatter": "Pemformat",
+  "settings.llm.ollama_model": "Model Ollama",
+  "settings.llm.ollama_hint": "Pastikan Ollama berjalan secara lokal di port 11434.",
+  "settings.llm.groq_group": "Kredensial Groq",
+  "settings.llm.api_key": "Groq API Key",
+  "settings.llm.api_key_hint": "Berbagi dengan pengaturan STT — disimpan secara terenkripsi.",
+  "settings.llm.saved_placeholder": "•••••••• (tersimpan)",
+  "settings.llm.test_conn": "Tes Koneksi",
+  "settings.llm.testing": "Menguji...",
+  "settings.llm.connected": "Terhubung!",
+  "settings.llm.invalid_key": "Key tidak valid",
+  "settings.llm.conn_fail": "Koneksi gagal",
+
+  // Modes Tab
+  "settings.modes.title": "Mode",
+  "settings.modes.desc": "Kontrol bagaimana teks transkripsi diformat dan diterjemahkan.",
+  "settings.modes.format_group": "Mode pemformatan",
+  "settings.modes.active": "Mode aktif",
+  "settings.modes.active_desc": "Dikte adalah teks mentah, Pesan adalah kasual, Email adalah formal.",
+  "settings.modes.dictation": "Dikte",
+  "settings.modes.message": "Pesan",
+  "settings.modes.email": "Email",
+  "settings.modes.trans_group": "Terjemahan",
+  "settings.modes.trans_after": "Terjemahkan setelah transkripsi",
+  "settings.modes.trans_desc": "Ubah teks yang didiktekan ke bahasa lain sebelum dimasukkan.",
+  "settings.modes.target": "Bahasa target",
+
+  // App Rules / Per-App Tab
+  "settings.app_rules.title": "Aturan Aplikasi",
+  "settings.app_rules.desc": "Beralih mode pemformatan aktif secara otomatis berdasarkan aplikasi tempat Anda mendikte.",
+  "settings.app_rules.feature_group": "Fitur",
+  "settings.app_rules.enable": "Aktifkan Aturan Aplikasi",
+  "settings.app_rules.enable_desc": "Jika aplikasi tidak terpetakan, mode default akan digunakan.",
+  "settings.app_rules.add_group": "Tambah Pemetaan",
+  "settings.app_rules.proc_name": "Nama proses (misal: code, chrome, slack)",
+  "settings.app_rules.detect_btn": "Deteksi",
+  "settings.app_rules.mode_apply": "Mode untuk diterapkan",
+  "settings.app_rules.add_btn": "Tambah Aturan",
+  "settings.app_rules.detected_app": "Aplikasi aktif terdeteksi saat ini: {app}",
+  "settings.app_rules.active_group": "Aturan Aktif",
+  "settings.app_rules.empty": "Belum ada aturan aplikasi yang dikonfigurasi.",
+  "settings.app_rules.applies_mode": "Menerapkan mode: {mode}",
+
+  // Shortcuts Tab
+  "settings.shortcuts.title": "Pintasan",
+  "settings.shortcuts.desc": "Atur hotkey global yang digunakan untuk mulai mendikte di aplikasi apa pun.",
+  "settings.shortcuts.group": "Hotkey global",
+  "settings.shortcuts.mode": "Mode perekaman",
+  "settings.shortcuts.mode_desc": "Push-to-talk dengan menahan; toggle mulai/berhenti saat ditekan.",
+  "settings.shortcuts.apply_btn": "Terapkan hotkey",
+  "settings.shortcuts.applied": "Diterapkan",
+
+  // About Tab
+  "settings.about.title": "Tentang",
+  "settings.about.desc": "Dikte ke teks gratis & open-source untuk semua aplikasi.",
+  "settings.about.version": "v{version}",
+  "settings.about.license": "Lisensi MIT",
+  "settings.about.checking": "Memeriksa...",
+  "settings.about.check_btn": "Periksa pembaruan",
+  "settings.about.check_fail": "Pemeriksaan gagal: {error}",
+  "settings.about.update_avail": "Pembaruan tersedia: v{version}",
+  "settings.about.latest": "Anda berada di versi terbaru",
+
+  // History Panel
+  "history.title": "Riwayat",
+  "history.subtitle": "Transkripsi terakhir Anda",
+  "history.export_json": "Ekspor JSON",
+  "history.export_csv": "Ekspor CSV",
+  "history.clear": "Bersihkan",
+  "history.confirm": "Konfirmasi",
+  "history.cancel": "Batal",
+  "history.clearing": "Membersihkan...",
+  "history.search_placeholder": "Cari transkripsi...",
+  "history.all_modes": "Semua mode",
+  "history.loading": "Memuat...",
+  "history.empty": "Belum ada transkripsi",
+  "history.words_suffix": "{count} kata",
+  "history.clear_tooltip": "Bersihkan riwayat (item terpin tetap disimpan)",
+  "history.clear_confirm_tooltip": "Konfirmasi bersihkan riwayat (item terpin tetap disimpan)",
+  "history.delete_tooltip": "Hapus",
+  "history.pin_tooltip": "Pin",
+  "history.unpin_tooltip": "Lepas pin",
+  "history.copy_tooltip": "Salin",
+  "history.re_inject_tooltip": "Masukkan ulang",
+
+  // Dictionary Panel
+  "dictionary.title": "Kamus",
+  "dictionary.subtitle": "Kata khusus, nama, dan pengganti",
+  "dictionary.export_tooltip": "Ekspor",
+  "dictionary.import_tooltip": "Impor",
+  "dictionary.placeholder_word": "Kata",
+  "dictionary.placeholder_rep": "Pengganti (opsional)",
+  "dictionary.add_btn": "Tambah",
+  "dictionary.loading": "Memuat...",
+  "dictionary.empty": "Belum ada entri kamus",
+  "dictionary.activate_tooltip": "Aktifkan",
+  "dictionary.deactivate_tooltip": "Nonaktifkan",
+
+  // Snippets Panel
+  "snippets.title": "Snippet",
+  "snippets.subtitle": "Pemicu suara berkembang menjadi teks yang lebih panjang",
+  "snippets.placeholder_trigger": "Frasa pemicu (misal: salam penutup)",
+  "snippets.placeholder_content": "Konten ekspansi...",
+  "snippets.add_btn": "Tambah snippet",
+  "snippets.loading": "Memuat...",
+  "snippets.empty": "Belum ada snippet",
+
+  // Onboarding
   "onboarding.welcome.title": "Selamat datang di VoxiType",
   "onboarding.welcome.body":
     "Dikte ke teks untuk aplikasi apa pun. Gratis dan open source.",
@@ -157,6 +325,14 @@ const id: Dict = {
   "home.words_per_minute": "Kata / menit",
   "home.stats_empty": "Mulai mendikte untuk melihat statistikmu",
   "home.lifetime": "Sepanjang waktu",
+  "home.default_mic": "Mikrofon Default",
+  "home.groq_cloud": "Groq Awan",
+  "home.local_whisper": "whisper.cpp Lokal",
+  "home.mode.dictation.desc": "Harfiah",
+  "home.mode.message.desc": "Santai",
+  "home.mode.email.desc": "Formal",
+  "home.translate_to": "Terjemahkan ke {target}",
+  "home.translate_desc": "Terjemahkan teks transkripsi secara otomatis",
 };
 
 const en: Dict = {
@@ -171,6 +347,8 @@ const en: Dict = {
   "processing": "Processing...",
   "done": "Done ({count} words)",
   "idle.hint": "Press {shortcut} to start recording",
+
+  // Settings Tab Labels
   "settings.general": "General",
   "settings.audio": "Audio",
   "settings.stt": "STT",
@@ -180,6 +358,172 @@ const en: Dict = {
   "settings.dictionary": "Dictionary",
   "settings.shortcuts": "Shortcuts",
   "settings.about": "About",
+
+  // General Tab
+  "settings.general.title": "General",
+  "settings.general.desc": "Language, startup behavior, and privacy preferences.",
+  "settings.general.appearance": "Appearance",
+  "settings.general.lang": "Interface language",
+  "settings.general.widget": "Floating widget",
+  "settings.general.widget.desc": "Show a draggable status pill on top of other apps. It animates while transcribing.",
+  "settings.general.system": "System",
+  "settings.general.startup": "Start with Windows",
+  "settings.general.startup.desc": "Launch VoxiType automatically on login.",
+  "settings.general.updates": "Automatic updates",
+  "settings.general.updates.desc": "Check for new versions on launch.",
+  "settings.general.sound": "Sound cues",
+  "settings.general.sound.desc": "Play a tone when recording starts and stops.",
+  "settings.general.privacy": "Input & privacy",
+  "settings.general.command": "Command mode",
+  "settings.general.command.desc": "Spoken commands like 'new line' trigger keystrokes.",
+  "settings.general.stats": "Anonymous usage stats",
+  "settings.general.stats.desc": "Stored locally only — never transmitted.",
+
+  // Audio Tab
+  "settings.audio.title": "Audio",
+  "settings.audio.desc": "Choose the microphone used for dictation.",
+  "settings.audio.device_group": "Input device",
+  "settings.audio.mic": "Microphone",
+
+  // STT Tab
+  "settings.stt.title": "Speech-to-Text",
+  "settings.stt.desc": "Choose cloud Groq or local whisper.cpp transcription.",
+  "settings.stt.engine_group": "Engine",
+  "settings.stt.engine": "Transcription engine",
+  "settings.stt.lang": "Language",
+  "settings.stt.lang_auto": "Auto detect",
+  "settings.stt.offline_group": "Offline whisper.cpp",
+  "settings.stt.binary_path": "whisper-cli path",
+  "settings.stt.binary_hint": "Use whisper-cli when it is available in PATH.",
+  "settings.stt.model_path": "Model path",
+  "settings.stt.model_hint": "Use a ggml model file from whisper.cpp models.",
+  "settings.stt.threads": "Threads",
+  "settings.stt.test_offline": "Test Offline Engine",
+  "settings.stt.groq_group": "Groq credentials",
+  "settings.stt.api_key": "Groq API Key",
+  "settings.stt.api_key_hint": "Stored encrypted.",
+  "settings.stt.test_connection": "Test Connection",
+  "settings.stt.saved": "Saved",
+  "settings.stt.connected": "Connected",
+  "settings.stt.invalid_key": "Invalid key",
+  "settings.stt.conn_fail": "Connection failed",
+  "settings.stt.testing": "Testing...",
+  "settings.stt.ready": "Ready",
+  "settings.stt.check_setup": "Check setup",
+  "settings.stt.test_fail": "Test failed",
+
+  // LLM Tab
+  "settings.llm.title": "AI Formatting",
+  "settings.llm.desc": "Clean up and format transcribed text. Falls back to rule-based if unavailable.",
+  "settings.llm.engine_group": "Engine",
+  "settings.llm.formatter": "Formatter",
+  "settings.llm.ollama_model": "Ollama Model",
+  "settings.llm.ollama_hint": "Make sure Ollama is running locally on port 11434.",
+  "settings.llm.groq_group": "Groq credentials",
+  "settings.llm.api_key": "Groq API Key",
+  "settings.llm.api_key_hint": "Shared with the STT setting — stored encrypted.",
+  "settings.llm.saved_placeholder": "•••••••• (saved)",
+  "settings.llm.test_conn": "Test Connection",
+  "settings.llm.testing": "Testing...",
+  "settings.llm.connected": "Connected!",
+  "settings.llm.invalid_key": "Invalid key",
+  "settings.llm.conn_fail": "Connection failed",
+
+  // Modes Tab
+  "settings.modes.title": "Modes",
+  "settings.modes.desc": "Control how transcribed text is formatted and translated.",
+  "settings.modes.format_group": "Formatting mode",
+  "settings.modes.active": "Active mode",
+  "settings.modes.active_desc": "Dictation is raw, Message is casual, Email is formal.",
+  "settings.modes.dictation": "Dictation",
+  "settings.modes.message": "Message",
+  "settings.modes.email": "Email",
+  "settings.modes.trans_group": "Translation",
+  "settings.modes.trans_after": "Translate after transcription",
+  "settings.modes.trans_desc": "Convert dictated text to another language before inserting.",
+  "settings.modes.target": "Target language",
+
+  // App Rules / Per-App Tab
+  "settings.app_rules.title": "App Rules",
+  "settings.app_rules.desc": "Automatically switch the active formatting mode based on which app you are dictating into.",
+  "settings.app_rules.feature_group": "Feature",
+  "settings.app_rules.enable": "Enable App Rules",
+  "settings.app_rules.enable_desc": "If an app isn't mapped, the default mode is used.",
+  "settings.app_rules.add_group": "Add Mapping",
+  "settings.app_rules.proc_name": "Process name (e.g. code, chrome, slack)",
+  "settings.app_rules.detect_btn": "Detect",
+  "settings.app_rules.mode_apply": "Mode to apply",
+  "settings.app_rules.add_btn": "Add Rule",
+  "settings.app_rules.detected_app": "Detected currently active app: {app}",
+  "settings.app_rules.active_group": "Active Rules",
+  "settings.app_rules.empty": "No app rules configured.",
+  "settings.app_rules.applies_mode": "Applies mode: {mode}",
+
+  // Shortcuts Tab
+  "settings.shortcuts.title": "Shortcuts",
+  "settings.shortcuts.desc": "Set the global hotkey used to start dictation in any app.",
+  "settings.shortcuts.group": "Global hotkey",
+  "settings.shortcuts.mode": "Recording mode",
+  "settings.shortcuts.mode_desc": "Push-to-talk holds; toggle starts/stops on press.",
+  "settings.shortcuts.apply_btn": "Apply hotkey",
+  "settings.shortcuts.applied": "Applied",
+
+  // About Tab
+  "settings.about.title": "About",
+  "settings.about.desc": "Free & open-source voice-to-text for every application.",
+  "settings.about.version": "v{version}",
+  "settings.about.license": "MIT License",
+  "settings.about.checking": "Checking...",
+  "settings.about.check_btn": "Check for updates",
+  "settings.about.check_fail": "Check failed: {error}",
+  "settings.about.update_avail": "Update available: v{version}",
+  "settings.about.latest": "You're on the latest version",
+
+  // History Panel
+  "history.title": "History",
+  "history.subtitle": "Your recent transcriptions",
+  "history.export_json": "Export JSON",
+  "history.export_csv": "Export CSV",
+  "history.clear": "Clear",
+  "history.confirm": "Confirm",
+  "history.cancel": "Cancel",
+  "history.clearing": "Clearing...",
+  "history.search_placeholder": "Search transcriptions...",
+  "history.all_modes": "All modes",
+  "history.loading": "Loading...",
+  "history.empty": "No transcriptions yet",
+  "history.words_suffix": "{count} words",
+  "history.clear_tooltip": "Clear history (pinned items are kept)",
+  "history.clear_confirm_tooltip": "Confirm clearing history (pinned items are kept)",
+  "history.delete_tooltip": "Delete",
+  "history.pin_tooltip": "Pin",
+  "history.unpin_tooltip": "Unpin",
+  "history.copy_tooltip": "Copy",
+  "history.re_inject_tooltip": "Re-inject",
+
+  // Dictionary Panel
+  "dictionary.title": "Dictionary",
+  "dictionary.subtitle": "Custom words, names, and replacements",
+  "dictionary.export_tooltip": "Export",
+  "dictionary.import_tooltip": "Import",
+  "dictionary.placeholder_word": "Word",
+  "dictionary.placeholder_rep": "Replacement (optional)",
+  "dictionary.add_btn": "Add",
+  "dictionary.loading": "Loading...",
+  "dictionary.empty": "No dictionary entries",
+  "dictionary.activate_tooltip": "Activate",
+  "dictionary.deactivate_tooltip": "Deactivate",
+
+  // Snippets Panel
+  "snippets.title": "Snippets",
+  "snippets.subtitle": "Spoken triggers expand into longer text",
+  "snippets.placeholder_trigger": "Trigger phrase (e.g. sign off)",
+  "snippets.placeholder_content": "Expansion content...",
+  "snippets.add_btn": "Add snippet",
+  "snippets.loading": "Loading...",
+  "snippets.empty": "No snippets yet",
+
+  // Onboarding
   "onboarding.welcome.title": "Welcome to VoxiType",
   "onboarding.welcome.body":
     "Dictate to text in any application. Free and open source.",
@@ -314,6 +658,14 @@ const en: Dict = {
   "home.words_per_minute": "Words / minute",
   "home.stats_empty": "Start dictating to see your stats",
   "home.lifetime": "All time",
+  "home.default_mic": "Default Mic",
+  "home.groq_cloud": "Groq Cloud",
+  "home.local_whisper": "Local whisper.cpp",
+  "home.mode.dictation.desc": "Verbatim",
+  "home.mode.message.desc": "Casual",
+  "home.mode.email.desc": "Formal",
+  "home.translate_to": "Translate to {target}",
+  "home.translate_desc": "Auto-translate transcribed text",
 };
 
 const dictionaries: Record<string, Dict> = { id, en };
@@ -336,12 +688,15 @@ export function t(key: string, vars?: Record<string, string | number>): string {
 }
 
 // ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 export function useT() {
   const lang = useSettingsStore((s) => s.settings.language) as string | undefined;
-  useEffect(() => {
-    if (lang && dictionaries[lang]) setLanguage(lang);
-  }, [lang]);
-  return t;
+  const activeLang = lang && dictionaries[lang] ? lang : "en";
+  if (activeLang !== currentLang) {
+    currentLang = activeLang;
+  }
+  return useMemo(() => {
+    return (key: string, vars?: Record<string, string | number>) => t(key, vars);
+  }, [activeLang]);
 }

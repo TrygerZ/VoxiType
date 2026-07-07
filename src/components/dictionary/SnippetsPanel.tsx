@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2, Zap } from "lucide-react";
 import { useSnippetStore } from "../../stores/snippetStore";
+import { useT } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { PanelHeader } from "../common/PanelHeader";
 import type { Snippet } from "../../types/app";
@@ -8,6 +9,7 @@ import { formatTauriError } from "../../lib/tauri";
 import { toast } from "../ui/Toast";
 
 export function SnippetsPanel() {
+  const t = useT();
   const snippets = useSnippetStore((s) => s.snippets);
   const loading = useSnippetStore((s) => s.loading);
   const load = useSnippetStore((s) => s.load);
@@ -48,38 +50,38 @@ export function SnippetsPanel() {
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col">
       <PanelHeader
-        title="Snippets"
-        subtitle="Spoken triggers expand into longer text"
+        title={t("snippets.title")}
+        subtitle={t("snippets.subtitle")}
         icon={<Zap className="h-4.5 w-4.5" />}
       />
 
       <div className="flex flex-col gap-2 px-10 pb-4">
         <input
           className={inputCls}
-          placeholder="Trigger phrase (e.g. sign off)"
+          placeholder={t("snippets.placeholder_trigger")}
           value={trigger}
           onChange={(e) => setTrigger(e.target.value)}
         />
         <textarea
           className={`${inputCls} min-h-20 resize-none`}
-          placeholder="Expansion content..."
+          placeholder={t("snippets.placeholder_content")}
           value={content}
           onChange={(e) => setContent(e.target.value)}
         />
         <div className="flex justify-end">
           <Button variant="primary" size="sm" onClick={() => void handleAdd()}>
-            <Plus className="h-4 w-4" /> Add snippet
+            <Plus className="h-4 w-4" /> {t("snippets.add_btn")}
           </Button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 pb-8">
-        {loading && <p className="text-sm text-vx-text-dim">Loading...</p>}
+        {loading && <p className="text-sm text-vx-text-dim">{t("snippets.loading")}</p>}
 
         {snippets.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <Zap className="h-10 w-10 text-vx-text-dim/40" />
-            <p className="text-sm text-vx-text-dim">No snippets yet</p>
+            <p className="text-sm text-vx-text-dim">{t("snippets.empty")}</p>
           </div>
         )}
 

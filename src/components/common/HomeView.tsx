@@ -250,11 +250,11 @@ export function HomeView() {
           <div className="mt-8 flex flex-wrap justify-center gap-2 text-xs text-vx-text-dim">
             <span className="flex items-center gap-1.5 rounded-full border border-vx-border/30 bg-vx-bg-tertiary/40 px-3 py-1">
               <Volume2 className="h-3.5 w-3.5 text-vx-text-secondary" />
-              {micDevice === "default" ? "Default Mic" : micDevice.split("(")[0].trim()}
+              {micDevice === "default" ? t("home.default_mic") : micDevice.split("(")[0].trim()}
             </span>
             <span className="flex items-center gap-1.5 rounded-full border border-vx-border/30 bg-vx-bg-tertiary/40 px-3 py-1">
               <Sparkles className="h-3.5 w-3.5 text-vx-accent" />
-              Groq Cloud
+              {settings.stt_engine === "whisper_cpp" ? t("home.local_whisper") : t("home.groq_cloud")}
             </span>
           </div>
         </div>
@@ -357,9 +357,9 @@ export function HomeView() {
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: "dictation", label: "Dictation", desc: "Verbatim" },
-                  { id: "message", label: "Message", desc: "Casual" },
-                  { id: "email", label: "Email", desc: "Formal" },
+                  { id: "dictation", label: t("settings.modes.dictation"), desc: t("home.mode.dictation.desc") },
+                  { id: "message", label: t("settings.modes.message"), desc: t("home.mode.message.desc") },
+                  { id: "email", label: t("settings.modes.email"), desc: t("home.mode.email.desc") },
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -386,9 +386,9 @@ export function HomeView() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-vx-text-primary">
-                    Translate to {translationTarget === "en" ? "English" : "Bahasa Indonesia"}
+                    {t("home.translate_to", { target: translationTarget === "en" ? "English" : "Bahasa Indonesia" })}
                   </h4>
-                  <p className="text-xs text-vx-text-dim">Auto-translate transcribed text</p>
+                  <p className="text-xs text-vx-text-dim">{t("home.translate_desc")}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -450,7 +450,7 @@ export function HomeView() {
                           type="button"
                           onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none"
-                          title="Copy"
+                          title={t("history.copy_tooltip")}
                         >
                           {copiedId === item.id ? (
                             <Check className="h-4 w-4 text-vx-success" />
@@ -464,7 +464,7 @@ export function HomeView() {
                           type="button"
                           onClick={() => void handleReInject(item.id)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none"
-                          title="Insert Text"
+                          title={t("history.re_inject_tooltip")}
                         >
                           {injectedId === item.id ? (
                             <Check className="h-4 w-4 text-vx-success" />
@@ -492,7 +492,7 @@ export function HomeView() {
                     <div className="flex items-center justify-between text-[11px] text-vx-text-dim border-t border-vx-border/20 pt-2">
                       <span className="flex items-center gap-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-vx-accent/60" />
-                        <span className="capitalize">{item.mode}</span>
+                        <span className="capitalize">{t(`settings.modes.${item.mode}`)}</span>
                         {item.word_count > 0 && (
                           <>
                             <span>•</span>

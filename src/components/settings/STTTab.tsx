@@ -4,6 +4,7 @@ import { Check, FolderOpen, Loader2, XCircle } from "lucide-react";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import {
   formatTauriError,
   pickSetupFile,
@@ -16,6 +17,7 @@ import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 type TestStatus = "idle" | "testing" | "ok" | "fail" | "err";
 
 export function STTTab() {
+  const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const [groqStatus, setGroqStatus] = useState<TestStatus>("idle");
@@ -36,7 +38,7 @@ export function STTTab() {
     try {
       await update("groq_api_key", value);
       if (value.trim()) {
-        toast("API key saved");
+        toast(t("settings.stt.saved"));
       }
     } catch (e: unknown) {
       toast(formatTauriError(e), "error");
@@ -47,7 +49,7 @@ export function STTTab() {
     if (!groqKey.trim() && !groqKeySet) return;
     await runStatus(setGroqStatus, async () => {
       await testGroqApi(groqKey.trim());
-      toast("Groq connection successful!");
+      toast(t("settings.stt.connected"));
     });
   };
 
@@ -60,7 +62,7 @@ export function STTTab() {
         language,
         whisperThreads,
       );
-      toast("Offline engine ready");
+      toast(t("settings.stt.ready"));
     });
   };
 
@@ -89,12 +91,12 @@ export function STTTab() {
   return (
     <div className="max-w-xl">
       <SettingsHeader
-        title="Speech-to-Text"
-        description="Choose cloud Groq or local whisper.cpp transcription."
+        title={t("settings.stt.title")}
+        description={t("settings.stt.desc")}
       />
 
-      <SettingsGroup title="Engine">
-        <SettingsRow label="Transcription engine">
+      <SettingsGroup title={t("settings.stt.engine_group")}>
+        <SettingsRow label={t("settings.stt.engine")}>
           <Select
             options={[
               { value: "groq", label: "Groq Whisper" },
@@ -105,10 +107,10 @@ export function STTTab() {
             className="w-48"
           />
         </SettingsRow>
-        <SettingsRow label="Language">
+        <SettingsRow label={t("settings.stt.lang")}>
           <Select
             options={[
-              { value: "auto", label: "Auto detect" },
+              { value: "auto", label: t("settings.stt.lang_auto") },
               { value: "id", label: "Bahasa Indonesia" },
               { value: "en", label: "English" },
             ]}
@@ -120,28 +122,28 @@ export function STTTab() {
       </SettingsGroup>
 
       {engine === "whisper_cpp" ? (
-        <SettingsGroup title="Offline whisper.cpp">
+        <SettingsGroup title={t("settings.stt.offline_group")}>
           <div className="flex flex-col gap-4 px-4 py-3.5">
             <PathPickerField
-              label="whisper-cli path"
+              label={t("settings.stt.binary_path")}
               placeholder="whisper-cli or C:\\tools\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"
               value={whisperBinary}
               onChange={(value) => void update("whisper_cpp_binary_path", value)}
               onBrowse={handlePickBinary}
               browseLabel="Browse"
-              hint="Use whisper-cli when it is available in PATH."
+              hint={t("settings.stt.binary_hint")}
             />
             <PathPickerField
-              label="Model path"
+              label={t("settings.stt.model_path")}
               placeholder="C:\\models\\ggml-base.bin"
               value={whisperModel}
               onChange={(value) => void update("whisper_cpp_model_path", value)}
               onBrowse={handlePickModel}
               browseLabel="Browse"
-              hint="Use a ggml model file from whisper.cpp models."
+              hint={t("settings.stt.model_hint")}
             />
             <Input
-              label="Threads"
+              label={t("settings.stt.threads")}
               type="number"
               min={1}
               max={32}
@@ -155,10 +157,10 @@ export function STTTab() {
             />
             <StatusButton
               status={whisperStatus}
-              idleLabel="Test Offline Engine"
-              okLabel="Ready"
-              failLabel="Check setup"
-              errLabel="Test failed"
+              idleLabel={t("settings.stt.test_offline")}
+              okLabel={t("settings.stt.ready")}
+              failLabel={t("settings.stt.check_setup")}
+              errLabel={t("settings.stt.test_fail")}
               onClick={handleTestWhisper}
               disabled={
                 whisperStatus === "testing" ||
@@ -169,22 +171,22 @@ export function STTTab() {
           </div>
         </SettingsGroup>
       ) : (
-        <SettingsGroup title="Groq credentials">
+        <SettingsGroup title={t("settings.stt.groq_group")}>
           <div className="px-4 py-3.5">
             <Input
-              label="Groq API Key"
+              label={t("settings.stt.api_key")}
               type="password"
-              placeholder={groqKeySet ? "Saved" : "gsk_..."}
+              placeholder={groqKeySet ? t("settings.stt.saved") : "gsk_..."}
               value={groqKey}
               onChange={(e) => void handleApiKeyChange(e.target.value)}
-              hint="Stored encrypted."
+              hint={t("settings.stt.api_key_hint")}
             />
             <StatusButton
               status={groqStatus}
-              idleLabel="Test Connection"
-              okLabel="Connected"
-              failLabel="Invalid key"
-              errLabel="Connection failed"
+              idleLabel={t("settings.stt.test_connection")}
+              okLabel={t("settings.stt.connected")}
+              failLabel={t("settings.stt.invalid_key")}
+              errLabel={t("settings.stt.conn_fail")}
               onClick={handleTestApi}
               disabled={
                 groqStatus === "testing" || (!groqKey.trim() && !groqKeySet)

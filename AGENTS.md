@@ -4,7 +4,7 @@
 | Layer | Tool | File Pattern |
 |-------|------|-------------|
 | Desktop | Tauri 2.x | src-tauri/ |
-| Frontend | React 19 + Vite 6 + Tailwind 4 | src/ |
+| Frontend | React 19 + Vite 7 + Tailwind 4 | src/ |
 | Backend | Rust 1.85+ | src-tauri/src/ |
 | State | Zustand 5.x | src/stores/ |
 | Storage | SQLite via rusqlite | src-tauri/src/storage/ |
@@ -63,7 +63,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (31 total across 7 modules)
+## IPC Commands (34 total across 8 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -74,12 +74,13 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `test_groq_api` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `pick_setup_file`, `test_groq_api`, `test_whisper_cpp` |
+| `stats` | `get_usage_stats` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (31 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (34 commands)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
@@ -97,7 +98,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 ## Frontend Components
 | Module | Files |
 |--------|-------|
-| `ui/` | Button, Input, Select, Switch |
+| `ui/` | Button, Input, Select, Switch, Toast |
 | `common/` | FloatingDock, HomeView, PanelHeader |
 | `floating-widget/` | FloatingWidget, Waveform |
 | `settings/` | SettingsLayout, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
@@ -119,6 +120,10 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `translation_enabled` | bool | Enable LLM-based translation |
 | `translation_target` | string | Target language code for translation |
 | `command_mode` | bool | Enable voice command mode |
+| `stt_engine` | string | "groq" (default) or "whisper_cpp" |
+| `whisper_cpp_binary_path` | string | Path to whisper-cli executable |
+| `whisper_cpp_model_path` | string | Path to GGML model file (e.g. ggml-base.bin) |
+| `whisper_cpp_threads` | number | Thread count for whisper.cpp (default: 4) |
 | `telemetry` | bool | Opt-in local usage statistics |
 | `per_app_mode` | bool | Enable per-app mode routing |
 | `hotkey` | HotkeyConfig | Global hotkey key + modifiers |

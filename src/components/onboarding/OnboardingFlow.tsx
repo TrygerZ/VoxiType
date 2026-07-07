@@ -82,7 +82,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     },
   ];
 
-  const [lang, setLang] = useState(stringSetting(settings.language, "id"));
+  const [lang, setLang] = useState(stringSetting(settings.language, "en"));
   const [soundCues, setSoundCues] = useState(booleanSetting(settings.sound_cues, false));
   const [sttEngine, setSttEngine] = useState<SttEngine>(sttEngineSetting(settings.stt_engine));
   const [sttLanguage, setSttLanguage] = useState(stringSetting(settings.stt_language, "auto"));
@@ -266,7 +266,11 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 { value: "en", label: "English" },
               ]}
               value={lang}
-              onChange={(e) => setLang(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setLang(value);
+                void update("language", value);
+              }}
               className="w-full"
             />
           </div>
