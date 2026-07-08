@@ -221,9 +221,9 @@ export function HomeView() {
           </button>
 
           {/* Duration & Waveform feedback */}
-          <div className="h-16 flex flex-col items-center justify-center w-full">
+          <div className="h-20 flex flex-col items-center justify-center w-full">
             {isRecording ? (
-              <div className="flex flex-col items-center gap-2 w-full px-8">
+              <div className="flex flex-col items-center gap-1.5 w-full px-8">
                 <span className="text-xl font-mono font-semibold tracking-wide text-vx-text-primary">
                   {formatDuration(durationSec)}
                 </span>

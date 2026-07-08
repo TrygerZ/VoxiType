@@ -41,19 +41,19 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
             <button
               type="button"
               onClick={() => onChange(id)}
-              className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-200 hover:-translate-y-1 hover:bg-vx-bg-tertiary focus:outline-none ${
+              className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-vx-bg-tertiary active:scale-95 focus:outline-none ${
                 isActive ? "text-vx-text-primary" : "text-vx-text-secondary hover:text-vx-text-primary"
               }`}
               title={t(labelKey)}
             >
               <Icon
-                className={`h-5 w-5 transition-transform duration-200 ${
+                className={`h-5 w-5 transition-transform duration-150 ${
                   isActive ? "scale-110 text-vx-accent" : "scale-100"
                 }`}
               />
               {/* Active Dot */}
               {isActive && (
-                <span className="absolute -bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-vx-accent shadow-[0_0_8px_var(--color-vx-accent)]" />
+                <span className="absolute -bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-vx-accent" />
               )}
             </button>
 

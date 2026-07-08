@@ -14,12 +14,12 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
       className="inline-flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 rounded-lg"
     >
       <span
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-in-out ${
           checked ? "bg-vx-accent" : "bg-vx-border-strong"
         }`}
       >
         <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-vx-sm transition-transform duration-200 ${
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-vx-sm transition-transform duration-200 ease-in-out ${
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />

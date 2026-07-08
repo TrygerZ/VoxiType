@@ -1,4 +1,4 @@
-import { type InputHTMLAttributes, forwardRef, useState } from "react";
+import { type InputHTMLAttributes, forwardRef, useId, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -9,7 +9,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, hint, showPasswordToggle, className = "", id, type, ...rest }, ref) => {
-    const inputId = id ?? rest.name;
+    const defaultId = useId();
+    const inputId = id ?? defaultId;
     const [visible, setVisible] = useState(false);
     const isPassword = type === "password";
     const inputType = isPassword && visible ? "text" : type;
@@ -35,9 +36,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             <button
               type="button"
               onClick={() => setVisible((v) => !v)}
-              tabIndex={-1}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-vx-text-dim hover:text-vx-accent transition-colors"
-              aria-label={visible ? "Hide password" : "Show password"}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-vx-text-dim hover:text-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 transition-colors"
+              aria-label={
+                visible
+                  ? label
+                    ? `Hide ${label}`
+                    : "Hide password"
+                  : label
+                    ? `Show ${label}`
+                    : "Show password"
+              }
             >
               {visible ? (
                 <EyeOff className="h-4 w-4" />

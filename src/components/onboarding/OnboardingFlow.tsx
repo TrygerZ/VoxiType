@@ -47,9 +47,18 @@ interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
+const STEPS: Step[] = [
+  "welcome",
+  "quick_settings",
+  "stt_setup",
+  "hotkey",
+  "complete",
+];
+
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const t = useT();
   const [step, setStep] = useState<Step>("welcome");
+  const currentStepIdx = STEPS.indexOf(step);
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const loadSettings = useSettingsStore((s) => s.load);
@@ -206,6 +215,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "welcome") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-10 overflow-y-auto p-10">
+        <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
+          {STEPS.map((s, idx) => (
+            <div
+              key={s}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+                idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
+              }`}
+            />
+          ))}
+        </div>
         <div className="flex flex-col items-center gap-4 text-center">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
             <Mic className="h-7 w-7" />
@@ -245,6 +264,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "quick_settings") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
+        <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
+          {STEPS.map((s, idx) => (
+            <div
+              key={s}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+                idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
+              }`}
+            />
+          ))}
+        </div>
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
           <Settings className="h-7 w-7" />
         </span>
@@ -261,6 +290,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               {t("onboarding.ui_language")}
             </label>
             <Select
+              autoFocus
               options={[
                 { value: "id", label: "Bahasa Indonesia" },
                 { value: "en", label: "English" },
@@ -313,6 +343,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     return (
       <div className="vx-app-bg h-full overflow-y-auto p-6 sm:p-8">
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          <div className="flex w-full max-w-md gap-2 px-4 mx-auto mb-2" aria-label="Onboarding Progress">
+            {STEPS.map((s, idx) => (
+              <div
+                key={s}
+                className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+                  idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
+                }`}
+              />
+            ))}
+          </div>
           <div className="flex flex-col items-center gap-3 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
               {sttEngine === "groq" ? <Key className="h-7 w-7" /> : <HardDrive className="h-7 w-7" />}
@@ -425,6 +465,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "hotkey") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
+        <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
+          {STEPS.map((s, idx) => (
+            <div
+              key={s}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+                idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
+              }`}
+            />
+          ))}
+        </div>
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
           <Keyboard className="h-7 w-7" />
         </span>
@@ -464,6 +514,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   return (
     <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
+      <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
+        {STEPS.map((s, idx) => (
+          <div
+            key={s}
+            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+              idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
+            }`}
+          />
+        ))}
+      </div>
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-success/10 text-vx-success">
         <Check className="h-7 w-7" />
       </span>
@@ -509,6 +569,7 @@ function GroqSetup({
           {t("onboarding.stt.groq.open")}
         </Button>
         <Input
+          autoFocus
           label={t("onboarding.stt.groq.api_key")}
           type="password"
           showPasswordToggle
@@ -612,6 +673,7 @@ function OfflineSetup({
 
       <div className="flex flex-col gap-3">
         <PathPickerField
+          autoFocus
           label={t("onboarding.stt.offline.binary")}
           placeholder="whisper-cli"
           value={binaryPath}
@@ -694,6 +756,7 @@ function PathPickerField({
   value,
   hint,
   browseLabel,
+  autoFocus,
   onChange,
   onBrowse,
 }: {
@@ -702,12 +765,14 @@ function PathPickerField({
   value: string;
   hint: string;
   browseLabel: string;
+  autoFocus?: boolean;
   onChange: (value: string) => void;
   onBrowse: () => void;
 }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
       <Input
+        autoFocus={autoFocus}
         label={label}
         placeholder={placeholder}
         value={value}
