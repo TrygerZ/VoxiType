@@ -214,7 +214,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   if (step === "welcome") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-10 overflow-y-auto p-10">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-10 overflow-y-auto p-10">
         <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
           {STEPS.map((s, idx) => (
             <div
@@ -225,22 +225,36 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             />
           ))}
         </div>
-        <div className="flex flex-col items-center gap-4 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
-            <Mic className="h-7 w-7" />
-          </span>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {t("onboarding.welcome.title")}
-          </h1>
-          <p className="max-w-sm text-sm text-vx-text-dim">
-            {t("onboarding.welcome.body")}
-          </p>
+        <div className="vx-animate-in flex flex-col items-center gap-5 text-center">
+          <div className="relative flex h-20 w-20 items-center justify-center">
+            <span className="absolute inset-0 rounded-full bg-vx-accent/20 blur-2xl" aria-hidden />
+            <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-vx-border/30 bg-vx-bg-secondary">
+              <img
+                src="/logo.png"
+                alt="VoxiType"
+                className="h-full w-full object-contain"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {t("onboarding.welcome.title")}
+            </h1>
+            <p className="max-w-sm text-sm leading-relaxed text-vx-text-dim">
+              {t("onboarding.welcome.body")}
+            </p>
+          </div>
         </div>
 
-        <div className="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {features.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="flex flex-col gap-1.5 rounded-xl bg-vx-bg-secondary p-5">
-              <Icon className="h-5 w-5 text-vx-accent" />
+            <div
+              key={title}
+              className="flex flex-col gap-2.5 rounded-xl border border-vx-border/40 bg-vx-bg-secondary/60 p-5 transition-colors duration-200 hover:border-vx-border-strong hover:bg-vx-bg-secondary"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
+                <Icon className="h-5 w-5" />
+              </span>
               <span className="text-sm font-medium">{title}</span>
               <span className="text-xs leading-relaxed text-vx-text-dim">{body}</span>
             </div>
@@ -263,7 +277,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   if (step === "quick_settings") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-8 overflow-y-auto p-10 text-center">
         <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
           {STEPS.map((s, idx) => (
             <div
@@ -464,7 +478,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   if (step === "hotkey") {
     return (
-      <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
+      <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-8 overflow-y-auto p-10 text-center">
         <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
           {STEPS.map((s, idx) => (
             <div
@@ -513,7 +527,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   }
 
   return (
-    <div className="vx-app-bg flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-10 text-center">
+    <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-8 overflow-y-auto p-10 text-center">
       <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
         {STEPS.map((s, idx) => (
           <div

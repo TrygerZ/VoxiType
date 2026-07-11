@@ -81,7 +81,7 @@ export function FloatingWidget({
   return (
     <div
       data-tauri-drag-region
-      className={`vx-scale-in pointer-events-auto flex h-10 w-28 items-center gap-2.5 rounded-full border px-2.5 select-none transition-all duration-300 ${currentStyle.container}`}
+      className={`vx-scale-in pointer-events-auto flex h-10 w-28 items-center gap-2.5 rounded-full border px-2.5 select-none transition-colors duration-300 ${currentStyle.container}`}
     >
       {/* VoxiType Logo */}
       <div

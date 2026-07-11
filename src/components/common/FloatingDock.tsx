@@ -33,7 +33,7 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
   const t = useT();
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-vx-border bg-vx-bg-secondary/70 p-2 shadow-vx-lg backdrop-blur-xl transition-all">
+    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-vx-border bg-vx-bg-secondary/70 p-2 shadow-vx-lg backdrop-blur-xl transition-colors duration-200">
       {items.map(({ id, icon: Icon, labelKey }) => {
         const isActive = active === id;
         return (
@@ -41,7 +41,7 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
             <button
               type="button"
               onClick={() => onChange(id)}
-              className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-vx-bg-tertiary active:scale-95 focus:outline-none ${
+              className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-colors duration-200 ease-out hover:-translate-y-0.5 hover:bg-vx-bg-tertiary active:scale-95 focus:outline-none ${
                 isActive ? "text-vx-text-primary" : "text-vx-text-secondary hover:text-vx-text-primary"
               }`}
               title={t(labelKey)}
