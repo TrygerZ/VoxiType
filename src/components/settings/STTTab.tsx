@@ -2,6 +2,7 @@ import { type ButtonHTMLAttributes, useState } from "react";
 import { Check, FolderOpen, Loader2, XCircle } from "lucide-react";
 
 import { Input } from "../ui/Input";
+import { useDebouncedApiKey } from "../../hooks/useDebouncedApiKey";
 import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
@@ -34,21 +35,16 @@ export function STTTab() {
   const whisperModel = stringSetting(settings.whisper_cpp_model_path, "");
   const whisperThreads = numberSetting(settings.whisper_cpp_threads, 4);
 
-  const handleApiKeyChange = async (value: string) => {
-    try {
-      await update("groq_api_key", value);
-      if (value.trim()) {
-        toast(t("settings.stt.saved"));
-      }
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
-    }
-  };
+  const { localKey, onKeyChange } = useDebouncedApiKey(
+    groqKey,
+    update,
+    t("settings.stt.saved"),
+  );
 
   const handleTestApi = async () => {
-    if (!groqKey.trim() && !groqKeySet) return;
+    if (!localKey.trim() && !groqKeySet) return;
     await runStatus(setGroqStatus, async () => {
-      await testGroqApi(groqKey.trim());
+      await testGroqApi(localKey.trim());
       toast(t("settings.stt.connected"));
     });
   };
@@ -176,9 +172,10 @@ export function STTTab() {
             <Input
               label={t("settings.stt.api_key")}
               type="password"
+              showPasswordToggle
               placeholder={groqKeySet ? t("settings.stt.saved") : "gsk_..."}
-              value={groqKey}
-              onChange={(e) => void handleApiKeyChange(e.target.value)}
+              value={localKey}
+              onChange={(e) => onKeyChange(e.target.value)}
               hint={t("settings.stt.api_key_hint")}
             />
             <StatusButton

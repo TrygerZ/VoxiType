@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Loader2, XCircle } from "lucide-react";
 import { Input } from "../ui/Input";
+import { useDebouncedApiKey } from "../../hooks/useDebouncedApiKey";
 import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
@@ -15,23 +16,17 @@ export function LLMTab() {
   const engine = (settings.llm_engine as string) ?? "ollama";
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail" | "err">("idle");
 
-  const handleApiKeyChange = async (value: string) => {
-    try {
-      await update("groq_api_key", value);
-      if (value.trim()) {
-        toast(t("settings.stt.saved"));
-      }
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
-    }
-  };
+  const { localKey, onKeyChange } = useDebouncedApiKey(
+    (settings.groq_api_key as string) ?? "",
+    update,
+    t("settings.stt.saved"),
+  );
 
   const handleTestApi = async () => {
-    const key = (settings.groq_api_key as string) ?? "";
-    if (!key.trim() && !(settings.groq_api_key_set as boolean)) return;
+    if (!localKey.trim() && !(settings.groq_api_key_set as boolean)) return;
     setTestStatus("testing");
     try {
-      await testGroqApi(key.trim());
+      await testGroqApi(localKey.trim());
       setTestStatus("ok");
       toast(t("settings.llm.connected"));
       setTimeout(() => setTestStatus("idle"), 3000);
@@ -88,19 +83,20 @@ export function LLMTab() {
             <Input
               label={t("settings.llm.api_key")}
               type="password"
+              showPasswordToggle
               placeholder={
                 (settings.groq_api_key_set as boolean)
                   ? t("settings.llm.saved_placeholder")
                   : "gsk_..."
               }
-              value={(settings.groq_api_key as string) ?? ""}
-              onChange={(e) => void handleApiKeyChange(e.target.value)}
+              value={localKey}
+              onChange={(e) => onKeyChange(e.target.value)}
               hint={t("settings.llm.api_key_hint")}
             />
             <button
               type="button"
               onClick={handleTestApi}
-              disabled={testStatus === "testing" || (!(settings.groq_api_key as string)?.trim() && !(settings.groq_api_key_set as boolean))}
+              disabled={testStatus === "testing" || (!localKey.trim() && !(settings.groq_api_key_set as boolean))}
               className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                 testStatus === "ok"
                   ? "border-green-500/40 bg-green-500/10 text-green-600"
