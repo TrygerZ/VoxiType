@@ -23,9 +23,9 @@ pub fn normalize_process_name(name: &str) -> String {
 #[cfg(windows)]
 mod platform {
     use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
-    use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
     use windows::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
@@ -42,19 +42,27 @@ mod platform {
                 return None;
             }
 
-            let handle =
-                OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
 
             let mut buf = [0u16; MAX_PATH as usize];
-            let len = GetModuleBaseNameW(handle, None, &mut buf);
+            let mut len = buf.len() as u32;
+            let res = QueryFullProcessImageNameW(
+                handle,
+                PROCESS_NAME_FORMAT(0),
+                windows::core::PWSTR::from_raw(buf.as_mut_ptr()),
+                &mut len,
+            );
             let _ = CloseHandle(handle);
 
-            if len == 0 {
+            if res.is_err() || len == 0 {
                 return None;
             }
 
-            let name = String::from_utf16_lossy(&buf[..len as usize]);
-            Some(super::normalize_process_name(&name))
+            let full_path = String::from_utf16_lossy(&buf[..len as usize]);
+            let name = std::path::Path::new(&full_path)
+                .file_name()
+                .and_then(|n| n.to_str())?;
+            Some(super::normalize_process_name(name))
         }
     }
 }
@@ -63,5 +71,69 @@ mod platform {
 mod platform {
     pub fn foreground_process_name() -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::Foundation::MAX_PATH;
+    use windows::Win32::System::Threading::OpenProcess;
+    use windows::Win32::System::Threading::QueryFullProcessImageNameW;
+    use windows::Win32::System::Threading::PROCESS_NAME_FORMAT;
+    use windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    #[test]
+    fn test_foreground_process() {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            println!("hwnd: {:?}", hwnd);
+            if hwnd.0.is_null() {
+                println!("hwnd is null");
+                return;
+            }
+
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            println!("pid: {}", pid);
+            if pid == 0 {
+                println!("pid is 0");
+                return;
+            }
+
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            println!("handle: {:?}", handle);
+            let handle = match handle {
+                Ok(h) => h,
+                Err(e) => {
+                    println!("OpenProcess failed: {:?}", e);
+                    return;
+                }
+            };
+
+            let mut buf = [0u16; MAX_PATH as usize];
+            let mut len = buf.len() as u32;
+            let res = QueryFullProcessImageNameW(
+                handle,
+                PROCESS_NAME_FORMAT(0),
+                windows::core::PWSTR::from_raw(buf.as_mut_ptr()),
+                &mut len,
+            );
+            let _ = CloseHandle(handle);
+            println!("QueryFullProcessImageNameW result: {:?}, len: {}", res, len);
+            if let Err(e) = res {
+                println!("error: {:?}", e);
+                return;
+            }
+
+            let full_path = String::from_utf16_lossy(&buf[..len as usize]);
+            println!("full_path: {}", full_path);
+            let name = std::path::Path::new(&full_path)
+                .file_name()
+                .and_then(|n| n.to_str());
+            println!("name: {:?}", name);
+        }
     }
 }

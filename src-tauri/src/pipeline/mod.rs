@@ -49,7 +49,16 @@ impl PipelineOrchestrator {
     pub fn recording_duration(&self) -> Option<std::time::Duration> {
         let guard = self.state.lock_recover();
         match &*guard {
-            AppState::Recording { start_time } => Some(start_time.elapsed()),
+            AppState::Recording { start_time, .. } => Some(start_time.elapsed()),
+            _ => None,
+        }
+    }
+
+    pub fn active_app(&self) -> Option<String> {
+        let guard = self.state.lock_recover();
+        match &*guard {
+            AppState::Recording { active_app, .. } => active_app.clone(),
+            AppState::Processing { active_app, .. } => active_app.clone(),
             _ => None,
         }
     }

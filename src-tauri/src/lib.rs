@@ -28,7 +28,7 @@ use tauri::{Manager, Runtime};
 
 use hotkey::HotkeyConfig;
 use pipeline::PipelineOrchestrator;
-use storage::{Database, SettingsManager};
+use storage::{Database, HistoryRepository, SettingsManager};
 
 /// Cached STT engine: (engine kind, cache key, engine instance).
 type SttEngineCache = Option<(
@@ -56,6 +56,19 @@ impl AppStateInner {
         let db_path = app_data_dir.join("data").join("voxitype.db");
         let db = Database::open(&db_path)?;
         let master_key = crypto::get_master_key(&app_data_dir)?;
+
+        // Prune old history based on retention days setting
+        let settings = SettingsManager::new(&db);
+        let retention_days = settings
+            .get::<u32>("history_retention_days")
+            .ok()
+            .flatten()
+            .unwrap_or(90);
+        let history_repo = HistoryRepository::new(&db);
+        if let Err(e) = history_repo.prune_old_history(retention_days) {
+            tracing::warn!("Failed to prune old history: {e}");
+        }
+
         Ok(Self {
             db,
             pipeline: PipelineOrchestrator::new(),

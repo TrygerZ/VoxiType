@@ -55,12 +55,16 @@ pub fn decrypted_api_key(state: &AppStateInner) -> String {
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
     let api_key = decrypted_api_key(state);
     let kind = stt_engine_kind(&string_setting(&state.db, "stt_engine", "groq"));
+    let mut model = string_setting(&state.db, "stt_model", "whisper-large-v3-turbo");
+    if model == "small" || model.trim().is_empty() {
+        model = "whisper-large-v3-turbo".to_string();
+    }
     let whisper_cpp = WhisperCppConfig {
         binary_path: string_setting(&state.db, "whisper_cpp_binary_path", "whisper-cli"),
         model_path: string_setting(&state.db, "whisper_cpp_model_path", ""),
         threads: u32_setting(&state.db, "whisper_cpp_threads", 4),
     };
-    let cache_key = stt_cache_key(kind, &api_key, &whisper_cpp);
+    let cache_key = stt_cache_key(kind, &api_key, &model, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
     if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
@@ -71,6 +75,7 @@ pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>
 
     let groq = GroqSttConfig {
         api_key: api_key.clone(),
+        model: model.clone(),
         language: string_setting(&state.db, "stt_language", "auto"),
         ..Default::default()
     };
@@ -87,9 +92,14 @@ fn stt_engine_kind(value: &str) -> SttEngineKind {
     }
 }
 
-fn stt_cache_key(kind: SttEngineKind, api_key: &str, whisper_cpp: &WhisperCppConfig) -> String {
+fn stt_cache_key(
+    kind: SttEngineKind,
+    api_key: &str,
+    model: &str,
+    whisper_cpp: &WhisperCppConfig,
+) -> String {
     match kind {
-        SttEngineKind::Groq => api_key.to_string(),
+        SttEngineKind::Groq => format!("{}|{}", api_key, model),
         SttEngineKind::WhisperCpp => format!(
             "{}|{}|{}",
             whisper_cpp.binary_path, whisper_cpp.model_path, whisper_cpp.threads
@@ -118,9 +128,15 @@ pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
 
 pub fn build_stt_config(db: &Database) -> SttConfig {
     let language = string_setting(db, "stt_language", "auto");
-    let hotwords = DictionaryRepository::new(db)
-        .get_hotwords()
-        .unwrap_or_default();
+    // When auto-detecting, skip hotwords to avoid biasing the STT model
+    // toward a specific language.
+    let hotwords = if language == "auto" {
+        Vec::new()
+    } else {
+        DictionaryRepository::new(db)
+            .get_hotwords_by_language(&language)
+            .unwrap_or_default()
+    };
     let initial_prompt = if hotwords.is_empty() {
         None
     } else {
@@ -133,15 +149,15 @@ pub fn build_stt_config(db: &Database) -> SttConfig {
     }
 }
 
-pub fn active_mode(db: &Database) -> LlmMode {
+pub fn active_mode(db: &Database, active_app: Option<&str>) -> LlmMode {
     let per_app_on = SettingsManager::new(db)
         .get::<bool>("per_app_mode")
         .ok()
         .flatten()
         .unwrap_or(false);
     if per_app_on {
-        if let Some(proc) = crate::active_window::foreground_process_name() {
-            if let Ok(Some(mode_id)) = crate::storage::PerAppModeRepository::new(db).mode_for(&proc)
+        if let Some(proc) = active_app {
+            if let Ok(Some(mode_id)) = crate::storage::PerAppModeRepository::new(db).mode_for(proc)
             {
                 return LlmMode::from_id(&mode_id);
             }
@@ -167,7 +183,7 @@ pub fn telemetry_enabled(db: &Database) -> bool {
 }
 
 pub fn csv_escape(s: &str) -> String {
-    s.replace('"', "\"\"")
+    s.replace('"', "\"\"").replace('\r', "").replace('\n', " ")
 }
 
 pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
@@ -232,7 +248,8 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     }
 
     let llm = build_llm(&state);
-    let mode = active_mode(&state.db);
+    let active_app = state.pipeline.active_app();
+    let mode = active_mode(&state.db, active_app.as_deref());
     let replacements = DictionaryRepository::new(&state.db)
         .get_replacements()
         .unwrap_or_default();
@@ -379,9 +396,10 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
 
+    let active_app = crate::active_window::foreground_process_name();
     let tag = match state
         .pipeline
-        .apply(crate::pipeline::StateEvent::StartRecording)
+        .apply(crate::pipeline::StateEvent::StartRecording { active_app })
     {
         Ok(t) => t,
         Err(e) => return fail(app, &state.pipeline, &e),

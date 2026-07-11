@@ -16,7 +16,12 @@ struct OffFormatter;
 
 #[async_trait]
 impl LlmFormatter for OffFormatter {
-    async fn format(&self, text: &str, _mode: &super::types::LlmMode) -> Result<String> {
+    async fn format(
+        &self,
+        text: &str,
+        _mode: &super::types::LlmMode,
+        _language: &str,
+    ) -> Result<String> {
         Ok(text.to_string())
     }
 
@@ -90,7 +95,7 @@ mod tests {
         );
 
         let out = formatter
-            .format("um halo dunia", &LlmMode::Dictation)
+            .format("um halo dunia", &LlmMode::Dictation, "id")
             .await
             .unwrap();
 

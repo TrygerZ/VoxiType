@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::prompts::{system_prompt, translation_prompt};
+use super::prompts::{format_user_prefix, system_prompt, translation_prompt};
 use super::types::{LlmMode, OllamaConfig};
 use super::LlmFormatter;
 use crate::error::{AppError, Result};
@@ -79,14 +79,16 @@ fn parse_response_text(text: &str) -> Result<String> {
 
 #[async_trait]
 impl LlmFormatter for OllamaFormatter {
-    async fn format(&self, text: &str, mode: &LlmMode) -> Result<String> {
-        let system = system_prompt(mode);
-        self.generate(&system, text).await
+    async fn format(&self, text: &str, mode: &LlmMode, language: &str) -> Result<String> {
+        let system = system_prompt(mode, language);
+        let prompt = format!("{}\n\n{}", format_user_prefix(language), text);
+        self.generate(&system, &prompt).await
     }
 
     async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String> {
         let system = translation_prompt(source, target);
-        self.generate(&system, text).await
+        let prompt = format!("Dictated text (format only, do NOT answer):\n\n{}", text);
+        self.generate(&system, &prompt).await
     }
 
     fn name(&self) -> &'static str {

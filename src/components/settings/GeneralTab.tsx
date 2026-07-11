@@ -12,11 +12,20 @@ export function GeneralTab() {
 
   // Toggle the floating widget: update the local store optimistically and let
   // the backend persist the setting and show/hide the overlay window.
-  const toggleFloatingWidget = (v: boolean) => {
+  const toggleFloatingWidget = async (v: boolean) => {
+    const prev = useSettingsStore.getState().settings.floating_widget;
     useSettingsStore.setState((s) => ({
       settings: { ...s.settings, floating_widget: v },
     }));
-    void setFloatingWidgetEnabled(v);
+    try {
+      await setFloatingWidgetEnabled(v);
+    } catch {
+      if (useSettingsStore.getState().settings.floating_widget === v) {
+        useSettingsStore.setState((s) => ({
+          settings: { ...s.settings, floating_widget: prev },
+        }));
+      }
+    }
   };
 
   return (

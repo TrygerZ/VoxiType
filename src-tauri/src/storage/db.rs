@@ -51,6 +51,10 @@ impl Database {
     fn migrate(&self) -> Result<()> {
         let conn = self.conn.lock_recover();
         conn.execute_batch(SCHEMA_V1)?;
+        let _ = conn.execute(
+            "UPDATE settings SET value = '\"whisper-large-v3-turbo\"' WHERE key = 'stt_model' AND value = '\"small\"'",
+            [],
+        );
         Ok(())
     }
 

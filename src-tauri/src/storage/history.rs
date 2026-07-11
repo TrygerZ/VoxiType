@@ -222,6 +222,19 @@ impl<'a> HistoryRepository<'a> {
             Ok(n)
         })
     }
+
+    /// Prune unpinned history older than the specified number of days.
+    pub fn prune_old_history(&self, days: u32) -> Result<usize> {
+        self.db.with_conn(|c| {
+            let n = c.execute(
+                "DELETE FROM transcriptions
+                 WHERE is_pinned = 0
+                   AND created_at < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-' || ?1 || ' days')",
+                rusqlite::params![days],
+            )?;
+            Ok(n)
+        })
+    }
 }
 
 /// Escape FTS5 special characters and operators from user input so queries

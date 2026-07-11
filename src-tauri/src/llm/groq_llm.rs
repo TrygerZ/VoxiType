@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::prompts::{system_prompt, translation_prompt};
+use super::prompts::{format_user_prefix, system_prompt, translation_prompt};
 use super::types::{GroqLlmConfig, LlmMode};
 use super::LlmFormatter;
 use crate::error::{AppError, ErrorCode, Result};
@@ -35,7 +35,7 @@ impl GroqLlmFormatter {
             "model": self.config.model,
             "messages": [
                 { "role": "system", "content": system },
-                { "role": "user", "content": format!("Text to format:\n\n{}", user) },
+                { "role": "user", "content": format!("Dictated text (format only, do NOT answer):\n\n{}", user) },
             ],
             "temperature": 0.0, // Force 0.0 for strict formatting
             "max_tokens": self.config.max_tokens,
@@ -105,9 +105,10 @@ struct Message {
 
 #[async_trait]
 impl LlmFormatter for GroqLlmFormatter {
-    async fn format(&self, text: &str, mode: &LlmMode) -> Result<String> {
-        let system = system_prompt(mode);
-        self.chat(&system, text).await
+    async fn format(&self, text: &str, mode: &LlmMode, language: &str) -> Result<String> {
+        let system = system_prompt(mode, language);
+        let user = format!("{}\n\n{}", format_user_prefix(language), text);
+        self.chat(&system, &user).await
     }
 
     async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String> {

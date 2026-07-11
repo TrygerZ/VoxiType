@@ -69,7 +69,7 @@ impl Default for GroqSttConfig {
         Self {
             api_key: String::new(),
             model: "whisper-large-v3-turbo".to_string(),
-            language: "id".to_string(),
+            language: "auto".to_string(),
             temperature: 0.0,
         }
     }

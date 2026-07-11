@@ -67,11 +67,32 @@ pub async fn run_batch_with_transcription(
     let formatted_text = if transcription.text.trim().is_empty() {
         String::new()
     } else {
-        let formatted = llm.format(&transcription.text, mode).await?;
+        let formatted = llm
+            .format(&transcription.text, mode, &transcription.language)
+            .await?;
         let translated = match translate {
-            Some(opts) if opts.target != transcription.language => {
-                llm.translate(&formatted, &transcription.language, &opts.target)
-                    .await?
+            Some(opts)
+                if opts.target != transcription.language
+                    && !transcription.language.is_empty()
+                    && transcription.language != "auto"
+                    && transcription.language != "unknown" =>
+            {
+                // Guard against translation when the formatted text clearly
+                // matches the target language already (e.g. STT misdetected
+                // the language but the text is already in the target). This
+                // prevents a "leaking" translation that converts e.g. English
+                // to Indonesian when the user did not intend it.
+                let text_lang = detect_text_language(&formatted);
+                if text_lang == opts.target {
+                    tracing::info!(
+                        "Skipping translation: text already in target '{}'",
+                        opts.target
+                    );
+                    formatted
+                } else {
+                    llm.translate(&formatted, &transcription.language, &opts.target)
+                        .await?
+                }
             }
             _ => formatted,
         };
@@ -95,6 +116,30 @@ pub async fn run_batch_with_transcription(
         formatted_text,
         inject,
     })
+}
+
+/// Detect the dominant language of a text by counting language-specific
+/// function-word markers. Returns "en", "id", or "unknown".
+fn detect_text_language(text: &str) -> String {
+    let lower = format!(" {} ", text.to_lowercase());
+    let en_markers = [
+        " the ", " and ", " is ", " to ", " of ", " a ", " in ", " for ", " it ", " with ",
+        " you ", " that ", " have ", " this ", " from ", " are ", " was ", " will ",
+    ];
+    let id_markers = [
+        " yang ", " dan ", " di ", " ini ", " itu ", " dari ", " dengan ", " untuk ", " tidak ",
+        " adalah ", " juga ", " karena ", " pada ", " saya ", " mereka ", " bisa ", " akan ",
+        " sudah ",
+    ];
+    let en_count = en_markers.iter().filter(|&&m| lower.contains(m)).count();
+    let id_count = id_markers.iter().filter(|&&m| lower.contains(m)).count();
+    if en_count > id_count && en_count > 0 {
+        "en".to_string()
+    } else if id_count > en_count && id_count > 0 {
+        "id".to_string()
+    } else {
+        "unknown".to_string()
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +179,46 @@ mod tests {
         fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
             self.inject(text)
         }
+    }
+
+    #[test]
+    fn detect_text_language_identifies_english() {
+        assert_eq!(detect_text_language("this is a test of the system"), "en");
+    }
+
+    #[test]
+    fn detect_text_language_identifies_indonesian() {
+        assert_eq!(
+            detect_text_language("saya pergi ke pasar dengan mereka"),
+            "id"
+        );
+    }
+
+    #[test]
+    fn detect_text_language_returns_unknown_for_ambiguous() {
+        assert_eq!(detect_text_language("hello world"), "unknown");
+    }
+
+    #[tokio::test]
+    async fn translation_skipped_when_source_language_is_unknown() {
+        use crate::llm::{LlmFactory, RuleBasedConfig};
+        let llm = LlmFactory::rule_based(RuleBasedConfig::default());
+        let injector = MockInjector;
+        let transcription = TranscriptionResult::text_only("hello world", "unknown");
+        let out = run_batch_with_transcription(
+            transcription,
+            llm,
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            &injector,
+        )
+        .await
+        .unwrap();
+        // Rule-based formatter capitalizes and adds period, no translation.
+        assert_eq!(out.formatted_text, "Hello world.");
     }
 
     #[tokio::test]

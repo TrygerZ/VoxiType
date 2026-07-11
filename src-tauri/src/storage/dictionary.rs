@@ -120,6 +120,19 @@ impl<'a> DictionaryRepository<'a> {
         })
     }
 
+    /// Active words for a specific language, used to bias STT without
+    /// introducing cross-language interference when the target language is
+    /// known.
+    pub fn get_hotwords_by_language(&self, language: &str) -> Result<Vec<String>> {
+        self.db.with_conn(|c| {
+            let mut stmt = c.prepare(
+                "SELECT word FROM dictionary_entries WHERE is_active = 1 AND language = ?1",
+            )?;
+            let rows = stmt.query_map([language], |r| r.get::<_, String>(0))?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+    }
+
     /// Active entries that define a non-empty replacement, as `(word, replacement)`.
     pub fn get_replacements(&self) -> Result<Vec<(String, String)>> {
         self.db.with_conn(|c| {
@@ -287,6 +300,37 @@ mod tests {
         let reps = vec![("hello".to_string(), "hi".to_string())];
         let out = apply_replacements("İ hello world", &reps);
         assert_eq!(out, "İ hi world");
+    }
+
+    #[test]
+    fn hotwords_filtered_by_language() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        repo.upsert(&DictionaryEntry {
+            id: "1".into(),
+            word: "halo".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: None,
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+        repo.upsert(&DictionaryEntry {
+            id: "2".into(),
+            word: "hello".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: None,
+            language: "en".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+        assert_eq!(repo.get_hotwords_by_language("id").unwrap(), vec!["halo"]);
+        assert_eq!(repo.get_hotwords_by_language("en").unwrap(), vec!["hello"]);
+        assert!(repo.get_hotwords_by_language("fr").unwrap().is_empty());
     }
 
     #[test]

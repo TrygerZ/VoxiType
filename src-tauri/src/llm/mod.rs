@@ -23,7 +23,7 @@ use crate::error::Result;
 /// Formats raw transcribed text according to a [`LlmMode`].
 #[async_trait]
 pub trait LlmFormatter: Send + Sync {
-    async fn format(&self, text: &str, mode: &LlmMode) -> Result<String>;
+    async fn format(&self, text: &str, mode: &LlmMode, language: &str) -> Result<String>;
     /// Translate text between languages (used by translation mode).
     async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String>;
     fn name(&self) -> &'static str;

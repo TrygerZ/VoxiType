@@ -13,9 +13,18 @@ use crate::error::{AppError, ErrorCode};
 #[derive(Debug)]
 pub enum AppState {
     Idle,
-    Recording { start_time: Instant },
-    Processing { start_time: Instant },
-    Error { message: String, code: ErrorCode },
+    Recording {
+        start_time: Instant,
+        active_app: Option<String>,
+    },
+    Processing {
+        start_time: Instant,
+        active_app: Option<String>,
+    },
+    Error {
+        message: String,
+        code: ErrorCode,
+    },
 }
 
 /// Serializable snapshot of the state, emitted to the frontend.
@@ -42,7 +51,7 @@ impl AppState {
 /// Events that drive transitions.
 #[derive(Debug, Clone)]
 pub enum StateEvent {
-    StartRecording,
+    StartRecording { active_app: Option<String> },
     StopRecording,
     CancelRecording,
     ProcessingComplete,
@@ -53,14 +62,20 @@ impl AppState {
     /// Apply an event, returning the next state or the original state + error.
     pub fn transition(self, event: StateEvent) -> Result<AppState, (AppState, AppError)> {
         match (&self, &event) {
-            (AppState::Idle, StateEvent::StartRecording)
-            | (AppState::Error { .. }, StateEvent::StartRecording) => Ok(AppState::Recording {
-                start_time: Instant::now(),
-            }),
+            (AppState::Idle, StateEvent::StartRecording { active_app })
+            | (AppState::Error { .. }, StateEvent::StartRecording { active_app }) => {
+                Ok(AppState::Recording {
+                    start_time: Instant::now(),
+                    active_app: active_app.clone(),
+                })
+            }
 
-            (AppState::Recording { .. }, StateEvent::StopRecording) => Ok(AppState::Processing {
-                start_time: Instant::now(),
-            }),
+            (AppState::Recording { active_app, .. }, StateEvent::StopRecording) => {
+                Ok(AppState::Processing {
+                    start_time: Instant::now(),
+                    active_app: active_app.clone(),
+                })
+            }
 
             (AppState::Recording { .. }, StateEvent::CancelRecording) => Ok(AppState::Idle),
 
@@ -86,7 +101,9 @@ mod tests {
     #[test]
     fn ptt_happy_path() {
         let s = AppState::Idle;
-        let s = s.transition(StateEvent::StartRecording).unwrap();
+        let s = s
+            .transition(StateEvent::StartRecording { active_app: None })
+            .unwrap();
         assert_eq!(s.tag(), AppStateTag::Recording);
         let s = s.transition(StateEvent::StopRecording).unwrap();
         assert_eq!(s.tag(), AppStateTag::Processing);
@@ -97,7 +114,7 @@ mod tests {
     #[test]
     fn cancel_returns_to_idle() {
         let s = AppState::Idle
-            .transition(StateEvent::StartRecording)
+            .transition(StateEvent::StartRecording { active_app: None })
             .unwrap();
         let s = s.transition(StateEvent::CancelRecording).unwrap();
         assert_eq!(s.tag(), AppStateTag::Idle);
@@ -111,7 +128,9 @@ mod tests {
         });
         let s = s.unwrap();
         assert_eq!(s.tag(), AppStateTag::Error);
-        let s = s.transition(StateEvent::StartRecording).unwrap();
+        let s = s
+            .transition(StateEvent::StartRecording { active_app: None })
+            .unwrap();
         assert_eq!(s.tag(), AppStateTag::Recording);
     }
 

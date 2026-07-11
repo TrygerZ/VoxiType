@@ -25,8 +25,8 @@ impl FallbackFormatter {
 
 #[async_trait]
 impl LlmFormatter for FallbackFormatter {
-    async fn format(&self, text: &str, mode: &LlmMode) -> Result<String> {
-        match self.primary.format(text, mode).await {
+    async fn format(&self, text: &str, mode: &LlmMode, language: &str) -> Result<String> {
+        match self.primary.format(text, mode, language).await {
             Ok(out) => Ok(out),
             Err(e) => {
                 tracing::warn!(
@@ -34,7 +34,7 @@ impl LlmFormatter for FallbackFormatter {
                     self.primary.name(),
                     self.fallback.name()
                 );
-                self.fallback.format(text, mode).await
+                self.fallback.format(text, mode, language).await
             }
         }
     }
@@ -66,7 +66,7 @@ mod tests {
     struct AlwaysFails;
     #[async_trait]
     impl LlmFormatter for AlwaysFails {
-        async fn format(&self, _t: &str, _m: &LlmMode) -> Result<String> {
+        async fn format(&self, _t: &str, _m: &LlmMode, _l: &str) -> Result<String> {
             Err(AppError::llm_connection_refused("down"))
         }
         async fn translate(&self, _t: &str, _s: &str, _d: &str) -> Result<String> {
@@ -84,7 +84,7 @@ mod tests {
         let fallback = LlmFactory::rule_based(RuleBasedConfig::default());
         let f = FallbackFormatter::new(primary, fallback);
         let out = f
-            .format("um halo dunia", &LlmMode::Dictation)
+            .format("um halo dunia", &LlmMode::Dictation, "id")
             .await
             .unwrap();
         assert_eq!(out, "Halo dunia.");

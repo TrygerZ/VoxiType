@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('hotkey', '{"key":"Ctrl+Space","mode":"ptt"}'),
     ('stt_engine', '"groq"'),
-    ('stt_model', '"small"'),
+    ('stt_model', '"whisper-large-v3-turbo"'),
     ('whisper_cpp_binary_path', '"whisper-cli"'),
     ('whisper_cpp_model_path', '""'),
     ('whisper_cpp_threads', '4'),

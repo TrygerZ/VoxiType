@@ -134,7 +134,7 @@ fn ensure_terminal_period(text: &str) -> String {
 
 #[async_trait]
 impl LlmFormatter for RuleBasedFormatter {
-    async fn format(&self, text: &str, _mode: &LlmMode) -> Result<String> {
+    async fn format(&self, text: &str, _mode: &LlmMode, _language: &str) -> Result<String> {
         Ok(self.clean(text))
     }
 

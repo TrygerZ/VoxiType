@@ -68,6 +68,8 @@ windows = { version = "0.58", features = [
 
 [features]
 default = []
+local-stt = []
+local-vad = []
 
 [profile.release]
 codegen-units = 1
