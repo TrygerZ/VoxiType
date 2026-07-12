@@ -1,5 +1,6 @@
 import { type ButtonHTMLAttributes, type ReactNode, useState } from "react";
 import {
+  ArrowLeft,
   Check,
   ChevronRight,
   Cloud,
@@ -14,9 +15,10 @@ import {
   Loader2,
   Mic,
   Settings,
+  Star,
   Terminal,
+  Type,
   XCircle,
-  Zap,
 } from "lucide-react";
 
 import { Button } from "../ui/Button";
@@ -55,6 +57,18 @@ const STEPS: Step[] = [
   "complete",
 ];
 
+type TFunc = (key: string, vars?: Record<string, string | number>) => string;
+
+const STEP_LABELS: Record<Step, string> = {
+  welcome: "onboarding.steps.label.intro",
+  quick_settings: "onboarding.steps.label.language",
+  stt_setup: "onboarding.steps.label.stt",
+  hotkey: "onboarding.steps.label.hotkey",
+  complete: "onboarding.steps.label.complete",
+};
+
+const SETUP_STEPS: Step[] = ["quick_settings", "stt_setup", "hotkey"];
+
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const t = useT();
   const [step, setStep] = useState<Step>("welcome");
@@ -70,19 +84,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       body: t("onboarding.feature.dictate.body"),
     },
     {
-      icon: Cloud,
-      title: t("onboarding.feature.cloud.title"),
-      body: t("onboarding.feature.cloud.body"),
-    },
-    {
       icon: HardDrive,
       title: t("onboarding.feature.offline.title"),
       body: t("onboarding.feature.offline.body"),
-    },
-    {
-      icon: Zap,
-      title: t("onboarding.feature.formatting.title"),
-      body: t("onboarding.feature.formatting.body"),
     },
     {
       icon: Languages,
@@ -215,16 +219,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "welcome") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-10 overflow-y-auto p-10">
-        <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
-          {STEPS.map((s, idx) => (
-            <div
-              key={s}
-              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-                idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
-              }`}
-            />
-          ))}
-        </div>
+        <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
         <div className="vx-animate-in flex flex-col items-center gap-5 text-center">
           <div className="relative flex h-20 w-20 items-center justify-center">
             <span className="absolute inset-0 rounded-full bg-vx-accent/20 blur-2xl" aria-hidden />
@@ -245,6 +240,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             </p>
           </div>
         </div>
+
+        <HowItWorks t={t} />
+        <PrepHint t={t} />
 
         <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {features.map(({ icon: Icon, title, body }) => (
@@ -278,16 +276,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "quick_settings") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-8 overflow-y-auto p-10 text-center">
-        <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
-          {STEPS.map((s, idx) => (
-            <div
-              key={s}
-              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-                idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
-              }`}
-            />
-          ))}
-        </div>
+        <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
           <Settings className="h-7 w-7" />
         </span>
@@ -344,10 +333,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           </div>
         </div>
 
-        <Button variant="primary" size="lg" onClick={saveQuickSettings}>
-          {t("onboarding.step2.continue")}
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="ghost" size="lg" onClick={() => setStep("welcome")}>
+            <ArrowLeft className="h-4 w-4" />
+            {t("onboarding.back")}
+          </Button>
+          <Button variant="primary" size="lg" onClick={saveQuickSettings}>
+            {t("onboarding.step2.continue")}
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
         {generalError && <span className="text-xs text-vx-error">{generalError}</span>}
       </div>
     );
@@ -357,16 +352,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     return (
       <div className="vx-app-bg h-full overflow-y-auto p-6 sm:p-8">
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
-          <div className="flex w-full max-w-md gap-2 px-4 mx-auto mb-2" aria-label="Onboarding Progress">
-            {STEPS.map((s, idx) => (
-              <div
-                key={s}
-                className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-                  idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
-                }`}
-              />
-            ))}
-          </div>
+          <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
           <div className="flex flex-col items-center gap-3 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
               {sttEngine === "groq" ? <Key className="h-7 w-7" /> : <HardDrive className="h-7 w-7" />}
@@ -385,6 +371,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               icon={<Cloud className="h-5 w-5" />}
               title={t("onboarding.stt.groq.choice_title")}
               body={t("onboarding.stt.groq.choice_body")}
+              recommend={t("onboarding.stt.recommended")}
               onClick={() => {
                 setGeneralError("");
                 setSttEngine("groq");
@@ -401,6 +388,12 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               }}
             />
           </div>
+
+          <p className="text-center text-xs leading-relaxed text-vx-text-dim">
+            {sttEngine === "groq"
+              ? t("onboarding.stt.groq.recommend_note")
+              : t("onboarding.stt.offline.recommend_note")}
+          </p>
 
           <div className="rounded-xl border border-vx-border bg-vx-bg-secondary p-5">
             <div className="mb-5 grid gap-4 md:grid-cols-[1fr_220px]">
@@ -462,13 +455,19 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           </div>
 
           <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
-            <Button variant="ghost" size="lg" onClick={() => setStep("hotkey")}>
-              {t("onboarding.stt.skip")}
+            <Button variant="ghost" size="lg" onClick={() => setStep("quick_settings")}>
+              <ArrowLeft className="h-4 w-4" />
+              {t("onboarding.back")}
             </Button>
-            <Button variant="primary" size="lg" onClick={saveSttSetup}>
-              {t("onboarding.stt.save")}
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            <div className="flex gap-3">
+              <Button variant="ghost" size="lg" onClick={() => setStep("hotkey")}>
+                {t("onboarding.stt.skip")}
+              </Button>
+              <Button variant="primary" size="lg" onClick={saveSttSetup}>
+                {t("onboarding.stt.save")}
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           {generalError && <span className="text-center text-xs text-vx-error">{generalError}</span>}
         </div>
@@ -479,16 +478,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "hotkey") {
     return (
       <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-8 overflow-y-auto p-10 text-center">
-        <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
-          {STEPS.map((s, idx) => (
-            <div
-              key={s}
-              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-                idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
-              }`}
-            />
-          ))}
-        </div>
+        <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
           <Keyboard className="h-7 w-7" />
         </span>
@@ -517,10 +507,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           </div>
         </div>
 
-        <Button variant="primary" size="lg" onClick={saveHotkey}>
-          {t("onboarding.step4.continue")}
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="ghost" size="lg" onClick={() => setStep("stt_setup")}>
+            <ArrowLeft className="h-4 w-4" />
+            {t("onboarding.back")}
+          </Button>
+          <Button variant="primary" size="lg" onClick={saveHotkey}>
+            {t("onboarding.step4.continue")}
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
         {hotkeyError && <span className="text-xs text-vx-error">{hotkeyError}</span>}
       </div>
     );
@@ -528,16 +524,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   return (
     <div className="vx-app-bg flex h-full flex-col items-center justify-[safe_center] gap-8 overflow-y-auto p-10 text-center">
-      <div className="flex w-full max-w-md gap-2 px-4 mb-4" aria-label="Onboarding Progress">
-        {STEPS.map((s, idx) => (
-          <div
-            key={s}
-            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-              idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
-            }`}
-          />
-        ))}
-      </div>
+      <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-success/10 text-vx-success">
         <Check className="h-7 w-7" />
       </span>
@@ -547,6 +534,21 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <p className="max-w-sm text-sm text-vx-text-dim">
         {t("onboarding.complete.body", { key: hotkeyKey ?? "Ctrl+Space" })}
       </p>
+      <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border border-vx-border/40 bg-vx-bg-secondary/60 p-5 text-left">
+        <span className="text-xs font-semibold text-vx-text-secondary">
+          {t("onboarding.complete.next_title")}
+        </span>
+        <ol className="flex flex-col gap-2">
+          <li className="flex gap-2.5 text-xs leading-relaxed text-vx-text-dim">
+            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vx-success" />
+            <span>{t("onboarding.complete.next.tip1", { key: hotkeyKey ?? "Ctrl+Space" })}</span>
+          </li>
+          <li className="flex gap-2.5 text-xs leading-relaxed text-vx-text-dim">
+            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vx-success" />
+            <span>{t("onboarding.complete.next.tip2")}</span>
+          </li>
+        </ol>
+      </div>
       <Button variant="primary" size="lg" onClick={finish}>
         {t("onboarding.complete.start")}
       </Button>
@@ -735,12 +737,14 @@ function SetupChoice({
   icon,
   title,
   body,
+  recommend,
   onClick,
 }: {
   active: boolean;
   icon: ReactNode;
   title: string;
   body: string;
+  recommend?: string;
   onClick: () => void;
 }) {
   return (
@@ -756,8 +760,16 @@ function SetupChoice({
       <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-vx-bg-tertiary text-vx-accent">
         {icon}
       </span>
-      <span className="flex flex-col gap-1">
-        <span className="text-sm font-semibold">{title}</span>
+      <span className="flex flex-col gap-1.5">
+        <span className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{title}</span>
+          {recommend && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-vx-accent/15 px-2 py-0.5 text-[10px] font-semibold text-vx-accent">
+              <Star className="h-3 w-3" />
+              {recommend}
+            </span>
+          )}
+        </span>
         <span className="text-xs leading-relaxed text-vx-text-dim">{body}</span>
       </span>
     </button>
@@ -844,6 +856,79 @@ function InstructionBlock({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StepProgress({ step, currentStepIdx, t }: { step: Step; currentStepIdx: number; t: TFunc }) {
+  const setupIdx = SETUP_STEPS.indexOf(step);
+  return (
+    <div className="mx-auto flex w-full max-w-md flex-col gap-2 px-4">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-vx-text-secondary">{t(STEP_LABELS[step])}</span>
+        {setupIdx >= 0 && (
+          <span className="text-vx-text-dim">
+            {t("onboarding.steps.counter", { current: setupIdx + 1, total: SETUP_STEPS.length })}
+          </span>
+        )}
+      </div>
+      <div className="flex gap-2" aria-label="Onboarding Progress">
+        {STEPS.map((s, idx) => (
+          <div
+            key={s}
+            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+              idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HowItWorks({ t }: { t: TFunc }) {
+  const steps = [
+    { icon: Keyboard, label: t("onboarding.welcome.how.step1"), desc: t("onboarding.welcome.how.step1_desc") },
+    { icon: Mic, label: t("onboarding.welcome.how.step2"), desc: t("onboarding.welcome.how.step2_desc") },
+    { icon: Type, label: t("onboarding.welcome.how.step3"), desc: t("onboarding.welcome.how.step3_desc") },
+  ];
+  return (
+    <div className="flex w-full max-w-2xl flex-col gap-3">
+      <span className="text-xs font-semibold text-vx-text-secondary">
+        {t("onboarding.welcome.how_title")}
+      </span>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {steps.map(({ icon: Icon, label, desc }, index) => (
+          <div key={label} className="flex flex-col gap-1.5 rounded-xl border border-vx-border/40 bg-vx-bg-secondary/60 p-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-vx-accent-soft text-xs font-semibold text-vx-accent">
+                {index + 1}
+              </span>
+              <Icon className="h-4 w-4 text-vx-accent" />
+            </div>
+            <span className="text-sm font-medium">{label}</span>
+            <span className="text-xs leading-relaxed text-vx-text-dim">{desc}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PrepHint({ t }: { t: TFunc }) {
+  return (
+    <div className="flex w-full max-w-2xl items-start gap-3 rounded-xl border border-vx-accent/20 bg-vx-accent-soft/40 p-4">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
+        <Settings className="h-4 w-4" />
+      </span>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-semibold text-vx-text-primary">
+          {t("onboarding.welcome.prep_title")}
+        </span>
+        <span className="text-xs leading-relaxed text-vx-text-dim">
+          {t("onboarding.welcome.prep_body")}
+        </span>
       </div>
     </div>
   );

@@ -286,6 +286,34 @@ const id: Dict = {
   "onboarding.stt.offline.model_tiny": "Paling cepat untuk mengetes, akurasi paling ringan.",
   "onboarding.stt.offline.model_base": "Pilihan awal yang seimbang untuk Indonesia dan Inggris.",
   "onboarding.stt.offline.model_small": "Lebih akurat, tetapi lebih lambat dan butuh komputer lebih kuat.",
+  // Step navigation (heuristic: visibility of system status + recognition over recall)
+  "onboarding.steps.counter": "Langkah {current} dari {total}",
+  "onboarding.steps.label.intro": "Pengenalan",
+  "onboarding.steps.label.language": "Bahasa",
+  "onboarding.steps.label.stt": "Transkripsi",
+  "onboarding.steps.label.hotkey": "Pintasan",
+  "onboarding.steps.label.complete": "Selesai",
+  "onboarding.back": "Kembali",
+  // Welcome how-it-works (heuristic: match real world + aesthetic)
+  "onboarding.welcome.how_title": "Cara Kerja",
+  "onboarding.welcome.how.step1": "Tekan hotkey",
+  "onboarding.welcome.how.step1_desc": "Aktifkan dikte dari aplikasi mana pun",
+  "onboarding.welcome.how.step2": "Bicara",
+  "onboarding.welcome.how.step2_desc": "Suara Anda direkam lalu ditranskripsi",
+  "onboarding.welcome.how.step3": "Teks muncul",
+  "onboarding.welcome.how.step3_desc": "Hasil otomatis diketik ke aplikasi aktif",
+  // Welcome prep (heuristic: error prevention — set expectations before setup)
+  "onboarding.welcome.prep_title": "Yang perlu disiapkan",
+  "onboarding.welcome.prep_body": "Setup cepat, sekitar 2 menit. Anda akan memilih mesin transkripsi lalu menetapkan hotkey. Semua bisa diubah nanti dari Pengaturan.",
+  // STT recommendation (heuristic: match real world — guide the beginner)
+  "onboarding.stt.recommended": "Direkomendasikan",
+  "onboarding.stt.groq.recommend_note": "Paling mudah untuk pemula — setup kurang dari 1 menit.",
+  "onboarding.stt.offline.recommend_note": "Cocok jika ingin transkripsi tanpa koneksi internet.",
+  // Complete next steps (heuristic: help users recognize what to do next)
+  "onboarding.complete.next_title": "Langkah berikutnya",
+  "onboarding.complete.next.tip1": "Buka aplikasi apa pun, tekan {key}, lalu bicara.",
+  "onboarding.complete.next.tip2": "Atur mikrofon, mode, dan kamus lewat Pengaturan kapan saja.",
+
   "common.save": "Simpan",
   "common.cancel": "Batal",
   "common.delete": "Hapus",
@@ -619,6 +647,34 @@ const en: Dict = {
   "onboarding.stt.offline.model_tiny": "Fastest for testing, lowest accuracy.",
   "onboarding.stt.offline.model_base": "Good first choice for Indonesian and English.",
   "onboarding.stt.offline.model_small": "More accurate, but slower and needs a stronger computer.",
+  // Step navigation (heuristic: visibility of system status + recognition over recall)
+  "onboarding.steps.counter": "Step {current} of {total}",
+  "onboarding.steps.label.intro": "Intro",
+  "onboarding.steps.label.language": "Language",
+  "onboarding.steps.label.stt": "Transcription",
+  "onboarding.steps.label.hotkey": "Hotkey",
+  "onboarding.steps.label.complete": "Done",
+  "onboarding.back": "Back",
+  // Welcome how-it-works (heuristic: match real world + aesthetic)
+  "onboarding.welcome.how_title": "How it works",
+  "onboarding.welcome.how.step1": "Press the hotkey",
+  "onboarding.welcome.how.step1_desc": "Activate dictation from any app",
+  "onboarding.welcome.how.step2": "Speak",
+  "onboarding.welcome.how.step2_desc": "Your voice is recorded and transcribed",
+  "onboarding.welcome.how.step3": "Text appears",
+  "onboarding.welcome.how.step3_desc": "The result is typed into the active app",
+  // Welcome prep (heuristic: error prevention — set expectations before setup)
+  "onboarding.welcome.prep_title": "What you will need",
+  "onboarding.welcome.prep_body": "Quick setup, about 2 minutes. You will pick a transcription engine then set a hotkey. Everything can be changed later in Settings.",
+  // STT recommendation (heuristic: match real world — guide the beginner)
+  "onboarding.stt.recommended": "Recommended",
+  "onboarding.stt.groq.recommend_note": "Easiest for beginners — under 1 minute to set up.",
+  "onboarding.stt.offline.recommend_note": "Best when you want transcription without internet.",
+  // Complete next steps (heuristic: help users recognize what to do next)
+  "onboarding.complete.next_title": "Next steps",
+  "onboarding.complete.next.tip1": "Open any app, press {key}, then speak.",
+  "onboarding.complete.next.tip2": "Adjust microphone, modes, and dictionary in Settings anytime.",
+
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.delete": "Delete",
