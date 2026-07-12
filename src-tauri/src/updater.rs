@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
 
-const RELEASES_API: &str = "https://api.github.com/repos/voxitype/voxitype/releases/latest";
+/// GitHub repository that hosts VoxiType releases. Must match the `origin`
+/// remote; a 404 from this endpoint means "no published release yet", which we
+/// treat as "no update" rather than a hard failure.
+const REPO: &str = "TrygerZ/VoxiType";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateInfo {
@@ -37,21 +40,45 @@ struct GitHubRelease {
 pub async fn check(current: &str) -> Result<UpdateInfo> {
     let client = crate::util::http_client();
     let resp = client
-        .get(RELEASES_API)
+        .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
         .header("User-Agent", "VoxiType")
         .header("Accept", "application/vnd.github+json")
         .send()
         .await?;
 
-    let status = resp.status();
+    let status = resp.status().as_u16();
     let body = resp.text().await?;
-    if !status.is_success() {
+    interpret(status, &body, current)
+}
+
+/// "No published release to compare against" — neither an update nor an error.
+/// Used when GitHub has no latest release (404), the normal state before the
+/// first public tag ships.
+fn no_update(current: &str) -> UpdateInfo {
+    UpdateInfo {
+        available: false,
+        current_version: current.to_string(),
+        latest_version: current.to_string(),
+        notes: String::new(),
+        url: String::new(),
+    }
+}
+
+/// Classify the GitHub response. A 404 (repo has no published release yet, or
+/// the repo is misconfigured) is reported as "no update" instead of a hard
+/// network error — the background check is advisory, not a reason to crash.
+/// 200 parses the release; anything else is a real failure.
+fn interpret(status: u16, body: &str, current: &str) -> Result<UpdateInfo> {
+    if status == 404 {
+        return Ok(no_update(current));
+    }
+    if status != 200 {
         return Err(AppError::network(format!(
             "GitHub releases check failed ({status})"
         )));
     }
 
-    let release: GitHubRelease = serde_json::from_str(&body)?;
+    let release: GitHubRelease = serde_json::from_str(body)?;
     let latest = release.tag_name.trim_start_matches('v').to_string();
     let available = !release.draft && !release.prerelease && is_newer(&latest, current);
 
@@ -102,5 +129,35 @@ mod tests {
         assert!(!is_newer("0.1.0", "0.2.0"));
         // Tolerates suffixes like "1.2.3-beta".
         assert!(is_newer("0.2.0-beta", "0.1.0"));
+    }
+
+    #[test]
+    fn interpret_404_is_not_an_error() {
+        let info = interpret(404, r#"{"message":"Not Found"}"#, "0.4.2").unwrap();
+        assert!(!info.available);
+        assert_eq!(info.current_version, "0.4.2");
+        assert_eq!(info.latest_version, "0.4.2");
+    }
+
+    #[test]
+    fn interpret_200_parses_release() {
+        let body = r#"{"tag_name":"v0.5.0","body":"notes","html_url":"https://x","draft":false,"prerelease":false}"#;
+        let info = interpret(200, body, "0.4.2").unwrap();
+        assert!(info.available);
+        assert_eq!(info.latest_version, "0.5.0");
+        assert_eq!(info.url, "https://x");
+        assert_eq!(info.notes, "notes");
+    }
+
+    #[test]
+    fn interpret_draft_release_is_not_available() {
+        let body = r#"{"tag_name":"v0.5.0","draft":true,"prerelease":false}"#;
+        let info = interpret(200, body, "0.4.2").unwrap();
+        assert!(!info.available);
+    }
+
+    #[test]
+    fn interpret_server_error_is_error() {
+        assert!(interpret(503, "oops", "0.4.2").is_err());
     }
 }

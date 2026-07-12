@@ -132,6 +132,7 @@ pub fn run() {
             commands::get_settings,
             commands::update_setting,
             commands::set_floating_widget_enabled,
+            commands::reveal_floating_widget,
             commands::get_history,
             commands::search_history,
             commands::delete_history,

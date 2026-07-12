@@ -7,7 +7,7 @@
 //! (setting `floating_widget_pos`). While recording/processing the widget plays
 //! its live animation; when the feature is turned off the window is hidden.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,6 +19,14 @@ use crate::util::MutexExt;
 use crate::AppStateInner;
 
 const LABEL: &str = "floating-widget";
+
+/// Whether the floating-widget webview has finished its first mount. The
+/// overlay window is created hidden and only `show()` once the page has
+/// painted its transparent content, so a blank white square never flashes over
+/// the animation layer -- prominent in dev where the Vite dev server loads
+/// the overlay slower than the bundled build. The frontend invokes
+/// `reveal_floating_widget` (handled in commands) once React mounts.
+static WIDGET_READY: AtomicBool = AtomicBool::new(false);
 
 /// Persisted top-left position of the overlay window (physical pixels).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -45,19 +53,46 @@ pub fn apply_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
         return;
     };
     if enabled {
-        restore_position(app, &win);
-        let _ = win.show();
         let _ = win.set_always_on_top(true);
+        // Only show now if the overlay page already painted; otherwise wait for
+        // `reveal_if_enabled` (called by the frontend on mount) to avoid a
+        // white-square flash over the animation layer while the page loads.
+        if WIDGET_READY.load(Ordering::SeqCst) {
+            let _ = win.show();
+        }
     } else {
         let _ = win.hide();
     }
 }
 
+/// Mark the overlay ready and reveal it if the feature is enabled. Called by
+/// the `reveal_floating_widget` IPC command once the floating page mounts.
+pub fn reveal_if_enabled<R: Runtime>(app: &AppHandle<R>) {
+    WIDGET_READY.store(true, Ordering::SeqCst);
+    if !is_enabled(app) {
+        return;
+    }
+    let Some(win) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    if !win.is_visible().unwrap_or(false) {
+        restore_position(app, &win);
+        let _ = win.show();
+    }
+    let _ = win.set_always_on_top(true);
+}
+
 /// Ensure the overlay is visible for an active recording/processing session.
 /// No-op when the feature is disabled; never repositions an already-visible
-/// window so it won't jump out from under the user's cursor.
+/// window so it will not jump out from under the user's cursor.
 pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
     if !is_enabled(app) {
+        return;
+    }
+    // Do not force the overlay visible before its transparent content has
+    // mounted; that produces a white-square flash in dev. `reveal_if_enabled`
+    // handles the first show once React signals it is ready.
+    if !WIDGET_READY.load(Ordering::SeqCst) {
         return;
     }
     let Some(win) = app.get_webview_window(LABEL) else {
@@ -191,7 +226,7 @@ fn position_visible<R: Runtime>(win: &WebviewWindow<R>, p: &WidgetPos) -> bool {
 
 /// Compute a position at the horizontal center, near the bottom of the monitor.
 fn bottom_center_position<R: Runtime>(win: &WebviewWindow<R>) -> Option<PhysicalPosition<i32>> {
-    let monitor = win.current_monitor().ok()??;
+    let monitor = win.current_monitor().ok().flatten()?;
     let m_pos = monitor.position();
     let m_size = monitor.size();
     let w_size = win.outer_size().ok()?;

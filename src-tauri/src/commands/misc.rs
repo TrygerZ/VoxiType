@@ -65,6 +65,15 @@ pub fn open_url(url: String) -> std::result::Result<(), AppError> {
     Ok(())
 }
 
+/// Reveal the floating-widget window once its page has mounted. The frontend
+/// invokes this after render so the overlay only becomes visible once its
+/// transparent content is painted, avoiding a white-square flash in dev.
+#[tauri::command]
+pub fn reveal_floating_widget<R: Runtime>(app: AppHandle<R>) -> std::result::Result<(), AppError> {
+    crate::overlay::reveal_if_enabled(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn pick_setup_file(kind: String) -> std::result::Result<Option<String>, AppError> {
     tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind))

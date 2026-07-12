@@ -33,6 +33,12 @@ export const updateSetting = (key: string, value: unknown) =>
 export const setFloatingWidgetEnabled = (enabled: boolean) =>
   invoke<void>("set_floating_widget_enabled", { enabled });
 
+// Reveal the floating widget once its transparent content has mounted; the
+// backend keeps the overlay hidden until this is called to avoid a white
+// flash (see overlay::reveal_if_enabled).
+export const revealFloatingWidget = () =>
+  invoke<void>("reveal_floating_widget");
+
 // --- History ---
 export const getHistory = () =>
   invoke<TranscriptionEntry[]>("get_history");
