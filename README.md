@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.4.1** — Open-source voice-to-text for every app.
+**Version 0.4.2** — Open-source voice-to-text for every app.
 
 VoxiType is a free and open-source desktop app that turns speech into text from anywhere on Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
 
@@ -185,8 +185,8 @@ The recording pipeline follows this state machine:
 
 ```
 Idle → Recording → Processing → Idle (success)
-                        ↓
-                     Error (reachable from any state)
+                                  ↓
+                               Error (reachable from any state)
 ```
 
 - **Transient errors** (network, timeout) → auto-retry with exponential backoff (3 retries, 1s base delay)
@@ -197,15 +197,15 @@ Idle → Recording → Processing → Idle (success)
 
 ```
 User presses hotkey
-       ↓
-[Idle → Recording]  — Audio capture via cpal, resample 48k→16k to ring buffer
-       ↓ (hotkey release / toggle stop)
+       │
+[Idle → Recording]  — Audio capture via cpal, resample 48k → 16k to ring buffer
+        │ (hotkey release / toggle stop)
 [Recording → Processing]
        ├── STT: Groq Whisper API or local whisper.cpp (with hotword boosting)
        ├── LLM: Off/pass-through, rule-based cleanup, Ollama, or Groq with fallback chain
        ├── Translation: Optional, translate to target language
-       └── Post-Process: Dictionary replacements → Snippet expansion
-       ↓
+       ├── Post-Process: Dictionary replacements → Snippet expansion
+       │
 [Processing → Idle]  — Inject text into active application + save to history
 ```
 
@@ -236,3 +236,11 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 - Audio capture by [cpal](https://github.com/RustAudio/cpal), resampling by [rubato](https://github.com/HDegroote/rubato)
 - Icons by [Lucide](https://lucide.dev/)
 - Inspired by various open-source voice-to-text community projects
+
+
+
+
+
+
+
+
