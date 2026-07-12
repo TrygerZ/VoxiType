@@ -40,7 +40,9 @@ struct GitHubRelease {
 pub async fn check(current: &str) -> Result<UpdateInfo> {
     let client = crate::util::http_client();
     let resp = client
-        .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
+        .get(format!(
+            "https://api.github.com/repos/{REPO}/releases/latest"
+        ))
         .header("User-Agent", "VoxiType")
         .header("Accept", "application/vnd.github+json")
         .send()
