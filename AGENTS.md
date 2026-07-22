@@ -20,7 +20,7 @@
 | Hotkey | Tauri global-shortcut plugin | src-tauri/src/hotkey/ |
 | Crypto | AES-256-GCM API key encryption at rest | src-tauri/src/crypto.rs |
 | Logging | tracing to stderr + daily-rotated files | src-tauri/src/logging.rs |
-| Active Window | Win32 API foreground process detection | src-tauri/src/active_window.rs |
+| Active Window | Win32 / macOS System Events foreground process detection | src-tauri/src/active_window.rs |
 | Overlay | Floating widget window control | src-tauri/src/overlay.rs |
 | Sound Cues | Start/stop tones | src-tauri/src/sound.rs |
 | Updater | GitHub Releases version checker | src-tauri/src/updater.rs |

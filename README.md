@@ -6,7 +6,7 @@
 
 **Version 0.4.2** — Open-source voice-to-text for every app.
 
-VoxiType is a free and open-source desktop app that turns speech into text from anywhere on Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
+VoxiType is a free and open-source desktop app that turns speech into text from anywhere on Windows and macOS. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
 
 <img width="1292" height="1087" alt="image" src="https://github.com/user-attachments/assets/6af16b9e-0b5f-47aa-8c3a-5c3fd91cea09" />
 
@@ -22,13 +22,13 @@ VoxiType is a free and open-source desktop app that turns speech into text from 
 - **Smart Text Injection** — Automatic text injection via keystroke, clipboard, or hybrid mode
 - **Floating Overlay Widget** — Always-on-top widget with mic animation and waveform, draggable
 - **Voice Command Mode** — Speak commands like "new line", "select all", "save" — executed as keystrokes
-- **Per-App Formatting Modes** — Format mode automatically changes based on the active application (detected via Windows API)
+- **Per-App Formatting Modes** — Format mode automatically changes based on the active application (Windows API / macOS System Events)
 - **Dictionary Hotword Boosting** — Custom dictionary with word-bounded replacement, import/export JSON
 - **Snippet Expansion** — Trigger phrase automatically expanded into full content
 - **Translation Pipeline** — Automatic translation of transcribed text to a target language
 - **Multilingual** — Supports 50+ languages through Groq Whisper or local whisper.cpp models
 - **Encrypted API Key Storage** — API keys encrypted with AES-256-GCM at rest
-- **Native File Picker** — Browse for `whisper-cli.exe` and `ggml-*.bin` instead of typing paths manually
+- **Native File Picker** — Browse for `whisper-cli` / `whisper-cli.exe` and `ggml-*.bin` instead of typing paths manually
 - **Sound Cues** — Optional audio feedback when starting/stopping recording
 - **Usage Stats** — Local lifetime totals and optional local telemetry, never sent anywhere
 - **Update Checker** — New version notification via GitHub Releases API
@@ -65,6 +65,8 @@ Head to the **[Releases page](https://github.com/TrygerZ/VoxiType/releases)** an
 - Rust 1.85+
 - Groq API key for cloud transcription ([sign up for free](https://console.groq.com/))
 - Optional local `whisper-cli` binary and `ggml-*.bin` model for offline transcription
+- **Windows:** WebView2 (usually preinstalled)
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`), macOS 11+
 
 #### Development
 
@@ -80,6 +82,22 @@ npm run tauri dev
 
 > For offline dictation without Groq STT, follow
 > [docs/offline-whisper-cpp.md](docs/offline-whisper-cpp.md).
+
+#### macOS first-run permissions
+
+Text injection and per-app modes need OS privacy grants:
+
+1. **Microphone** — allow when prompted (required for recording).
+2. **Accessibility** — System Settings → Privacy & Security → Accessibility → enable **VoxiType** (required for paste / keystroke injection via enigo).
+3. **Automation** (optional) — allow System Events when prompted so per-app formatting can detect the frontmost app.
+
+Unsigned release builds may be blocked by Gatekeeper. Right-click the app → **Open**, or clear quarantine after download:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/VoxiType.app
+```
+
+Build a local installable package with `npm run tauri build` (produces `.app` + `.dmg` under `src-tauri/target/release/bundle/`).
 
 #### Commands
 
