@@ -5,14 +5,14 @@ fn main() {
     // Single-instance guard — prevents two VoxiType processes from starting
     // simultaneously. Two processes would contend for WebView2's per-user data
     // directory, causing HRESULT 0x8007139F ("group or resource not in the
-    // correct state") on the second launch.
+    // correct state") on the second launch. On macOS/Linux a second instance
+    // would also fight for the same SQLite DB and global hotkey.
     ensure_single_instance();
     voxitype_lib::run()
 }
 
-/// Check that no other VoxiType instance is already running (named mutex).
-/// If one is found, exit immediately — the user can restore the first instance
-/// via the system tray.
+/// Exit if another VoxiType instance is already running. The first instance
+/// keeps a process-scoped lock; the user restores it via the system tray.
 fn ensure_single_instance() {
     #[cfg(windows)]
     {
@@ -56,5 +56,27 @@ fn ensure_single_instance() {
             // for the lifetime of the process.
             let _ = Box::leak(Box::new(handle));
         }
+    }
+
+    // ponytail: flock on a temp lockfile. no tray popup on mac — stderr is enough
+    // for `tauri dev`; packaged app still exits cleanly. upgrade to a native
+    // dialog if dual-launch UX becomes a support issue.
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::AsRawFd;
+
+        let path = std::env::temp_dir().join("voxitype.singleinstance.lock");
+        let file = match OpenOptions::new().create(true).write(true).open(&path) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if ret != 0 {
+            eprintln!("VoxiType is already running. Restore it from the menu bar / system tray.");
+            std::process::exit(0);
+        }
+        // Keep the FD open for the process lifetime so the lock is held.
+        std::mem::forget(file);
     }
 }

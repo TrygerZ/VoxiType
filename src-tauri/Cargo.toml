@@ -66,6 +66,10 @@ windows = { version = "0.58", features = [
     "Win32_Security",
 ] }
 
+# --- Unix: single-instance flock in main.rs ---
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 default = []
 local-stt = []

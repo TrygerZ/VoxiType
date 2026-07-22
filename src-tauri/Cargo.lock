@@ -4989,6 +4989,7 @@ dependencies = [
  "base64 0.22.1",
  "cpal",
  "enigo",
+ "libc",
  "open",
  "rand",
  "reqwest 0.12.28",
