@@ -6,6 +6,7 @@
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
+use super::keystroke::primary_modifier;
 use crate::error::{AppError, Result};
 
 /// A recognized editing action.
@@ -77,21 +78,42 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
                 .map_err(map_err)?;
         }
         VoiceCommand::DeleteWord => {
-            // Ctrl+Backspace deletes the previous word in most editors.
-            enigo.key(Key::Control, Direction::Press).map_err(map_err)?;
+            // macOS: Option+Backspace. Windows/Linux: Ctrl+Backspace.
+            #[cfg(target_os = "macos")]
+            let word_mod = Key::Alt;
+            #[cfg(not(target_os = "macos"))]
+            let word_mod = Key::Control;
+            enigo.key(word_mod, Direction::Press).map_err(map_err)?;
             enigo
                 .key(Key::Backspace, Direction::Click)
                 .map_err(map_err)?;
-            enigo
-                .key(Key::Control, Direction::Release)
-                .map_err(map_err)?;
+            enigo.key(word_mod, Direction::Release).map_err(map_err)?;
         }
         VoiceCommand::SelectAll => combo(&mut enigo, 'a', map_err)?,
         VoiceCommand::Copy => combo(&mut enigo, 'c', map_err)?,
         VoiceCommand::Paste => combo(&mut enigo, 'v', map_err)?,
         VoiceCommand::Cut => combo(&mut enigo, 'x', map_err)?,
         VoiceCommand::Undo => combo(&mut enigo, 'z', map_err)?,
-        VoiceCommand::Redo => combo(&mut enigo, 'y', map_err)?,
+        VoiceCommand::Redo => {
+            // macOS: Cmd+Shift+Z. Windows/Linux: Ctrl+Y.
+            #[cfg(target_os = "macos")]
+            {
+                let modifier = primary_modifier();
+                enigo.key(modifier, Direction::Press).map_err(map_err)?;
+                enigo.key(Key::Shift, Direction::Press).map_err(map_err)?;
+                enigo
+                    .key(Key::Unicode('z'), Direction::Click)
+                    .map_err(map_err)?;
+                enigo
+                    .key(Key::Shift, Direction::Release)
+                    .map_err(map_err)?;
+                enigo.key(modifier, Direction::Release).map_err(map_err)?;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                combo(&mut enigo, 'y', map_err)?;
+            }
+        }
         VoiceCommand::Save => combo(&mut enigo, 's', map_err)?,
         VoiceCommand::Escape => {
             enigo.key(Key::Escape, Direction::Click).map_err(map_err)?;
@@ -100,21 +122,18 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
     Ok(())
 }
 
-/// Simulate Ctrl+<key>.
+/// Simulate primary-modifier+<key> (Cmd on macOS, Ctrl elsewhere).
 fn combo(
     enigo: &mut Enigo,
     key: char,
     map_err: impl Fn(enigo::InputError) -> AppError,
 ) -> Result<()> {
-    enigo
-        .key(Key::Control, Direction::Press)
-        .map_err(&map_err)?;
+    let modifier = primary_modifier();
+    enigo.key(modifier, Direction::Press).map_err(&map_err)?;
     enigo
         .key(Key::Unicode(key), Direction::Click)
         .map_err(&map_err)?;
-    enigo
-        .key(Key::Control, Direction::Release)
-        .map_err(&map_err)?;
+    enigo.key(modifier, Direction::Release).map_err(&map_err)?;
     Ok(())
 }
 

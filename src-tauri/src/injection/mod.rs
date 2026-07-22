@@ -1,6 +1,6 @@
 //! Universal text injection into the active application.
 //!
-//! Default strategy: clipboard paste (set -> Ctrl+V).
+//! Default strategy: clipboard paste (set -> Cmd/Ctrl+V).
 //! Fallback: per-character keystroke simulation.
 
 pub mod clipboard;
