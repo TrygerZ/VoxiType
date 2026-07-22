@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.4.2** — Open-source voice-to-text for every app.
+**Version 0.5.0** — Open-source voice-to-text for every app.
 
 VoxiType is a free and open-source desktop app that turns speech into text from anywhere on Windows and macOS. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
 
