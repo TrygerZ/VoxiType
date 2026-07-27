@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import {
   Mic,
   Loader2,
@@ -54,6 +54,10 @@ export function HomeView() {
   const [greeting, setGreeting] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [injectedId, setInjectedId] = useState<string | null>(null);
+  
+  // Timer refs for cleanup
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const injectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load history, settings, and lifetime stats on mount
   useEffect(() => {
@@ -61,6 +65,15 @@ export function HomeView() {
     void loadSettings();
     void loadStats();
   }, [loadHistory, loadSettings, loadStats]);
+  
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
+    };
+  }, []);
+  
   const lang = useSettingsStore((s) => s.settings.language);
   useEffect(() => {
     const hrs = new Date().getHours();
@@ -74,13 +87,13 @@ export function HomeView() {
   }, [t, lang]);
 
   // Toggle record from GUI
-  const handleMicClick = () => {
+  const handleMicClick = useCallback(() => {
     if (isRecording) {
       void stopRecording();
     } else if (state === "idle" || state === "error") {
       void startRecording();
     }
-  };
+  }, [isRecording, state]);
 
   const formatDuration = (sec: number) => {
     const m = Math.floor(sec / 60).toString().padStart(2, "0");
@@ -88,27 +101,29 @@ export function HomeView() {
     return `${m}:${s}`;
   };
 
-  const handleCopy = (id: string, text: string) => {
+  const handleCopy = useCallback((id: string, text: string) => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     void navigator.clipboard.writeText(text);
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
+    copyTimerRef.current = setTimeout(() => setCopiedId(null), 2000);
+  }, []);
 
-  const handleReInject = async (id: string) => {
+  const handleReInject = useCallback(async (id: string) => {
     try {
+      if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
       await reInject(id);
       setInjectedId(id);
-      setTimeout(() => setInjectedId(null), 2000);
+      injectTimerRef.current = setTimeout(() => setInjectedId(null), 2000);
     } catch {
       // ignore
     }
-  };
+  }, []);
 
-  // Safe config readouts
-  const activeMode = (settings.active_mode as string) ?? "dictation";
-  const translationEnabled = (settings.translation_enabled as boolean) ?? false;
-  const translationTarget = (settings.translation_target as string) ?? "en";
-  const micDevice = (settings.mic_device as string) ?? "default";
+  // Safe config readouts with proper type guards
+  const activeMode = typeof settings.active_mode === "string" ? settings.active_mode : "dictation";
+  const translationEnabled = typeof settings.translation_enabled === "boolean" ? settings.translation_enabled : false;
+  const translationTarget = typeof settings.translation_target === "string" ? settings.translation_target : "en";
+  const micDevice = typeof settings.mic_device === "string" ? settings.mic_device : "default";
   const hotkeyRaw = settings.hotkey as { key: string; mode: string } | undefined;
   const shortcutKey = hotkeyRaw?.key ?? "Ctrl+Space";
 
@@ -126,9 +141,10 @@ export function HomeView() {
     const rates: number[] = [];
     for (const i of historyItems) {
       const dur = i.duration_ms ?? 0;
-      if (i.word_count <= 0 || dur <= 0) continue;
+      if (!i.word_count || i.word_count <= 0) continue;
+      if (dur <= 0) continue;
       const wpm = i.word_count / (dur / 60000);
-      if (wpm > MAX_PLAUSIBLE_WPM) continue;
+      if (!isFinite(wpm) || wpm > MAX_PLAUSIBLE_WPM) continue;
       rates.push(wpm);
       if (rates.length >= 20) break;
     }

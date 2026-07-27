@@ -20,6 +20,11 @@ use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCpp
 use crate::util::MutexExt;
 use crate::{events, AppStateInner};
 
+// Maximum recording duration in seconds to prevent runaway recordings
+const MAX_RECORDING_DURATION_SECS: u64 = 300;
+// Minimum recording duration in seconds to filter accidental taps
+const MIN_RECORDING_DURATION_SECS: f32 = 1.0;
+
 // ---------------------------------------------------------------
 // Settings-derived config builders
 // ---------------------------------------------------------------
@@ -49,7 +54,13 @@ pub fn build_audio_config(db: &Database) -> AudioConfig {
 
 pub fn decrypted_api_key(state: &AppStateInner) -> String {
     let raw = string_setting(&state.db, "groq_api_key", "");
-    crate::crypto::decrypt_api_key(&raw, &state.master_key).unwrap_or(raw)
+    if raw.is_empty() {
+        return raw;
+    }
+    crate::crypto::decrypt_api_key(&raw, &state.master_key).unwrap_or_else(|e| {
+        tracing::error!("Failed to decrypt API key: {e}");
+        String::new()
+    })
 }
 
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
@@ -435,7 +446,7 @@ fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
                     break;
                 }
                 if let Some(dur) = state.pipeline.recording_duration() {
-                    if dur.as_secs() > 300 {
+                    if dur.as_secs() > MAX_RECORDING_DURATION_SECS {
                         stop = true;
                     }
                 }
@@ -459,7 +470,7 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
 
     // Skip if held for ≤1 second (likely accidental).
     if let Some(duration) = state.pipeline.recording_duration() {
-        if duration.as_secs_f32() <= 1.0 {
+        if duration.as_secs_f32() <= MIN_RECORDING_DURATION_SECS {
             let _ = state.pipeline.cancel_recording();
             events::emit_state(app, state.pipeline.state_tag());
             crate::overlay::maybe_hide(app);

@@ -55,27 +55,34 @@ fn generate_master_key(path: &Path) -> Result<[u8; 32]> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, key)?;
-    restrict_permissions(path);
+    write_key_file(path, &key)?;
     Ok(key)
+}
+
+#[cfg(unix)]
+fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(key)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
+    std::fs::write(path, key)?;
+    Ok(())
 }
 
 fn key_path(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("master.key")
 }
-
-#[cfg(unix)]
-fn restrict_permissions(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    if let Ok(meta) = std::fs::metadata(path) {
-        let mut perms = meta.permissions();
-        perms.set_mode(0o600);
-        let _ = std::fs::set_permissions(path, perms);
-    }
-}
-
-#[cfg(not(unix))]
-fn restrict_permissions(_path: &Path) {}
 
 /// Whether a stored value is in our encrypted envelope format.
 pub fn is_encrypted(value: &str) -> bool {

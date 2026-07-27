@@ -89,7 +89,7 @@ pub fn run() {
             let app_data_dir = handle
                 .path()
                 .app_data_dir()
-                .unwrap_or_else(|_| PathBuf::from("."));
+                .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
             // Initialize logging (stderr + rotating file) once the log dir is known.
             let log_guard = logging::init(&app_data_dir.join("logs"));

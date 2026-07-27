@@ -35,6 +35,7 @@ export const useHistoryStore = create<HistoryStore>((set) => {
       if (seq === requestSeq) set({ items });
     } catch {
       // search failed silently — keep existing items
+      if (seq === requestSeq) set({ loading: false });
     }
   }, 300);
 

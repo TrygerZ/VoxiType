@@ -70,7 +70,10 @@ impl<'a> SettingsManager<'a> {
             let mut map = serde_json::Map::new();
             for row in rows {
                 let (k, v) = row?;
-                let parsed: Value = serde_json::from_str(&v).unwrap_or(Value::String(v));
+                let parsed: Value = serde_json::from_str(&v).unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse setting value, storing as string: {e}");
+                    Value::String(v.clone())
+                });
                 map.insert(k, parsed);
             }
             Ok(Value::Object(map))

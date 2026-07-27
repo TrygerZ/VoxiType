@@ -117,9 +117,9 @@ impl<'a> HistoryRepository<'a> {
                 sql.push_str(" AND is_pinned = 1");
             }
             sql.push_str(" ORDER BY created_at DESC");
-            let limit = filter.limit.unwrap_or(100);
-            let offset = filter.offset.unwrap_or(0);
-            sql.push_str(&format!(" LIMIT {limit} OFFSET {offset}"));
+            let limit = filter.limit.unwrap_or(100).min(10000) as i64;
+            let offset = filter.offset.unwrap_or(0) as i64;
+            sql.push_str(" LIMIT :limit OFFSET :offset");
 
             let mut stmt = c.prepare(&sql)?;
             let mode = filter.mode.clone().unwrap_or_default();
@@ -131,6 +131,8 @@ impl<'a> HistoryRepository<'a> {
             if filter.source_lang.is_some() {
                 params.push((":lang", &lang));
             }
+            params.push((":limit", &limit));
+            params.push((":offset", &offset));
             let rows = stmt.query_map(params.as_slice(), row_to_entry)?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         })

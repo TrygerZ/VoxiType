@@ -84,6 +84,19 @@ export function DictionaryPanel() {
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
+      
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        toast("File terlalu besar (maks 5MB)", "error");
+        return;
+      }
+      
+      // Validate file extension
+      if (!file.name.endsWith(".json")) {
+        toast("Hanya file JSON yang didukung", "error");
+        return;
+      }
+      
       const text = await file.text();
       await importDictionary(text);
       void load();

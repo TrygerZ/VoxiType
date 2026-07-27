@@ -8,6 +8,30 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
 use crate::error::{AppError, Result};
 
+/// RAII guard that releases a key on drop, preventing keyboard state corruption
+/// if an error occurs mid-sequence.
+struct KeyGuard<'a> {
+    enigo: &'a mut Enigo,
+    key: Key,
+}
+
+impl<'a> Drop for KeyGuard<'a> {
+    fn drop(&mut self) {
+        let _ = self.enigo.key(self.key.clone(), Direction::Release);
+    }
+}
+
+/// Get the platform-appropriate modifier key (Cmd on macOS, Ctrl elsewhere).
+#[cfg(target_os = "macos")]
+fn modifier_key() -> Key {
+    Key::Meta
+}
+
+#[cfg(not(target_os = "macos"))]
+fn modifier_key() -> Key {
+    Key::Control
+}
+
 /// A recognized editing action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceCommand {
@@ -77,13 +101,12 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
                 .map_err(map_err)?;
         }
         VoiceCommand::DeleteWord => {
-            // Ctrl+Backspace deletes the previous word in most editors.
-            enigo.key(Key::Control, Direction::Press).map_err(map_err)?;
-            enigo
+            // Ctrl+Backspace (Win/Linux) or Cmd+Backspace (macOS) deletes the previous word.
+            let modifier = modifier_key();
+            enigo.key(modifier.clone(), Direction::Press).map_err(map_err)?;
+            let _guard = KeyGuard { enigo: &mut enigo, key: modifier };
+            _guard.enigo
                 .key(Key::Backspace, Direction::Click)
-                .map_err(map_err)?;
-            enigo
-                .key(Key::Control, Direction::Release)
                 .map_err(map_err)?;
         }
         VoiceCommand::SelectAll => combo(&mut enigo, 'a', map_err)?,
@@ -100,20 +123,23 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
     Ok(())
 }
 
-/// Simulate Ctrl+<key>.
+/// Simulate Ctrl+<key> on Windows/Linux or Cmd+<key> on macOS.
 fn combo(
     enigo: &mut Enigo,
     key: char,
     map_err: impl Fn(enigo::InputError) -> AppError,
 ) -> Result<()> {
+    let modifier = modifier_key();
     enigo
-        .key(Key::Control, Direction::Press)
+        .key(modifier.clone(), Direction::Press)
         .map_err(&map_err)?;
-    enigo
+    let _guard = KeyGuard {
+        enigo,
+        key: modifier,
+    };
+    _guard
+        .enigo
         .key(Key::Unicode(key), Direction::Click)
-        .map_err(&map_err)?;
-    enigo
-        .key(Key::Control, Direction::Release)
         .map_err(&map_err)?;
     Ok(())
 }

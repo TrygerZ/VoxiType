@@ -39,12 +39,24 @@ impl TextInjector for HybridInjector {
 
     fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
         let started = Instant::now();
-        // ponytail: skip saving/restoring original clipboard. restoring creates race conditions
-        // and artificial delays (300ms sleep) trying to guess when the target app has consumed the paste.
-
+        
+        // Save current clipboard content
+        let prev = clipboard::read_text();
+        
         clipboard::write_text(text)?;
+        
+        // Small delay to let target app consume the paste
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        
         keystroke::paste()?;
-
+        
+        // Restore previous clipboard if we had one
+        if let Some(prev_text) = prev {
+            if let Err(e) = clipboard::write_text(&prev_text) {
+                tracing::warn!("Failed to restore clipboard: {e}");
+            }
+        }
+        
         Ok(InjectResult {
             success: true,
             strategy: InjectStrategy::Clipboard,

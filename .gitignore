@@ -18,6 +18,8 @@ dist-ssr
 
 # Editor directories and files
 .vscode/*
+.claude
+.opencode
 
 .idea
 .DS_Store
@@ -26,3 +28,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Environment files
+.env
+.env.local
+
+# Windows
+Thumbs.db

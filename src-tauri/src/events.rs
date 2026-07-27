@@ -31,7 +31,9 @@ pub struct AudioLevel {
 
 /// Emit a state change event.
 pub fn emit_state<R: Runtime>(app: &AppHandle<R>, state: AppStateTag) {
-    let _ = app.emit("state_changed", StateChanged { state });
+    if let Err(e) = app.emit("state_changed", StateChanged { state }) {
+        tracing::warn!("Failed to emit state_changed: {e}");
+    }
 }
 
 pub fn emit_transcription_complete<R: Runtime>(
@@ -41,7 +43,7 @@ pub fn emit_transcription_complete<R: Runtime>(
     word_count: u32,
     duration_ms: i64,
 ) {
-    let _ = app.emit(
+    if let Err(e) = app.emit(
         "transcription_complete",
         TranscriptionComplete {
             id: id.to_string(),
@@ -49,19 +51,25 @@ pub fn emit_transcription_complete<R: Runtime>(
             word_count,
             duration_ms,
         },
-    );
+    ) {
+        tracing::warn!("Failed to emit transcription_complete: {e}");
+    }
 }
 
 pub fn emit_transcription_error<R: Runtime>(app: &AppHandle<R>, message: &str, code: &str) {
-    let _ = app.emit(
+    if let Err(e) = app.emit(
         "transcription_error",
         TranscriptionError {
             message: message.to_string(),
             code: code.to_string(),
         },
-    );
+    ) {
+        tracing::warn!("Failed to emit transcription_error: {e}");
+    }
 }
 
 pub fn emit_audio_level<R: Runtime>(app: &AppHandle<R>, level: f32) {
-    let _ = app.emit("audio_level", AudioLevel { level });
+    if let Err(e) = app.emit("audio_level", AudioLevel { level }) {
+        tracing::warn!("Failed to emit audio_level: {e}");
+    }
 }

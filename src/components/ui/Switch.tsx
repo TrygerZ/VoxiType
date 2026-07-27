@@ -10,6 +10,7 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label || undefined}
       onClick={() => onChange(!checked)}
       className="inline-flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 rounded-lg"
     >

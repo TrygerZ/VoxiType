@@ -4,6 +4,11 @@ use arboard::Clipboard;
 
 use crate::error::{AppError, Result};
 
+/// Read text from the clipboard.
+pub fn read_text() -> Option<String> {
+    Clipboard::new().ok().and_then(|mut cb| cb.get_text().ok())
+}
+
 /// Write text to the clipboard.
 pub fn write_text(text: &str) -> Result<()> {
     let mut cb =

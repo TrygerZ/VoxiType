@@ -16,6 +16,8 @@ pub struct Resampler {
     chunk_frames: usize,
     /// Mono samples awaiting a full resampler chunk.
     pending: Vec<f32>,
+    /// Leftover samples from mix_to_mono (incomplete channel frame).
+    leftover_buffer: Vec<f32>,
 }
 
 impl Resampler {
@@ -46,28 +48,35 @@ impl Resampler {
             resampler,
             chunk_frames,
             pending: Vec::new(),
+            leftover_buffer: Vec::new(),
         })
     }
 
     /// Down-mix interleaved frames to a single mono channel (average).
-    pub fn mix_to_mono(&self, interleaved: &[f32]) -> Vec<f32> {
+    pub fn mix_to_mono(&mut self, interleaved: &[f32]) -> Vec<f32> {
+        // Prepend any leftover samples from the previous call
+        let total: Vec<f32> = [self.leftover_buffer.as_slice(), interleaved]
+            .concat();
+        self.leftover_buffer.clear();
+
         if self.channels <= 1 {
-            return interleaved.to_vec();
+            return total;
         }
-        let frames = interleaved.len() / self.channels;
-        let leftover = interleaved.len() % self.channels;
+
+        let frames = total.len() / self.channels;
+        let leftover = total.len() % self.channels;
         if leftover != 0 {
-            tracing::warn!(
-                "Resampler: dropping {leftover} trailing samples (not a full {}-channel frame)",
-                self.channels
-            );
+            // Save leftover samples for next call instead of dropping
+            let split_point = frames * self.channels;
+            self.leftover_buffer.extend_from_slice(&total[split_point..]);
         }
+
         let mut mono = Vec::with_capacity(frames);
         for f in 0..frames {
             let base = f * self.channels;
             let mut sum = 0.0f32;
             for c in 0..self.channels {
-                sum += interleaved[base + c];
+                sum += total[base + c];
             }
             mono.push(sum / self.channels as f32);
         }
@@ -102,13 +111,17 @@ impl Resampler {
     /// Flush any buffered remainder by zero-padding to a final chunk.
     pub fn flush(&mut self) -> Result<Vec<f32>> {
         let Some(resampler) = self.resampler.as_mut() else {
-            let rem = std::mem::take(&mut self.pending);
+            let mut rem = std::mem::take(&mut self.pending);
+            rem.extend_from_slice(&self.leftover_buffer);
+            self.leftover_buffer.clear();
             return Ok(rem);
         };
-        if self.pending.is_empty() {
+        if self.pending.is_empty() && self.leftover_buffer.is_empty() {
             return Ok(Vec::new());
         }
         let mut chunk: Vec<f32> = std::mem::take(&mut self.pending);
+        chunk.extend_from_slice(&self.leftover_buffer);
+        self.leftover_buffer.clear();
         chunk.resize(self.chunk_frames, 0.0);
         let processed = resampler
             .process(&[chunk], None)
@@ -123,7 +136,7 @@ mod tests {
 
     #[test]
     fn mix_stereo_to_mono_averages_channels() {
-        let r = Resampler::new(16_000, 16_000, 2).unwrap();
+        let mut r = Resampler::new(16_000, 16_000, 2).unwrap();
         // L=1.0, R=0.0 -> 0.5 ; L=-1.0 R=-1.0 -> -1.0
         let mono = r.mix_to_mono(&[1.0, 0.0, -1.0, -1.0]);
         assert_eq!(mono, vec![0.5, -1.0]);

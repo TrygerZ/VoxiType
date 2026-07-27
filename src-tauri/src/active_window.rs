@@ -52,7 +52,9 @@ mod platform {
                 windows::core::PWSTR::from_raw(buf.as_mut_ptr()),
                 &mut len,
             );
-            let _ = CloseHandle(handle);
+            if let Err(e) = CloseHandle(handle) {
+                tracing::warn!("Failed to close process handle: {e}");
+            }
 
             if res.is_err() || len == 0 {
                 return None;

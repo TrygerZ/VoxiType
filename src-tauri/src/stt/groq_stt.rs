@@ -340,7 +340,7 @@ pub fn encode_wav_16k_mono(samples: &[f32]) -> Vec<u8> {
     buf.extend_from_slice(b"data");
     buf.extend_from_slice(&data_len.to_le_bytes());
     for &s in samples {
-        let v = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        let v = (s.clamp(-1.0, 1.0) * (i16::MAX as f32 + 1.0)) as i16;
         buf.extend_from_slice(&v.to_le_bytes());
     }
     buf

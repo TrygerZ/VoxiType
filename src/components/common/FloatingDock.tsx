@@ -41,6 +41,8 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
             <button
               type="button"
               onClick={() => onChange(id)}
+              aria-label={t(labelKey)}
+              aria-current={isActive ? "page" : undefined}
               className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-colors duration-200 ease-out hover:-translate-y-0.5 hover:bg-vx-bg-tertiary active:scale-95 focus:outline-none ${
                 isActive ? "text-vx-text-primary" : "text-vx-text-secondary hover:text-vx-text-primary"
               }`}

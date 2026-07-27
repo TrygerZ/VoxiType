@@ -8,6 +8,7 @@ import { DictionaryPanel } from "./components/dictionary/DictionaryPanel";
 import { SnippetsPanel } from "./components/dictionary/SnippetsPanel";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 import { AboutTab } from "./components/settings/AboutTab";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { onEvent } from "./lib/tauri";
@@ -43,17 +44,24 @@ export default function App() {
   }, [loaded, settings.onboarding_completed]);
 
   useEffect(() => {
+    let active = true;
+    const VALID_ROUTES = ["settings", "history", "dictionary", "snippets", "about"] as const;
+    type Route = typeof VALID_ROUTES[number];
+    
+    const isValidRoute = (value: string): value is Route => {
+      return VALID_ROUTES.includes(value as Route);
+    };
+
     const unsub = onEvent<string>("navigate", (route) => {
-      if (
-        ["settings", "history", "dictionary", "snippets", "about"].includes(
-          route,
-        )
-      ) {
-        setView(route as View);
+      if (!active) return;
+      if (isValidRoute(route)) {
+        setView(route);
       }
     });
+    
     return () => {
-      void unsub.then((fn) => fn());
+      active = false;
+      unsub.then((fn) => fn());
     };
   }, []);
 
@@ -74,19 +82,21 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col vx-app-bg relative">
-      <main className="flex-1 overflow-y-auto pb-28">
-        {view === "home" && <HomeView />}
-        {view === "settings" && <SettingsPanel />}
-        {view === "history" && <HistoryPanel />}
-        {view === "dictionary" && <DictionaryPanel />}
-        {view === "snippets" && <SnippetsPanel />}
-        {view === "about" && <AboutTab />}
-      </main>
+    <ErrorBoundary>
+      <div className="flex h-full w-full flex-col vx-app-bg relative">
+        <main className="flex-1 overflow-y-auto pb-28">
+          {view === "home" && <HomeView />}
+          {view === "settings" && <SettingsPanel />}
+          {view === "history" && <HistoryPanel />}
+          {view === "dictionary" && <DictionaryPanel />}
+          {view === "snippets" && <SnippetsPanel />}
+          {view === "about" && <AboutTab />}
+        </main>
 
-      {/* Absolute floating dock at the bottom */}
-      <FloatingDock active={view} onChange={setView} />
-      <ToastContainer />
-    </div>
+        {/* Absolute floating dock at the bottom */}
+        <FloatingDock active={view} onChange={setView} />
+        <ToastContainer />
+      </div>
+    </ErrorBoundary>
   );
 }

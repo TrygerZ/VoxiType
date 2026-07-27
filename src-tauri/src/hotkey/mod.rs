@@ -24,7 +24,9 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()
     let gs = app.global_shortcut();
 
     // Unregister any previous binding to allow rebinding.
-    let _ = gs.unregister_all();
+    if let Err(e) = gs.unregister_all() {
+        tracing::warn!("Failed to unregister previous hotkey: {e}");
+    }
 
     let app_handle = app.clone();
     gs.on_shortcut(shortcut, move |_app, _sc, event| {
