@@ -10,11 +10,17 @@ document.documentElement.classList.add("vx-transparent");
 document.body.classList.add("vx-transparent");
 
 function FloatingApp() {
-  // Ask the backend to reveal the overlay window now that its transparent
-  // content has mounted; this avoids a white-square flash over the
-  // animation layer while the page is still loading (esp. in tauri dev).
+  // Ask the backend to reveal the overlay window only once the browser
+  // has committed the first paint with transparent background — double
+  // rAF ensures the frame is actually on screen (single rAF fires
+  // before paint). This avoids a white-square flash over the animation
+  // layer (esp. in tauri dev, known WebView2 limitation #14515).
   useEffect(() => {
-    void revealFloatingWidget();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void revealFloatingWidget();
+      });
+    });
   }, []);
 
   // Reuse the same event subscriptions as the main window so the widget

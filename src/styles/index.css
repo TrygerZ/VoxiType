@@ -51,10 +51,13 @@ body,
 
 body {
   font-family: var(--vx-font-family);
-  background-color: var(--color-vx-bg-primary);
   color: var(--color-vx-text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+body:not(.vx-transparent) {
+  background-color: var(--color-vx-bg-primary);
 }
 
 /* Flat, calm backdrop for the main shell — no ambient gradient */

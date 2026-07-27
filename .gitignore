@@ -6,6 +6,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+graphify-out
+plan
+research
+SESSION.md
 
 node_modules
 dist

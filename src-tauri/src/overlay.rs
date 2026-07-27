@@ -75,11 +75,21 @@ pub fn reveal_if_enabled<R: Runtime>(app: &AppHandle<R>) {
     let Some(win) = app.get_webview_window(LABEL) else {
         return;
     };
-    if !win.is_visible().unwrap_or(false) {
-        restore_position(app, &win);
-        let _ = win.show();
-    }
-    let _ = win.set_always_on_top(true);
+
+    let win = win.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Small delay so WebView2 can finish setting up its transparency
+        // pipeline before the window becomes visible — prevents a white
+        // flash (known WebView2 limitation on Windows, tauri#14515).
+        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
+
+        if !win.is_visible().unwrap_or(false) {
+            restore_position(&app, &win);
+            let _ = win.show();
+        }
+        let _ = win.set_always_on_top(true);
+    });
 }
 
 /// Ensure the overlay is visible for an active recording/processing session.
@@ -98,11 +108,21 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
     let Some(win) = app.get_webview_window(LABEL) else {
         return;
     };
-    if !win.is_visible().unwrap_or(false) {
-        restore_position(app, &win);
-        let _ = win.show();
-    }
-    let _ = win.set_always_on_top(true);
+
+    let win = win.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Small delay so WebView2 can finish setting up its transparency
+        // pipeline before the window becomes visible — prevents a white
+        // flash (known WebView2 limitation on Windows, tauri#14515).
+        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
+
+        if !win.is_visible().unwrap_or(false) {
+            restore_position(&app, &win);
+            let _ = win.show();
+        }
+        let _ = win.set_always_on_top(true);
+    });
 }
 
 /// Hide the overlay only when the feature is disabled. When enabled the widget
