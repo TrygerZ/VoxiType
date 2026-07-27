@@ -17,7 +17,7 @@ struct KeyGuard<'a> {
 
 impl<'a> Drop for KeyGuard<'a> {
     fn drop(&mut self) {
-        let _ = self.enigo.key(self.key.clone(), Direction::Release);
+        let _ = self.enigo.key(self.key, Direction::Release);
     }
 }
 
@@ -103,7 +103,7 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
         VoiceCommand::DeleteWord => {
             // Ctrl+Backspace (Win/Linux) or Cmd+Backspace (macOS) deletes the previous word.
             let modifier = modifier_key();
-            enigo.key(modifier.clone(), Direction::Press).map_err(map_err)?;
+            enigo.key(modifier, Direction::Press).map_err(map_err)?;
             let _guard = KeyGuard { enigo: &mut enigo, key: modifier };
             _guard.enigo
                 .key(Key::Backspace, Direction::Click)
@@ -131,7 +131,7 @@ fn combo(
 ) -> Result<()> {
     let modifier = modifier_key();
     enigo
-        .key(modifier.clone(), Direction::Press)
+        .key(modifier, Direction::Press)
         .map_err(&map_err)?;
     let _guard = KeyGuard {
         enigo,
