@@ -30,6 +30,9 @@ export const useAppStore = create<AppStore>((set) => ({
     set((s) => ({
       state,
       errorMessage: state === "error" ? s.errorMessage : null,
+      // Clear any stale result when a new session starts so a canceled
+      // recording (Recording→Idle) doesn't flash the previous success pill.
+      wordCount: state === "recording" || state === "processing" ? null : s.wordCount,
     })),
   setAudioLevel: (audioLevel) => set({ audioLevel }),
   setDuration: (durationSec) => set({ durationSec }),

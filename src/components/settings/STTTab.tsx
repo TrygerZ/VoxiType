@@ -186,7 +186,7 @@ export function STTTab() {
               errLabel={t("settings.stt.conn_fail")}
               onClick={handleTestApi}
               disabled={
-                groqStatus === "testing" || (!groqKey.trim() && !groqKeySet)
+                groqStatus === "testing" || (!localKey.trim() && !groqKeySet)
               }
               className="mt-3"
             />

@@ -97,9 +97,13 @@ export function DictionaryPanel() {
         return;
       }
       
-      const text = await file.text();
-      await importDictionary(text);
-      void load();
+      try {
+        const text = await file.text();
+        await importDictionary(text);
+        void load();
+      } catch (e) {
+        toast(formatTauriError(e), "error");
+      }
     };
     input.click();
   };

@@ -14,11 +14,26 @@ pub fn get_snippets(
     SnippetRepository::new(&state.db).get_all()
 }
 
+/// Max length of a snippet trigger phrase / content. Caps CPU on every
+/// transcription's snippet-expansion pass and rejects unbounded IPC input.
+const MAX_TRIGGER_LEN: usize = 100;
+const MAX_CONTENT_LEN: usize = 4096;
+
 #[tauri::command]
 pub fn add_snippet(
     state: State<'_, AppStateInner>,
     mut snippet: crate::storage::Snippet,
 ) -> std::result::Result<(), AppError> {
+    if snippet.trigger_phrase.len() > MAX_TRIGGER_LEN {
+        return Err(AppError::internal(format!(
+            "snippet trigger exceeds {MAX_TRIGGER_LEN} chars"
+        )));
+    }
+    if snippet.content.len() > MAX_CONTENT_LEN {
+        return Err(AppError::internal(format!(
+            "snippet content exceeds {MAX_CONTENT_LEN} chars"
+        )));
+    }
     if snippet.id.is_empty() {
         snippet.id = Uuid::new_v4().to_string();
     }

@@ -69,12 +69,9 @@ export function useTauriEvents() {
 
     return () => {
       clearTimer();
-      let active = true;
-      Promise.all(unlisteners).then((fns) => {
-        if (active) fns.forEach((fn) => fn());
-      });
-      // Prevent cleanup after timeout
-      setTimeout(() => { active = false; }, 0);
+      Promise.all(unlisteners)
+        .then((fns) => fns.forEach((fn) => fn()))
+        .catch(() => {});
     };
   }, [setState, setAudioLevel, setDuration, setResult, setError, reloadHistory, reloadStats]);
 }

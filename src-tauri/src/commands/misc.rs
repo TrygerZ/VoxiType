@@ -61,8 +61,41 @@ pub async fn check_updates<R: Runtime>(
 
 #[tauri::command]
 pub fn open_url(url: String) -> std::result::Result<(), AppError> {
+    let url = validate_open_url(&url)?;
     open::that(&url).map_err(|e| AppError::internal(format!("Failed to open URL: {e}")))?;
     Ok(())
+}
+
+/// Only allow http(s) URLs to a fixed host allowlist. `open::that` dispatches
+/// via the OS shell handler, which honors `file://`, `smb://`, and bare local
+/// paths — rejecting those prevents launching arbitrary executables.
+/// ponytail: hand-rolled parse instead of the `url` crate to avoid a new dep;
+/// upgrade to `url::Url` if query/fragment/auth validation ever matters.
+fn validate_open_url(url: &str) -> std::result::Result<String, AppError> {
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| AppError::internal("Invalid URL: missing scheme"))?;
+    if scheme != "http" && scheme != "https" {
+        return Err(AppError::internal(format!(
+            "Refused URL with scheme '{scheme}': only http/https allowed"
+        )));
+    }
+    // Strip userinfo, port, path, query, fragment to isolate the host.
+    let authority = rest.split('/').next().unwrap_or("");
+    let host = authority
+        .split('@')
+        .next_back()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+    const ALLOWED: &[&str] = &["console.groq.com", "github.com", "huggingface.co"];
+    if !ALLOWED.contains(&host) {
+        return Err(AppError::internal(format!(
+            "Refused URL to host '{host}': not in allowlist"
+        )));
+    }
+    Ok(url.to_string())
 }
 
 /// Reveal the floating-widget window once its page has mounted. The frontend
@@ -190,4 +223,35 @@ pub async fn test_whisper_cpp(
     };
     let silence = vec![0.0; 16_000];
     engine.transcribe(&silence, &config).await.map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allows_allowed_https_hosts() {
+        assert!(validate_open_url("https://console.groq.com").is_ok());
+        assert!(validate_open_url("https://github.com/ggml-org/whisper.cpp").is_ok());
+        assert!(validate_open_url("https://huggingface.co/ggerganov/whisper.cpp").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_http_schemes() {
+        assert!(validate_open_url("file:///C:/Windows/System32/cmd.exe").is_err());
+        assert!(validate_open_url("smb://attacker/share/payload.lnk").is_err());
+        assert!(validate_open_url("C:\\Windows\\System32\\cmd.exe").is_err());
+    }
+
+    #[test]
+    fn rejects_unallowed_hosts() {
+        assert!(validate_open_url("https://evil.com").is_err());
+        assert!(validate_open_url("https://github.com.evil.com").is_err());
+    }
+
+    #[test]
+    fn strips_userinfo_and_port() {
+        assert!(validate_open_url("https://user:pass@github.com:443/repo").is_ok());
+        assert!(validate_open_url("https://user@evil.com").is_err());
+    }
 }

@@ -21,7 +21,10 @@ export function FloatingWidget({
     if (!alwaysRender || !showingResult) return;
     const t = setTimeout(() => reset(), 2200);
     return () => clearTimeout(t);
-  }, [alwaysRender, showingResult, reset]);
+    // Re-arm per result: wordCount changes each transcription_complete, so a
+    // second result landing within the window resets the timer instead of
+    // letting the old one fire and wipe the new result early.
+  }, [alwaysRender, showingResult, wordCount, reset]);
 
   if (!alwaysRender && state === "idle" && !errorMessage) return null;
 

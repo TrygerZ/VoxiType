@@ -5,6 +5,12 @@
 //! (0600 where supported). This keeps plaintext keys off disk; for a local,
 //! single-user open-source app this is a reasonable threat model without
 //! pulling in an OS keychain dependency.
+//!
+//! Threat-model note: on Windows the key file inherits the parent dir ACL and
+//! is not yet restricted to the current user (the Unix branch sets 0600). For
+//! a single-user desktop app this is acceptable; if the app ever runs on shared
+//! machines, restrict the file ACL via `SetSecurityInfo` or migrate the master
+//! key to Windows DPAPI (`CryptProtectData`).
 
 use std::path::{Path, PathBuf};
 
