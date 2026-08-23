@@ -22,6 +22,7 @@ pub mod tray;
 pub mod updater;
 pub mod util;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tauri::{Manager, Runtime};
@@ -46,6 +47,11 @@ pub struct AppStateInner {
     /// Keeps the file-log writer thread alive; flushed on drop.
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
     pub stt_engine: std::sync::Mutex<SttEngineCache>,
+    /// Parent directory of the most recent native file-picker result, per
+    /// picker kind (e.g. "whisper_binary"). Paths for those settings written
+    /// back over IPC must canonicalize under these directories, so a
+    /// compromised webview cannot invent attacker-controlled paths.
+    pub last_picker_dirs: std::sync::Mutex<HashMap<String, PathBuf>>,
 }
 
 impl AppStateInner {
@@ -69,6 +75,8 @@ impl AppStateInner {
             tracing::warn!("Failed to prune old history: {e}");
         }
 
+        migrate_legacy_api_key(&db, &master_key);
+
         Ok(Self {
             db,
             pipeline: PipelineOrchestrator::new(),
@@ -76,7 +84,43 @@ impl AppStateInner {
             master_key,
             _log_guard: log_guard,
             stt_engine: std::sync::Mutex::new(None),
+            last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
         })
+    }
+}
+
+/// Upgrade-on-startup: re-encrypt a legacy plaintext `groq_api_key` in place.
+///
+/// Idempotent — no-ops when the key is absent, empty, or already carries the
+/// `enc:v1:` prefix. Failures are logged but never abort startup; the
+/// defensive plaintext passthrough in [`crypto::decrypt_api_key`] keeps the
+/// app working until the next launch can retry the migration.
+fn migrate_legacy_api_key(db: &Database, master_key: &[u8; 32]) {
+    const API_KEY_SETTING: &str = "groq_api_key";
+    let settings = SettingsManager::new(db);
+
+    let stored = match settings.get::<String>(API_KEY_SETTING) {
+        Ok(stored) => stored,
+        Err(e) => {
+            tracing::warn!("API key migration skipped, cannot read setting: {e}");
+            return;
+        }
+    };
+
+    let Some(stored) = stored else {
+        return; // Key never set — nothing to migrate.
+    };
+
+    match crypto::migrate_plaintext_key(&stored, master_key) {
+        Ok(Some(encrypted)) => {
+            if let Err(e) = settings.set(API_KEY_SETTING, &encrypted) {
+                tracing::warn!("API key migration failed to persist: {e}");
+            } else {
+                tracing::info!("Migrated legacy plaintext {API_KEY_SETTING} to encrypted storage");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!("API key migration failed: {e}"),
     }
 }
 
@@ -159,6 +203,7 @@ pub fn run() {
             commands::check_updates,
             commands::open_url,
             commands::pick_setup_file,
+            commands::set_whisper_cpp_paths,
             commands::test_groq_api,
             commands::test_whisper_cpp,
             commands::get_usage_stats,

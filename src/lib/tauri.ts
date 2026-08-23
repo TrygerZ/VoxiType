@@ -89,6 +89,13 @@ export const openUrl = (url: string) =>
 export const pickSetupFile = (kind: "whisper_binary" | "whisper_model") =>
   invoke<string | null>("pick_setup_file", { kind });
 
+// Whisper.cpp paths are gated backend-side: only paths previously returned
+// by pickSetupFile are accepted (see set_whisper_cpp_paths in commands/misc).
+export const setWhisperCppPaths = (
+  binaryPath: string | null,
+  modelPath: string | null,
+) => invoke<void>("set_whisper_cpp_paths", { binaryPath, modelPath });
+
 // --- Groq API ---
 export const testGroqApi = (key: string) =>
   invoke<void>("test_groq_api", { apiKey: key });

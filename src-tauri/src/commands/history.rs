@@ -61,7 +61,13 @@ pub async fn re_inject(
     let entry = HistoryRepository::new(&state.db)
         .get(&id)?
         .ok_or_else(|| AppError::storage("History item not found"))?;
-    HybridInjector::new().inject(&entry.text_formatted)?;
+    // Injection blocks the OS event loop for hundreds of milliseconds
+    // (clipboard propagation sleeps + enigo keystroke simulation), so it
+    // must never run directly on a tokio worker thread.
+    let text = entry.text_formatted;
+    tokio::task::spawn_blocking(move || HybridInjector::new().inject(&text))
+        .await
+        .map_err(|e| AppError::injection(format!("Re-injection task failed: {e}")))??;
     Ok(())
 }
 

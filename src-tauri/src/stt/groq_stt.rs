@@ -80,9 +80,13 @@ impl GroqSttEngine {
                     ));
                 }
                 if !status.is_success() {
-                    return Err(AppError::stt_api(format!(
-                        "Groq STT error {status}: {body}"
-                    )));
+                    // The upstream body is untrusted: sanitize and cap it so
+                    // oversized or hostile payloads cannot flood logs or the UI.
+                    let safe_body = crate::util::sanitize_error_body(&body);
+                    return Err(
+                        AppError::stt_api(format!("Groq STT error {status}: {safe_body}"))
+                            .with_http_status(status.as_u16()),
+                    );
                 }
                 Ok(body)
             }

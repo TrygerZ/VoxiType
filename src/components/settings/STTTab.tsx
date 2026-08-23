@@ -21,6 +21,7 @@ export function STTTab() {
   const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  const updateWhisperPaths = useSettingsStore((s) => s.updateWhisperPaths);
   const [groqStatus, setGroqStatus] = useState<TestStatus>("idle");
   const [whisperStatus, setWhisperStatus] = useState<TestStatus>("idle");
 
@@ -62,11 +63,13 @@ export function STTTab() {
     });
   };
 
+  // Whisper paths are only writable via the picker-gated backend command;
+  // the backend refuses any path not returned by the native dialog.
   const handlePickBinary = async () => {
     try {
       const file = await pickSetupFile("whisper_binary");
       if (file) {
-        await update("whisper_cpp_binary_path", file);
+        await updateWhisperPaths(file, null);
       }
     } catch (e: unknown) {
       toast(formatTauriError(e), "error");
@@ -77,7 +80,7 @@ export function STTTab() {
     try {
       const file = await pickSetupFile("whisper_model");
       if (file) {
-        await update("whisper_cpp_model_path", file);
+        await updateWhisperPaths(null, file);
       }
     } catch (e: unknown) {
       toast(formatTauriError(e), "error");
@@ -122,9 +125,8 @@ export function STTTab() {
           <div className="flex flex-col gap-4 px-4 py-3.5">
             <PathPickerField
               label={t("settings.stt.binary_path")}
-              placeholder="whisper-cli or C:\\tools\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"
+              placeholder="C:\\tools\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"
               value={whisperBinary}
-              onChange={(value) => void update("whisper_cpp_binary_path", value)}
               onBrowse={handlePickBinary}
               browseLabel="Browse"
               hint={t("settings.stt.binary_hint")}
@@ -133,7 +135,6 @@ export function STTTab() {
               label={t("settings.stt.model_path")}
               placeholder="C:\\models\\ggml-base.bin"
               value={whisperModel}
-              onChange={(value) => void update("whisper_cpp_model_path", value)}
               onBrowse={handlePickModel}
               browseLabel="Browse"
               hint={t("settings.stt.model_hint")}
@@ -242,7 +243,6 @@ function PathPickerField({
   value,
   hint,
   browseLabel,
-  onChange,
   onBrowse,
 }: {
   label: string;
@@ -250,16 +250,17 @@ function PathPickerField({
   value: string;
   hint: string;
   browseLabel: string;
-  onChange: (value: string) => void;
   onBrowse: () => void;
 }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+      {/* Read-only by design: paths must come from the native dialog, so
+          free-text entry is not offered (backend would reject it anyway). */}
       <Input
         label={label}
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        readOnly
         hint={hint}
       />
       <button

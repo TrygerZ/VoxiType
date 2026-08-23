@@ -75,6 +75,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const currentStepIdx = STEPS.indexOf(step);
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  const updateWhisperPaths = useSettingsStore((s) => s.updateWhisperPaths);
   const loadSettings = useSettingsStore((s) => s.load);
 
   const features = [
@@ -155,8 +156,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         await update("groq_api_key", apiKey.trim());
       }
       if (sttEngine === "whisper_cpp") {
-        await update("whisper_cpp_binary_path", whisperBinary.trim());
-        await update("whisper_cpp_model_path", whisperModel.trim());
+        // Gated command: the backend only accepts paths previously returned
+        // by the native setup dialog.
+        await updateWhisperPaths(whisperBinary.trim(), whisperModel.trim());
         await update("whisper_cpp_threads", whisperThreads);
       }
       setStep("hotkey");
@@ -444,8 +446,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 threads={whisperThreads}
                 status={whisperStatus}
                 t={t}
-                onBinaryPathChange={setWhisperBinary}
-                onModelPathChange={setWhisperModel}
                 onThreadsChange={setWhisperThreads}
                 onPickBinary={handlePickWhisperBinary}
                 onPickModel={handlePickWhisperModel}
@@ -613,8 +613,6 @@ function OfflineSetup({
   threads,
   status,
   t,
-  onBinaryPathChange,
-  onModelPathChange,
   onThreadsChange,
   onPickBinary,
   onPickModel,
@@ -625,8 +623,6 @@ function OfflineSetup({
   threads: number;
   status: TestStatus;
   t: (key: string, vars?: Record<string, string | number>) => string;
-  onBinaryPathChange: (value: string) => void;
-  onModelPathChange: (value: string) => void;
   onThreadsChange: (value: number) => void;
   onPickBinary: () => void;
   onPickModel: () => void;
@@ -693,7 +689,6 @@ function OfflineSetup({
           label={t("onboarding.stt.offline.binary")}
           placeholder="whisper-cli"
           value={binaryPath}
-          onChange={onBinaryPathChange}
           onBrowse={onPickBinary}
           browseLabel={t("onboarding.stt.offline.browse_binary")}
           hint={t("onboarding.stt.offline.binary_hint")}
@@ -702,7 +697,6 @@ function OfflineSetup({
           label={t("onboarding.stt.offline.model")}
           placeholder="C:\\models\\ggml-base.bin"
           value={modelPath}
-          onChange={onModelPathChange}
           onBrowse={onPickModel}
           browseLabel={t("onboarding.stt.offline.browse_model")}
           hint={t("onboarding.stt.offline.model_hint")}
@@ -783,7 +777,6 @@ function PathPickerField({
   hint,
   browseLabel,
   autoFocus,
-  onChange,
   onBrowse,
 }: {
   label: string;
@@ -792,17 +785,18 @@ function PathPickerField({
   hint: string;
   browseLabel: string;
   autoFocus?: boolean;
-  onChange: (value: string) => void;
   onBrowse: () => void;
 }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+      {/* Read-only by design: paths must come from the native dialog, so
+          free-text entry is not offered (backend would reject it anyway). */}
       <Input
         autoFocus={autoFocus}
         label={label}
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        readOnly
         hint={hint}
       />
       <Button

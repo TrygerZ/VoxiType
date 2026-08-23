@@ -80,9 +80,28 @@ impl PipelineOrchestrator {
         }
     }
 
-    /// Start the underlying audio capture stream.
-    pub fn start_capture(&self, config: &AudioConfig) -> Result<()> {
-        self.audio.lock_recover().start(config)
+    /// Start the underlying audio capture stream, but only if the pipeline
+    /// is still in the Recording state.
+    ///
+    /// The capture task runs asynchronously after the Recording transition;
+    /// a fast press-and-release may already have cancelled or stopped the
+    /// session by the time it executes. Starting the stream then would leave
+    /// an orphaned cpal stream running while the app is Idle. The state lock
+    /// is held across both the check and the start, so a concurrent
+    /// stop/cancel cannot slip between them: it either completes before the
+    /// check (start gets skipped) or blocks until the stream is up and then
+    /// operates on a live session. Lock order is always state → audio; no
+    /// code path acquires them in the reverse order.
+    ///
+    /// Returns `Ok(false)` when the start was skipped because recording had
+    /// already ended.
+    pub fn start_capture_if_recording(&self, config: &AudioConfig) -> Result<bool> {
+        let guard = self.state.lock_recover();
+        if !matches!(*guard, AppState::Recording { .. }) {
+            return Ok(false);
+        }
+        self.audio.lock_recover().start(config)?;
+        Ok(true)
     }
 
     /// Stop capturing and return the captured samples, moving to Processing.
@@ -111,5 +130,67 @@ impl PipelineOrchestrator {
             message: err.message.clone(),
             code: err.code,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn audio_config() -> AudioConfig {
+        AudioConfig::default()
+    }
+
+    #[test]
+    fn capture_start_skipped_when_idle() {
+        let pipeline = PipelineOrchestrator::new();
+        let started = pipeline
+            .start_capture_if_recording(&audio_config())
+            .unwrap();
+        assert!(!started);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
+    }
+
+    #[test]
+    fn capture_start_skipped_when_processing() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        // Pure state transition; no live capture session is touched.
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+
+        let started = pipeline
+            .start_capture_if_recording(&audio_config())
+            .unwrap();
+        assert!(!started);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Processing);
+    }
+
+    #[test]
+    fn capture_start_skipped_after_cancel() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        pipeline.cancel_recording().unwrap();
+
+        let started = pipeline
+            .start_capture_if_recording(&audio_config())
+            .unwrap();
+        assert!(!started);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
+    }
+
+    #[test]
+    fn capture_start_skipped_when_error() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline.set_error(&AppError::internal("boom"));
+
+        let started = pipeline
+            .start_capture_if_recording(&audio_config())
+            .unwrap();
+        assert!(!started);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Error);
     }
 }

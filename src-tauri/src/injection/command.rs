@@ -104,8 +104,12 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
             // Ctrl+Backspace (Win/Linux) or Cmd+Backspace (macOS) deletes the previous word.
             let modifier = modifier_key();
             enigo.key(modifier, Direction::Press).map_err(map_err)?;
-            let _guard = KeyGuard { enigo: &mut enigo, key: modifier };
-            _guard.enigo
+            let _guard = KeyGuard {
+                enigo: &mut enigo,
+                key: modifier,
+            };
+            _guard
+                .enigo
                 .key(Key::Backspace, Direction::Click)
                 .map_err(map_err)?;
         }
@@ -130,9 +134,7 @@ fn combo(
     map_err: impl Fn(enigo::InputError) -> AppError,
 ) -> Result<()> {
     let modifier = modifier_key();
-    enigo
-        .key(modifier, Direction::Press)
-        .map_err(&map_err)?;
+    enigo.key(modifier, Direction::Press).map_err(&map_err)?;
     let _guard = KeyGuard {
         enigo,
         key: modifier,

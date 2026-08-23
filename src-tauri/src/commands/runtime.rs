@@ -271,7 +271,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
         replacements,
         snippets,
     };
-    let injector = HybridInjector::new();
+    let injector = std::sync::Arc::new(HybridInjector::new());
 
     let translate_enabled = SettingsManager::new(&state.db)
         .get::<bool>("translation_enabled")
@@ -299,7 +299,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 &mode,
                 &post,
                 translate_opts.as_ref(),
-                &injector,
+                injector.clone(),
             )
             .await
         }
@@ -312,7 +312,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 &mode,
                 &post,
                 translate_opts.as_ref(),
-                &injector,
+                injector,
             )
             .await
         }
@@ -343,7 +343,9 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 is_pinned: false,
                 app_context: None,
             };
-            let _ = HistoryRepository::new(&state.db).insert(&entry);
+            if let Err(e) = HistoryRepository::new(&state.db).insert(&entry) {
+                tracing::error!("Failed to insert transcription into history: {e}");
+            }
 
             if telemetry_enabled(&state.db) {
                 let stt_kind = engine_kind(&entry.stt_engine);
@@ -427,11 +429,20 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
         let state = app_clone.state::<AppStateInner>();
         let config = build_audio_config(&state.db);
-        if let Err(e) = state.pipeline.start_capture(&config) {
-            let _ = state
-                .pipeline
-                .apply(crate::pipeline::StateEvent::CancelRecording);
-            fail(&app_clone, &state.pipeline, &e);
+        // The task may execute after a fast PTT tap already cancelled or
+        // stopped the session; only open the stream while still Recording,
+        // otherwise it would be orphaned with no one to stop it.
+        match state.pipeline.start_capture_if_recording(&config) {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::debug!("Capture start skipped: recording already ended");
+            }
+            Err(e) => {
+                let _ = state
+                    .pipeline
+                    .apply(crate::pipeline::StateEvent::CancelRecording);
+                fail(&app_clone, &state.pipeline, &e);
+            }
         }
     });
 }

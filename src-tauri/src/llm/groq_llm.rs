@@ -63,7 +63,13 @@ impl GroqLlmFormatter {
                     ));
                 }
                 if !status.is_success() {
-                    return Err(AppError::llm(format!("Groq LLM error {status}: {text}")));
+                    // The upstream body is untrusted: sanitize and cap it so
+                    // oversized or hostile payloads cannot flood logs or the UI.
+                    let safe_text = crate::util::sanitize_error_body(&text);
+                    return Err(
+                        AppError::llm(format!("Groq LLM error {status}: {safe_text}"))
+                            .with_http_status(status.as_u16()),
+                    );
                 }
                 Ok(text)
             }

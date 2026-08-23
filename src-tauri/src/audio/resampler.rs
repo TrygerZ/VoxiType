@@ -55,8 +55,7 @@ impl Resampler {
     /// Down-mix interleaved frames to a single mono channel (average).
     pub fn mix_to_mono(&mut self, interleaved: &[f32]) -> Vec<f32> {
         // Prepend any leftover samples from the previous call
-        let total: Vec<f32> = [self.leftover_buffer.as_slice(), interleaved]
-            .concat();
+        let total: Vec<f32> = [self.leftover_buffer.as_slice(), interleaved].concat();
         self.leftover_buffer.clear();
 
         if self.channels <= 1 {
@@ -68,7 +67,8 @@ impl Resampler {
         if leftover != 0 {
             // Save leftover samples for next call instead of dropping
             let split_point = frames * self.channels;
-            self.leftover_buffer.extend_from_slice(&total[split_point..]);
+            self.leftover_buffer
+                .extend_from_slice(&total[split_point..]);
         }
 
         let mut mono = Vec::with_capacity(frames);

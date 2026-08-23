@@ -37,18 +37,75 @@ pub fn http_client() -> reqwest::Client {
         .clone()
 }
 
-/// Whether an error is worth retrying (transient network/server issues).
+/// Maximum length of upstream error-body text kept in an error message.
+/// Upstream bodies are untrusted (format can change, may echo request
+/// context), so they are capped before being embedded in logs or IPC events.
+const MAX_ERROR_BODY_LEN: usize = 300;
+
+/// Suffix appended when an upstream error body was truncated.
+const TRUNCATED_SUFFIX: &str = "…(truncated)";
+
+/// Replace non-printable control characters with a visible placeholder so
+/// log files and frontend messages stay readable and safe. Common whitespace
+/// (tab, newline, carriage return) is kept intact.
+fn sanitize_control_chars(input: &str) -> String {
+    const CONTROL_CHAR_PLACEHOLDER: char = '\u{FFFD}';
+    input
+        .chars()
+        .map(|c| {
+            if matches!(c, '\n' | '\t' | '\r') {
+                c
+            } else if c.is_control() {
+                CONTROL_CHAR_PLACEHOLDER
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// Sanitize and cap an upstream API error body before embedding it in an
+/// `AppError` message. Truncates to [`MAX_ERROR_BODY_LEN`] characters
+/// (including the truncation suffix when applied) and strips control
+/// characters, so oversized or hostile bodies cannot flood logs or the UI.
+pub fn sanitize_error_body(body: &str) -> String {
+    let sanitized = sanitize_control_chars(body);
+    if sanitized.chars().count() <= MAX_ERROR_BODY_LEN {
+        return sanitized;
+    }
+    let kept = sanitized
+        .chars()
+        .take(MAX_ERROR_BODY_LEN)
+        .collect::<String>();
+    format!("{kept}{TRUNCATED_SUFFIX}")
+}
+
+/// HTTP statuses that indicate a *transient* API failure worth retrying:
+/// request timeout and rate limiting.
+const RETRYABLE_HTTP_STATUSES: &[u16] = &[408, 429];
+
+fn has_transient_http_status(err: &AppError) -> bool {
+    match err.http_status {
+        Some(status) => status >= 500 || RETRYABLE_HTTP_STATUSES.contains(&status),
+        // No status recorded — the failure cannot be proven transient.
+        None => false,
+    }
+}
+
+/// Whether an error is worth retrying (transient issues only).
 ///
-/// Auth failures and missing keys are *not* retried — they will never succeed.
+/// Transport-level failures (network, timeout) are retried. API errors are
+/// retried only when the HTTP status proves the failure is transient
+/// (408/429/5xx). Client errors like 400/401/413/422 are permanent — the
+/// same request will be rejected again, so retrying would just burn seconds
+/// and re-upload large payloads for nothing. Auth failures and missing keys
+/// also fail fast.
 pub fn is_retryable(err: &AppError) -> bool {
-    matches!(
-        err.code,
-        ErrorCode::NetworkError
-            | ErrorCode::Timeout
-            | ErrorCode::SttApiError
-            | ErrorCode::LlmApiError
-            | ErrorCode::LlmConnectionRefused
-    )
+    match err.code {
+        ErrorCode::NetworkError | ErrorCode::Timeout | ErrorCode::LlmConnectionRefused => true,
+        ErrorCode::SttApiError | ErrorCode::LlmApiError => has_transient_http_status(err),
+        _ => false,
+    }
 }
 
 /// Run an async operation with exponential backoff.
@@ -118,5 +175,105 @@ mod tests {
         .await;
         assert!(result.is_err());
         assert_eq!(calls.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn retries_transient_server_errors() {
+        let calls = Cell::new(0u32);
+        let result = retry_with_backoff(2, Duration::ZERO, || async {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                1 => Err(AppError::stt_api("server fault").with_http_status(500)),
+                _ => Ok(()),
+            }
+        })
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[tokio::test]
+    async fn retries_rate_limit_errors() {
+        let calls = Cell::new(0u32);
+        let result: Result<(), _> = retry_with_backoff(2, Duration::ZERO, || async {
+            calls.set(calls.get() + 1);
+            if calls.get() < 2 {
+                Err(AppError::llm("rate limited").with_http_status(429))
+            } else {
+                Ok(())
+            }
+        })
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_permanent_client_errors() {
+        // Every non-transient status must fail fast on the first attempt.
+        for status in [400u16, 401, 403, 404, 409, 413, 422] {
+            let calls = Cell::new(0u32);
+            let result: Result<(), _> = retry_with_backoff(3, Duration::ZERO, || async {
+                calls.set(calls.get() + 1);
+                Err(AppError::stt_api("rejected").with_http_status(status))
+            })
+            .await;
+            assert!(result.is_err(), "status {status} should not be retried");
+            assert_eq!(calls.get(), 1, "status {status} retried more than once");
+        }
+    }
+
+    #[tokio::test]
+    async fn api_error_without_status_fails_fast() {
+        let calls = Cell::new(0u32);
+        let result: Result<(), _> = retry_with_backoff(3, Duration::ZERO, || async {
+            calls.set(calls.get() + 1);
+            Err(AppError::llm("unknown API failure"))
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn request_timeout_status_is_retryable() {
+        let err = AppError::stt_api("timeout").with_http_status(408);
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn sanitize_error_body_keeps_short_body_untouched() {
+        let body = "{\"error\":\"quota exceeded\"}";
+        assert_eq!(sanitize_error_body(body), body);
+    }
+
+    #[test]
+    fn sanitize_error_body_truncates_long_body_to_limit_with_suffix() {
+        let body = "x".repeat(MAX_ERROR_BODY_LEN + 500);
+        let result = sanitize_error_body(&body);
+        let kept_chars: usize = result.chars().count() - TRUNCATED_SUFFIX.chars().count();
+        assert_eq!(kept_chars, MAX_ERROR_BODY_LEN);
+        assert!(result.ends_with(TRUNCATED_SUFFIX));
+    }
+
+    #[test]
+    fn sanitize_error_body_replaces_control_characters() {
+        let body = "line1\nline2\tok\u{0}\u{7}end";
+        let result = sanitize_error_body(body);
+        // Common whitespace is preserved; other control chars are replaced.
+        assert!(result.contains("line1\nline2\tok"));
+        assert!(!result.contains('\u{0}'));
+        assert!(!result.contains('\u{7}'));
+        assert!(result.ends_with("end"));
+    }
+
+    #[test]
+    fn sanitize_error_body_truncates_by_chars_not_bytes() {
+        // Multi-byte characters must not be cut mid-character.
+        let body = "é".repeat(MAX_ERROR_BODY_LEN + 10);
+        let result = sanitize_error_body(&body);
+        let kept_chars: usize = result.chars().count() - TRUNCATED_SUFFIX.chars().count();
+        assert_eq!(kept_chars, MAX_ERROR_BODY_LEN);
+        assert!(result.contains("…(truncated)"));
     }
 }

@@ -5,6 +5,29 @@ use std::time::Instant;
 use super::{clipboard, keystroke, InjectResult, InjectStrategy, TextInjector};
 use crate::error::Result;
 
+/// Pause after writing to the clipboard before issuing the paste keystroke.
+///
+/// Why: the clipboard write must propagate through the OS clipboard service
+/// before the target app reads it. A value too small risks pasting stale
+/// content; a value too large adds latency on every injection.
+const CLIPBOARD_PROPAGATION_DELAY_MS: u64 = 30;
+
+/// Wait for the target app to CONSUME the paste before restoring the
+/// clipboard.
+///
+/// Why not shorter: `keystroke::paste()` only posts Ctrl+V to the system
+/// input queue — the target app processes it asynchronously. Slow apps
+/// (Electron, heavy IDEs) can take hundreds of milliseconds; restoring too
+/// early makes them paste the OLD clipboard content instead of the dictated
+/// text (bug B-03). It also keeps the dictated text out of clipboard
+/// managers for this window.
+///
+/// Trade-off: total injection latency grows by this amount (~480 ms end-to-end),
+/// but a wrong paste is far worse than a slower one. If paste races are still
+/// reported in the field, prefer raising this over adding global state or
+/// lazy restore.
+const PASTE_CONSUME_DELAY_MS: u64 = 450;
+
 pub struct HybridInjector;
 
 impl HybridInjector {
@@ -46,7 +69,9 @@ impl TextInjector for HybridInjector {
         clipboard::write_text(text)?;
 
         // Brief pause so the clipboard write propagates before we paste.
-        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::thread::sleep(std::time::Duration::from_millis(
+            CLIPBOARD_PROPAGATION_DELAY_MS,
+        ));
 
         keystroke::paste()?;
 
@@ -54,13 +79,25 @@ impl TextInjector for HybridInjector {
         // restoring the clipboard.  enigo keystrokes are posted to the
         // system input queue and processed asynchronously — if we restore
         // the old clipboard immediately, the app reads the OLD content
-        // instead of our dictated text.
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // instead of our dictated text. See PASTE_CONSUME_DELAY_MS for the
+        // trade-off rationale (bug B-03).
+        std::thread::sleep(std::time::Duration::from_millis(PASTE_CONSUME_DELAY_MS));
 
-        // Restore previous clipboard if we had one
-        if let Some(prev_text) = prev {
-            if let Err(e) = clipboard::write_text(&prev_text) {
-                tracing::warn!("Failed to restore clipboard: {e}");
+        // Restore previous clipboard state: put back the old content, or
+        // wipe when it was empty — either way the dictated text must not
+        // linger where other apps or clipboard managers can read it.
+        match prev.as_deref() {
+            Some(prev_text) => {
+                if let Err(e) = clipboard::write_text(prev_text) {
+                    tracing::warn!(
+                        "Failed to restore clipboard ({e}); wiping dictated text from clipboard"
+                    );
+                    wipe_clipboard_fail_safe();
+                }
+            }
+            None => {
+                tracing::debug!("Clipboard was empty before injection; wiping dictated text");
+                wipe_clipboard_fail_safe();
             }
         }
 
@@ -81,6 +118,14 @@ impl TextInjector for HybridInjector {
             chars_injected: chars,
             duration_ms: started.elapsed().as_millis() as u64,
         })
+    }
+}
+
+/// Privacy fail-safe: overwrite the clipboard with an empty string so
+/// dictated text does not linger where other apps can read it.
+fn wipe_clipboard_fail_safe() {
+    if let Err(wipe_err) = clipboard::write_text("") {
+        tracing::error!("Failed to wipe clipboard: {wipe_err}");
     }
 }
 

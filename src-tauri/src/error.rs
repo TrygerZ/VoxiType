@@ -45,6 +45,11 @@ pub enum ErrorCode {
 pub struct AppError {
     pub code: ErrorCode,
     pub message: String,
+    /// HTTP status of a failed API response, when the error originated from
+    /// an HTTP call. Lets the retry logic distinguish permanent client
+    /// errors (4xx) from transient server/rate-limit failures.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
 }
 
 impl AppError {
@@ -52,7 +57,15 @@ impl AppError {
         Self {
             code,
             message: message.into(),
+            http_status: None,
         }
+    }
+
+    /// Attach the originating HTTP status so `util::is_retryable` can
+    /// classify the failure as transient or permanent.
+    pub fn with_http_status(mut self, status: u16) -> Self {
+        self.http_status = Some(status);
+        self
     }
 
     // --- Convenience constructors -----------------------------------------

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::injection::{InjectResult, TextInjector};
 use crate::llm::{LlmFormatter, LlmMode};
 use crate::stt::{SttConfig, SttEngine, TranscriptionResult};
@@ -45,7 +45,7 @@ pub async fn run_batch(
     mode: &LlmMode,
     post: &PostProcess,
     translate: Option<&TranslateOpts>,
-    injector: &dyn TextInjector,
+    injector: Arc<dyn TextInjector>,
 ) -> Result<BatchOutcome> {
     let transcription = stt.transcribe(audio, stt_config).await?;
     run_batch_with_transcription(transcription, llm, mode, post, translate, injector).await
@@ -62,7 +62,7 @@ pub async fn run_batch_with_transcription(
     mode: &LlmMode,
     post: &PostProcess,
     translate: Option<&TranslateOpts>,
-    injector: &dyn TextInjector,
+    injector: Arc<dyn TextInjector>,
 ) -> Result<BatchOutcome> {
     let formatted_text = if transcription.text.trim().is_empty() {
         String::new()
@@ -71,12 +71,7 @@ pub async fn run_batch_with_transcription(
             .format(&transcription.text, mode, &transcription.language)
             .await?;
         let translated = match translate {
-            Some(opts)
-                if opts.target != transcription.language
-                    && !transcription.language.is_empty()
-                    && transcription.language != "auto"
-                    && transcription.language != "unknown" =>
-            {
+            Some(opts) if opts.target != transcription.language => {
                 // Guard against translation when the formatted text clearly
                 // matches the target language already (e.g. STT misdetected
                 // the language but the text is already in the target). This
@@ -90,6 +85,13 @@ pub async fn run_batch_with_transcription(
                     );
                     formatted
                 } else {
+                    if is_unresolved_language(&transcription.language) {
+                        tracing::info!(
+                            "STT returned unresolved language '{}'; \
+                             translating with automatic source detection",
+                            transcription.language
+                        );
+                    }
                     llm.translate(&formatted, &transcription.language, &opts.target)
                         .await?
                 }
@@ -108,7 +110,13 @@ pub async fn run_batch_with_transcription(
             duration_ms: 0,
         }
     } else {
-        injector.inject(&formatted_text)?
+        // Injection blocks the OS event loop for hundreds of milliseconds
+        // (clipboard propagation sleeps + enigo keystroke simulation), so it
+        // must never run directly on a tokio worker thread.
+        let text_to_inject = formatted_text.clone();
+        tokio::task::spawn_blocking(move || injector.inject(&text_to_inject))
+            .await
+            .map_err(|e| AppError::injection(format!("Injection task failed: {e}")))??
     };
 
     Ok(BatchOutcome {
@@ -116,6 +124,12 @@ pub async fn run_batch_with_transcription(
         formatted_text,
         inject,
     })
+}
+
+/// Languages that mean STT could not determine the spoken language.
+/// whisper.cpp maps "auto" to "unknown"; empty means the engine reported none.
+fn is_unresolved_language(language: &str) -> bool {
+    language.is_empty() || language == "auto" || language == "unknown"
 }
 
 /// Detect the dominant language of a text by counting language-specific
@@ -181,6 +195,46 @@ mod tests {
         }
     }
 
+    /// Formatter that records every `translate` call so tests can assert
+    /// whether translation actually ran, and tags translated output with
+    /// the requested source/target pair.
+    struct RecordingLlm {
+        translate_calls: std::sync::Mutex<Vec<(String, String)>>,
+    }
+
+    impl RecordingLlm {
+        fn new() -> Self {
+            Self {
+                translate_calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn translate_call_count(&self) -> usize {
+            self.translate_calls
+                .lock()
+                .map(|calls| calls.len())
+                .unwrap_or(0)
+        }
+    }
+
+    #[async_trait]
+    impl LlmFormatter for RecordingLlm {
+        async fn format(&self, text: &str, _mode: &LlmMode, _language: &str) -> Result<String> {
+            Ok(text.to_string())
+        }
+
+        async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String> {
+            if let Ok(mut calls) = self.translate_calls.lock() {
+                calls.push((source.to_string(), target.to_string()));
+            }
+            Ok(format!("[{source}->{target}] {text}"))
+        }
+
+        fn name(&self) -> &'static str {
+            "recording"
+        }
+    }
+
     #[test]
     fn detect_text_language_identifies_english() {
         assert_eq!(detect_text_language("this is a test of the system"), "en");
@@ -200,25 +254,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn translation_skipped_when_source_language_is_unknown() {
-        use crate::llm::{LlmFactory, RuleBasedConfig};
-        let llm = LlmFactory::rule_based(RuleBasedConfig::default());
-        let injector = MockInjector;
-        let transcription = TranscriptionResult::text_only("hello world", "unknown");
+    async fn translation_runs_when_source_language_is_unknown() {
+        let llm = Arc::new(RecordingLlm::new());
+        let transcription =
+            TranscriptionResult::text_only("this is a test of the system", "unknown");
         let out = run_batch_with_transcription(
             transcription,
-            llm,
+            llm.clone(),
             &LlmMode::Dictation,
             &PostProcess::default(),
             Some(&TranslateOpts {
                 target: "id".into(),
             }),
-            &injector,
+            Arc::new(MockInjector),
         )
         .await
         .unwrap();
-        // Rule-based formatter capitalizes and adds period, no translation.
-        assert_eq!(out.formatted_text, "Hello world.");
+        // Unresolved source language must still reach the translator.
+        assert_eq!(llm.translate_call_count(), 1);
+        assert_eq!(
+            out.formatted_text,
+            "[unknown->id] this is a test of the system"
+        );
+    }
+
+    #[tokio::test]
+    async fn translation_skipped_when_text_already_in_target_language() {
+        let llm = Arc::new(RecordingLlm::new());
+        // Text markers clearly Indonesian while STT language is unresolved:
+        // the anti-leak guard must keep skipping translation.
+        let transcription =
+            TranscriptionResult::text_only("saya pergi ke pasar dengan mereka", "unknown");
+        let out = run_batch_with_transcription(
+            transcription,
+            llm.clone(),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            Arc::new(MockInjector),
+        )
+        .await
+        .unwrap();
+        assert_eq!(llm.translate_call_count(), 0);
+        assert_eq!(out.formatted_text, "saya pergi ke pasar dengan mereka");
+    }
+
+    #[tokio::test]
+    async fn translation_uses_detected_source_for_known_language() {
+        let llm = Arc::new(RecordingLlm::new());
+        let transcription = TranscriptionResult::text_only("this is a test of the system", "en");
+        let out = run_batch_with_transcription(
+            transcription,
+            llm.clone(),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            Arc::new(MockInjector),
+        )
+        .await
+        .unwrap();
+        // Existing behavior for a resolved source language is unchanged.
+        assert_eq!(llm.translate_call_count(), 1);
+        assert_eq!(out.formatted_text, "[en->id] this is a test of the system");
     }
 
     #[tokio::test]
@@ -226,7 +327,6 @@ mod tests {
         use crate::llm::{LlmFactory, RuleBasedConfig};
         let stt: Arc<dyn SttEngine> = Arc::new(MockStt);
         let llm = LlmFactory::rule_based(RuleBasedConfig::default());
-        let injector = MockInjector;
         let out = run_batch(
             &[0.0; 16],
             stt,
@@ -235,7 +335,7 @@ mod tests {
             &LlmMode::Dictation,
             &PostProcess::default(),
             None,
-            &injector,
+            Arc::new(MockInjector),
         )
         .await
         .unwrap();

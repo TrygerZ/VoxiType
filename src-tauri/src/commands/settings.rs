@@ -24,8 +24,10 @@ pub fn get_settings(state: State<'_, AppStateInner>) -> std::result::Result<Valu
 }
 
 /// Keys the frontend may write via `update_setting`. Anything else is rejected
-/// at the IPC boundary so a compromised page can't pollute config (e.g. point
-/// `whisper_cpp_binary_path` at an attacker path then wait for local STT).
+/// at the IPC boundary so a compromised page can't pollute config.
+/// `whisper_cpp_binary_path` and `whisper_cpp_model_path` are intentionally
+/// absent: writing them requires `set_whisper_cpp_paths`, which only accepts
+/// paths previously returned by the native file picker (see commands::misc).
 /// `hotkey` and `floating_widget` have their own commands; `floating_widget_pos`
 /// is written backend-side only.
 const SETTABLE_KEYS: &[&str] = &[
@@ -36,8 +38,6 @@ const SETTABLE_KEYS: &[&str] = &[
     "stt_language",
     "stt_model",
     "groq_api_key",
-    "whisper_cpp_binary_path",
-    "whisper_cpp_model_path",
     "whisper_cpp_threads",
     "auto_start",
     "auto_update",
@@ -59,9 +59,7 @@ pub fn update_setting(
     value: Value,
 ) -> std::result::Result<(), AppError> {
     if !SETTABLE_KEYS.contains(&key.as_str()) {
-        return Err(AppError::internal(format!(
-            "Unknown setting key '{key}'"
-        )));
+        return Err(AppError::internal(format!("Unknown setting key '{key}'")));
     }
     let encoded = if key == "groq_api_key" {
         let plain = value.as_str().unwrap_or_default();
@@ -94,7 +92,7 @@ mod tests {
             "onboarding_completed",
             "language",
             "groq_api_key",
-            "whisper_cpp_binary_path",
+            "whisper_cpp_threads",
             "llm_engine",
             "active_mode",
         ] {
@@ -107,7 +105,10 @@ mod tests {
 
     #[test]
     fn allowlist_rejects_attacker_keys() {
-        // A key an attacker would need to forge to hijack local STT is not settable.
+        // Keys an attacker would need to forge to hijack local STT are not
+        // settable; whisper paths go through set_whisper_cpp_paths instead.
+        assert!(!SETTABLE_KEYS.contains(&"whisper_cpp_binary_path"));
+        assert!(!SETTABLE_KEYS.contains(&"whisper_cpp_model_path"));
         assert!(!SETTABLE_KEYS.contains(&"floating_widget_pos"));
         assert!(!SETTABLE_KEYS.contains(&"hotkey"));
         assert!(!SETTABLE_KEYS.contains(&"evil_setting"));

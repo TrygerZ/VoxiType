@@ -1,5 +1,6 @@
 //! Microphone, hotkey, app-info, file picker, and update commands.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
@@ -8,6 +9,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use crate::audio::DeviceInfo;
 use crate::error::AppError;
 use crate::hotkey;
+use crate::storage::SettingsManager;
 use crate::stt::{SttConfig, SttEngine, WhisperCppConfig};
 use crate::AppStateInner;
 
@@ -108,10 +110,97 @@ pub fn reveal_floating_widget<R: Runtime>(app: AppHandle<R>) -> std::result::Res
 }
 
 #[tauri::command]
-pub async fn pick_setup_file(kind: String) -> std::result::Result<Option<String>, AppError> {
-    tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind))
-        .await
-        .map_err(|e| AppError::internal(format!("File picker failed: {e}")))?
+pub async fn pick_setup_file(
+    state: State<'_, AppStateInner>,
+    kind: String,
+) -> std::result::Result<Option<String>, AppError> {
+    let picked = {
+        let kind = kind.clone();
+        tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind))
+            .await
+            .map_err(|e| AppError::internal(format!("File picker failed: {e}")))??
+    };
+    if let Some(path) = &picked {
+        remember_picker_dir(&state, &kind, path);
+    }
+    Ok(picked)
+}
+
+/// Picker kinds that gate whisper.cpp path settings.
+const PICKER_KIND_BINARY: &str = "whisper_binary";
+const PICKER_KIND_MODEL: &str = "whisper_model";
+
+fn remember_picker_dir(state: &AppStateInner, kind: &str, picked_path: &str) {
+    let Some(parent) = Path::new(picked_path).parent() else {
+        tracing::warn!("Picked '{kind}' file has no parent directory");
+        return;
+    };
+    let Ok(dir) = parent.canonicalize() else {
+        tracing::warn!("Could not canonicalize picker directory for '{kind}'");
+        return;
+    };
+    match state.last_picker_dirs.lock() {
+        Ok(mut dirs) => {
+            dirs.insert(kind.to_string(), dir);
+        }
+        Err(_) => {
+            tracing::warn!("Picker directory state poisoned; next gated write may be refused")
+        }
+    }
+}
+
+/// A path is acceptable only when a dialog result of `kind` exists and the
+/// path canonicalizes under that result's parent directory. Canonicalizing
+/// both sides resolves `..` traversal and case differences on Windows; a
+/// missing file fails `canonicalize` and is rejected outright.
+fn path_matches_picker_dir(base: Option<&Path>, path: &str) -> bool {
+    let Some(base) = base else {
+        return false;
+    };
+    match Path::new(path).canonicalize() {
+        Ok(candidate) => candidate.starts_with(base),
+        Err(_) => false,
+    }
+}
+
+fn ensure_picker_backed_path(
+    state: &AppStateInner,
+    kind: &str,
+    path: &str,
+) -> std::result::Result<(), AppError> {
+    let dirs = state
+        .last_picker_dirs
+        .lock()
+        .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
+    if path_matches_picker_dir(dirs.get(kind).map(PathBuf::as_path), path) {
+        Ok(())
+    } else {
+        Err(AppError::internal(format!(
+            "Refused {kind} path: it was not selected via the setup file dialog"
+        )))
+    }
+}
+
+/// Persist whisper.cpp paths. The only sanctioned write path for these
+/// settings: each value must live under the directory of a file the user
+/// actually picked with the native dialog in this session, so a compromised
+/// webview cannot point local STT at an attacker-controlled binary.
+#[tauri::command]
+pub fn set_whisper_cpp_paths(
+    state: State<'_, AppStateInner>,
+    binary_path: Option<String>,
+    model_path: Option<String>,
+) -> std::result::Result<(), AppError> {
+    let settings = SettingsManager::new(&state.db);
+    if let Some(binary) = &binary_path {
+        ensure_picker_backed_path(&state, PICKER_KIND_BINARY, binary)?;
+        settings.set_raw("whisper_cpp_binary_path", &serde_json::to_string(binary)?)?;
+    }
+    if let Some(model) = &model_path {
+        ensure_picker_backed_path(&state, PICKER_KIND_MODEL, model)?;
+        settings.set_raw("whisper_cpp_model_path", &serde_json::to_string(model)?)?;
+    }
+    Ok(())
 }
 
 fn pick_setup_file_blocking(kind: &str) -> std::result::Result<Option<String>, AppError> {
@@ -206,11 +295,17 @@ pub async fn test_groq_api(
 
 #[tauri::command]
 pub async fn test_whisper_cpp(
+    state: State<'_, AppStateInner>,
     binary_path: String,
     model_path: String,
     language: String,
     threads: u32,
 ) -> std::result::Result<(), AppError> {
+    // Same gate as set_whisper_cpp_paths: never execute a binary that did
+    // not come from the native setup dialog.
+    ensure_picker_backed_path(&state, PICKER_KIND_BINARY, &binary_path)?;
+    ensure_picker_backed_path(&state, PICKER_KIND_MODEL, &model_path)?;
+
     let engine = crate::stt::whisper_cpp::WhisperCppEngine::new(WhisperCppConfig {
         binary_path,
         model_path,
@@ -253,5 +348,64 @@ mod tests {
     fn strips_userinfo_and_port() {
         assert!(validate_open_url("https://user:pass@github.com:443/repo").is_ok());
         assert!(validate_open_url("https://user@evil.com").is_err());
+    }
+
+    /// Create a unique scratch dir with one file inside; returns the
+    /// canonicalized dir and the canonicalized file path as a string.
+    fn scratch_dir_with_file(test_name: &str) -> (PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("voxitype-misc-{test_name}"));
+        std::fs::create_dir_all(&dir).expect("scratch dir creation failed");
+        let file = dir.join("tool.exe");
+        std::fs::write(&file, b"stub").expect("stub file write failed");
+        let canonical_dir = dir.canonicalize().expect("canonicalize dir failed");
+        let canonical_file = file.canonicalize().expect("canonicalize file failed");
+        (canonical_dir, canonical_file.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn picker_gated_path_accepts_dialog_result() {
+        let (dir, file) = scratch_dir_with_file("accept");
+        assert!(path_matches_picker_dir(Some(&dir), &file));
+    }
+
+    #[test]
+    fn picker_gated_path_rejects_traversal_and_siblings() {
+        let (dir, _file) = scratch_dir_with_file("traversal");
+        // Sibling directory with an existing file.
+        let sibling = dir
+            .parent()
+            .map(|p| p.join(".."))
+            .unwrap_or_else(|| std::env::temp_dir().join("voxitype-misc-sibling"));
+        std::fs::create_dir_all(&sibling).ok();
+        let sibling_file = sibling.join("evil.exe");
+        std::fs::write(&sibling_file, b"stub").ok();
+        if let Ok(evil) = sibling_file.canonicalize() {
+            assert!(!path_matches_picker_dir(
+                Some(&dir),
+                &evil.to_string_lossy()
+            ));
+        }
+        // Traversal that resolves outside the base dir.
+        let escaped = dir.join("..").join("voxitype-misc-accept").join("tool.exe");
+        assert!(!path_matches_picker_dir(
+            Some(&dir),
+            &escaped.to_string_lossy()
+        ));
+    }
+
+    #[test]
+    fn picker_gated_path_requires_prior_pick() {
+        let (_dir, file) = scratch_dir_with_file("no-base");
+        assert!(!path_matches_picker_dir(None, &file));
+    }
+
+    #[test]
+    fn picker_gated_path_rejects_missing_file() {
+        let (dir, _file) = scratch_dir_with_file("missing-file");
+        let ghost = dir.join("does-not-exist.exe");
+        assert!(!path_matches_picker_dir(
+            Some(&dir),
+            &ghost.to_string_lossy()
+        ));
     }
 }
