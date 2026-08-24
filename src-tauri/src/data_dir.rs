@@ -15,6 +15,7 @@ pub const DATA_DIR_MARKER_FILE: &str = "data_dir.txt";
 #[derive(Debug, Deserialize, Serialize)]
 struct DataDirMarker {
     current: PathBuf,
+    #[serde(default)]
     pending: Option<PathBuf>,
 }
 
@@ -66,6 +67,24 @@ pub fn migrate_data_if_needed(default_dir: &Path, target_dir: &Path) -> PathBuf 
     }
 }
 
+pub(crate) fn graduate_marker(default_dir: &Path, target_dir: &Path) -> Result<()> {
+    let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
+    let contents = std::fs::read_to_string(&marker_path).map_err(|error| {
+        AppError::data_directory(format!("failed to read data directory marker: {error}"))
+    })?;
+    serde_json::from_str::<DataDirMarker>(&contents).map_err(|error| {
+        AppError::data_directory(format!("failed to parse data directory marker: {error}"))
+    })?;
+    let marker = DataDirMarker {
+        current: target_dir.to_path_buf(),
+        pending: None,
+    };
+    std::fs::write(&marker_path, serde_json::to_vec(&marker)?).map_err(|error| {
+        AppError::data_directory(format!("failed to graduate data directory marker: {error}"))
+    })?;
+    Ok(())
+}
+
 fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
     let source_db = default_dir.join("data").join("voxitype.db");
     let target_db = target_dir.join("data").join("voxitype.db");
@@ -86,11 +105,11 @@ fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
             return Err(AppError::data_directory("target database is invalid"));
         }
     }
-    if !source_db.is_file() {
-        return Err(AppError::data_directory("source database does not exist"));
-    }
-    if !source_key.is_file() {
-        return Err(AppError::data_directory("source master.key does not exist"));
+    if !source_db.is_file() || !source_key.is_file() {
+        tracing::info!(
+            "No existing application data to migrate; target will initialize on first use"
+        );
+        return Ok(());
     }
     if target_key.exists() {
         // Remove an interrupted prior attempt; the marker still points here.
@@ -382,6 +401,56 @@ mod tests {
     }
 
     #[test]
+    fn pending_marker_graduates_to_stable_marker() {
+        let default_dir = TempDir::new();
+        let target = TempDir::new();
+        write_marker(&default_dir.0, &default_dir.0, &target.0).expect("marker should be writable");
+
+        graduate_marker(&default_dir.0, &target.0).expect("marker should graduate");
+
+        let marker = std::fs::read_to_string(default_dir.0.join(DATA_DIR_MARKER_FILE))
+            .expect("graduated marker should be readable");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&marker).expect("marker should be JSON");
+        assert_eq!(parsed["current"], target.0.to_string_lossy().as_ref());
+        assert!(parsed.get("pending").is_none() || parsed["pending"].is_null());
+    }
+
+    #[test]
+    fn resolver_accepts_pending_stable_and_plain_markers() {
+        let default_dir = TempDir::new();
+        let target = TempDir::new();
+        for marker in [
+            serde_json::json!({ "current": default_dir.0, "pending": target.0 }),
+            serde_json::json!({ "current": target.0 }),
+        ] {
+            std::fs::write(
+                default_dir.0.join(DATA_DIR_MARKER_FILE),
+                serde_json::to_vec(&marker).expect("marker should serialize"),
+            )
+            .expect("marker should be writable");
+            assert_eq!(resolve_app_data_dir(default_dir.0.clone()), target.0);
+        }
+        std::fs::write(
+            default_dir.0.join(DATA_DIR_MARKER_FILE),
+            target.0.to_string_lossy().as_bytes(),
+        )
+        .expect("marker should be writable");
+        assert_eq!(resolve_app_data_dir(default_dir.0.clone()), target.0);
+    }
+
+    #[test]
+    fn fresh_install_migration_leaves_target_for_initialization() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        write_marker(&source.0, &source.0, &target.0).expect("marker should be writable");
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert!(!target.0.join("data/voxitype.db").exists());
+        assert!(source.0.join(DATA_DIR_MARKER_FILE).exists());
+    }
+
+    #[test]
     fn migration_uses_previous_active_directory() {
         let default_dir = TempDir::new();
         let first = TempDir::new();
@@ -475,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_source_falls_back_and_removes_marker() {
+    fn missing_source_keeps_marker_for_fresh_initialization() {
         let source = TempDir::new();
         let target = TempDir::new();
         std::fs::write(
@@ -484,7 +553,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(migrate_data_if_needed(&source.0, &target.0), source.0);
-        assert!(!source.0.join(DATA_DIR_MARKER_FILE).exists());
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert!(source.0.join(DATA_DIR_MARKER_FILE).exists());
     }
 }

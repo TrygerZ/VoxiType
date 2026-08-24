@@ -148,8 +148,36 @@ pub fn run() {
                 data_dir::migrate_data_if_needed(&migration_source, &resolved_data_dir);
 
             // Initialize shared state (DB + pipeline).
-            let state = AppStateInner::new(app_data_dir, default_app_data_dir, log_guard)
-                .map_err(|e| format!("Failed to init app state: {e}"))?;
+            let state = match AppStateInner::new(
+                app_data_dir.clone(),
+                default_app_data_dir.clone(),
+                log_guard,
+            ) {
+                Ok(state) => state,
+                Err(error) if app_data_dir != default_app_data_dir => {
+                    tracing::error!(
+                        "Custom data directory initialization failed; recovering with default directory: {error}"
+                    );
+                    let _ = std::fs::remove_file(
+                        default_app_data_dir.join(data_dir::DATA_DIR_MARKER_FILE),
+                    );
+                    let fallback_guard = logging::init(&default_app_data_dir.join("logs"));
+                    AppStateInner::new(
+                        default_app_data_dir.clone(),
+                        default_app_data_dir,
+                        fallback_guard,
+                    )
+                    .map_err(|fallback| format!("Failed to init default app state: {fallback}"))?
+                }
+                Err(error) => return Err(format!("Failed to init app state: {error}").into()),
+            };
+            if state.app_data_dir != state.default_app_data_dir {
+                if let Err(error) =
+                    data_dir::graduate_marker(&state.default_app_data_dir, &state.app_data_dir)
+                {
+                    tracing::warn!("Failed to graduate data directory marker: {error}");
+                }
+            }
 
             // Load hotkey config from settings (fallback to default).
             let hotkey_cfg = SettingsManager::new(&state.db)
