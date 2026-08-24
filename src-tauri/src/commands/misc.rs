@@ -129,6 +129,7 @@ pub async fn pick_setup_file(
 /// Picker kinds that gate whisper.cpp path settings.
 const PICKER_KIND_BINARY: &str = "whisper_binary";
 const PICKER_KIND_MODEL: &str = "whisper_model";
+const PICKER_KIND_DATA_DIRECTORY: &str = "data_directory";
 
 fn remember_picker_dir(state: &AppStateInner, kind: &str, picked_path: &str) {
     let Some(parent) = Path::new(picked_path).parent() else {
@@ -179,6 +180,81 @@ fn ensure_picker_backed_path(
             "Refused {kind} path: it was not selected via the setup file dialog"
         )))
     }
+}
+
+/// Selects a directory. `set_data_directory` only accepts this dialog's result.
+#[tauri::command]
+pub async fn pick_data_directory(
+    state: State<'_, AppStateInner>,
+) -> std::result::Result<Option<String>, AppError> {
+    let picked = tokio::task::spawn_blocking(pick_data_directory_blocking)
+        .await
+        .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
+    if let Some(path) = &picked {
+        let canonical = Path::new(path)
+            .canonicalize()
+            .map_err(|e| AppError::data_directory(format!("Invalid selected directory: {e}")))?;
+        let mut dirs = state
+            .last_picker_dirs
+            .lock()
+            .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
+        dirs.insert(PICKER_KIND_DATA_DIRECTORY.to_string(), canonical);
+    }
+    Ok(picked)
+}
+
+#[tauri::command]
+/// Writes the data-directory marker only; the new directory takes effect after
+/// application restart, when startup resolves the marker before opening storage.
+pub fn set_data_directory(
+    state: State<'_, AppStateInner>,
+    path: String,
+) -> std::result::Result<(), AppError> {
+    ensure_picker_backed_path(&state, PICKER_KIND_DATA_DIRECTORY, &path)?;
+    crate::data_dir::write_marker(
+        &state.default_app_data_dir,
+        &state.app_data_dir,
+        Path::new(&path),
+    )
+}
+
+#[tauri::command]
+pub fn get_data_directory(state: State<'_, AppStateInner>) -> String {
+    state.app_data_dir.to_string_lossy().into_owned()
+}
+
+fn pick_data_directory_blocking() -> std::result::Result<Option<String>, AppError> {
+    let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Select VoxiType data directory'
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Out.Write($dialog.SelectedPath)
+}
+"#;
+    let mut command = Command::new("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-STA",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .output()
+        .map_err(|e| AppError::internal(format!("Failed to open folder picker: {e}")))?;
+    if !output.status.success() {
+        return Err(AppError::internal(format!(
+            "Folder picker failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok((!path.is_empty()).then_some(path))
 }
 
 /// Persist whisper.cpp paths. The only sanctioned write path for these

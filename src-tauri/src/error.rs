@@ -31,6 +31,7 @@ pub enum ErrorCode {
     // System
     HotkeyConflict,
     StorageError,
+    DataDirectoryError,
     UpdateError,
     // Pipeline
     InvalidTransition,
@@ -107,6 +108,9 @@ impl AppError {
     }
     pub fn storage(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::StorageError, msg)
+    }
+    pub fn data_directory(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::DataDirectoryError, msg)
     }
     pub fn network(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::NetworkError, msg)

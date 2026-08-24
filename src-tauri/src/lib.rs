@@ -7,6 +7,7 @@ pub mod active_window;
 pub mod audio;
 pub mod commands;
 pub mod crypto;
+pub mod data_dir;
 pub mod error;
 pub mod events;
 pub mod hotkey;
@@ -43,6 +44,7 @@ pub struct AppStateInner {
     pub db: Database,
     pub pipeline: PipelineOrchestrator,
     pub app_data_dir: PathBuf,
+    pub default_app_data_dir: PathBuf,
     pub master_key: [u8; 32],
     /// Keeps the file-log writer thread alive; flushed on drop.
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
@@ -57,6 +59,7 @@ pub struct AppStateInner {
 impl AppStateInner {
     fn new(
         app_data_dir: PathBuf,
+        default_app_data_dir: PathBuf,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
     ) -> error::Result<Self> {
         let db_path = app_data_dir.join("data").join("voxitype.db");
@@ -81,6 +84,7 @@ impl AppStateInner {
             db,
             pipeline: PipelineOrchestrator::new(),
             app_data_dir,
+            default_app_data_dir,
             master_key,
             _log_guard: log_guard,
             stt_engine: std::sync::Mutex::new(None),
@@ -130,16 +134,21 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let handle = app.handle();
-            let app_data_dir = handle
+            let default_app_data_dir = handle
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
             // Initialize logging (stderr + rotating file) once the log dir is known.
-            let log_guard = logging::init(&app_data_dir.join("logs"));
+            let log_guard = logging::init(&default_app_data_dir.join("logs"));
+            let resolved_data_dir = data_dir::resolve_app_data_dir(default_app_data_dir.clone());
+            let migration_source =
+                data_dir::migration_source(&default_app_data_dir, &resolved_data_dir);
+            let app_data_dir =
+                data_dir::migrate_data_if_needed(&migration_source, &resolved_data_dir);
 
             // Initialize shared state (DB + pipeline).
-            let state = AppStateInner::new(app_data_dir, log_guard)
+            let state = AppStateInner::new(app_data_dir, default_app_data_dir, log_guard)
                 .map_err(|e| format!("Failed to init app state: {e}"))?;
 
             // Load hotkey config from settings (fallback to default).
@@ -204,6 +213,9 @@ pub fn run() {
             commands::open_url,
             commands::pick_setup_file,
             commands::set_whisper_cpp_paths,
+            commands::pick_data_directory,
+            commands::set_data_directory,
+            commands::get_data_directory,
             commands::test_groq_api,
             commands::test_whisper_cpp,
             commands::get_usage_stats,

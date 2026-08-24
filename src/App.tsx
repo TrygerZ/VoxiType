@@ -38,7 +38,7 @@ export default function App() {
   }, [loaded, settings.language]);
 
   useEffect(() => {
-    if (loaded && settings.onboarding_completed === false) {
+    if (loaded && settings.onboarding_completed !== true) {
       setShowOnboarding(true);
     }
   }, [loaded, settings.onboarding_completed]);

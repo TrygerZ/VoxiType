@@ -5,6 +5,7 @@
 |-------|------|-------------|
 | Desktop | Tauri 2.x | src-tauri/ |
 | Frontend | React 19 + Vite 7 + Tailwind 4 | src/ |
+| Frontend testing | Vitest + React Testing Library | vitest.config.ts, src/test/ |
 | Backend | Rust 1.85+ | src-tauri/src/ |
 | State | Zustand 5.x | src/stores/ |
 | Storage | SQLite via rusqlite | src-tauri/src/storage/ |
@@ -26,6 +27,7 @@
 | Updater | GitHub Releases version checker | src-tauri/src/updater.rs |
 | Util | Shared HTTP client + retry/backoff | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
+| Data Directory | Marker resolution, validation, and copy-on-migrate | src-tauri/src/data_dir.rs |
 
 ## Global Rules
 
@@ -60,10 +62,11 @@ All code in this project must follow **Clean Code** principles:
 | Rust lint | rtk cargo clippy --no-default-features -- -D warnings |
 | TypeScript check | rtk npx tsc --noEmit |
 | Frontend build | rtk npm run build |
+| Frontend tests | rtk npm run test |
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (34 total across 8 modules)
+## IPC Commands (39 total across 8 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -74,13 +77,13 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `pick_setup_file`, `test_groq_api`, `test_whisper_cpp` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp` |
 | `stats` | `get_usage_stats` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (34 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (39 commands)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
@@ -88,6 +91,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/storage/db.rs` - SQLite schema + migrations
 - `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
+- `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
 - `src-tauri/src/error.rs` - Unified AppError with typed ErrorCode
 - `src-tauri/src/injection/mod.rs` - TextInjector trait (clipboard, keystroke, command)
 - `src-tauri/src/active_window.rs` - Win32 foreground process detection
@@ -104,7 +108,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `settings/` | SettingsLayout, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
 | `history/` | HistoryPanel |
 | `dictionary/` | DictionaryPanel, SnippetsPanel |
-| `onboarding/` | OnboardingFlow |
+| `onboarding/` | `OnboardingFlow.tsx`, `types.ts`, `shared/` (`StepShell`, `StepProgress`), `steps/` (`WelcomeStep`, `QuickSettingsStep`, `MicrophoneStep`, `SttSetupStep`, `DataDirectoryStep`, `HotkeyStep`, `SmokeTestStep`, `CompleteStep`) |
 
 ## Settings (key-value, JSON-encoded)
 | Key | Type | Description |
@@ -127,6 +131,8 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `telemetry` | bool | Opt-in local usage statistics |
 | `per_app_mode` | bool | Enable per-app mode routing |
 | `hotkey` | HotkeyConfig | Global hotkey key + modifiers |
+
+Data-directory selection is not a key-value setting. The marker file `data_dir.txt` lives in the default app-data directory; it stores JSON `current`/`pending` paths, while plain-path markers remain supported for backward compatibility. On first use, migration copies the active previous directory's DB, `master.key`, and logs; DB/key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. A selected directory takes effect after restart.
 
 ## Events (backend → frontend)
 | Event | Payload | Description |
