@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 - Surface settings load failure and gate onboarding on clean state
 - Serialize hotkey dispatch and guard PTT key-down state
+- Persist data directory active location label in Settings after Apply
+- Record data directory fallback errors in diagnostic file with recovery path
+- Clear stale diagnostic errors on healthy startup
 
 ### Added
 - Add RCA report for v0.4.3 onboarding and PTT race bugs
