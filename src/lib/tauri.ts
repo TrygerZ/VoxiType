@@ -88,11 +88,19 @@ export const openUrl = (url: string) =>
   invoke<void>("open_url", { url });
 export const pickSetupFile = (kind: "whisper_binary" | "whisper_model") =>
   invoke<string | null>("pick_setup_file", { kind });
+export interface DataDirectoryStatus {
+  active: string;
+  default: string;
+  pending: string | null;
+  lastError: string | null;
+}
+
 export const pickDataDirectory = () =>
   invoke<string | null>("pick_data_directory");
 export const setDataDirectory = (path: string) =>
   invoke<void>("set_data_directory", { path });
-export const getDataDirectory = () => invoke<string>("get_data_directory");
+export const getDataDirectory = () =>
+  invoke<DataDirectoryStatus>("get_data_directory");
 
 // Whisper.cpp paths are gated backend-side: only paths previously returned
 // by pickSetupFile are accepted (see set_whisper_cpp_paths in commands/misc).

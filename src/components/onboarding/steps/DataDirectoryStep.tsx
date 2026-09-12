@@ -32,31 +32,37 @@ export function DataDirectoryStep(props: Props) {
   const [selectedPath, setSelectedPath] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void getDataDirectory()
-      .then(setActivePath)
+      .then((status) => setActivePath(status.active))
       .catch((e: unknown) => setError(formatDirectoryError(e, t)));
   }, [t]);
   const choose = async () => {
+    setBusy(true);
     try {
       setError("");
       const path = await pickDataDirectory();
       if (path) setSelectedPath(path);
     } catch (e: unknown) {
       setError(formatDirectoryError(e, t));
+    } finally {
+      setBusy(false);
     }
   };
   const apply = async () => {
-    if (!selectedPath) return;
+    if (!selectedPath || busy) return;
+    setBusy(true);
     try {
       setError("");
       await setDataDirectory(selectedPath);
-      setActivePath(selectedPath);
       setSelectedPath("");
       setStatus(t("data_directory.success"));
     } catch (e: unknown) {
       setError(formatDirectoryError(e, t));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -106,6 +112,7 @@ export function DataDirectoryStep(props: Props) {
           <Button
             type="button"
             variant="secondary"
+            disabled={busy}
             onClick={() => void choose()}
           >
             <FolderOpen className="h-4 w-4" />
@@ -114,7 +121,7 @@ export function DataDirectoryStep(props: Props) {
           <Button
             type="button"
             variant="primary"
-            disabled={!selectedPath}
+            disabled={!selectedPath || busy}
             onClick={() => void apply()}
           >
             <Check className="h-4 w-4" />

@@ -10,6 +10,15 @@ vi.mock("../lib/tauri", () => ({
   setHotkey: vi.fn().mockResolvedValue(undefined),
   onEvent: vi.fn().mockResolvedValue(() => undefined),
   invoke: vi.fn().mockResolvedValue(undefined),
+  getDataDirectory: vi.fn().mockResolvedValue({
+    active: "/default/app/data",
+    default: "/default/app/data",
+    pending: null,
+    lastError: null,
+  }),
+  pickDataDirectory: vi.fn().mockResolvedValue(null),
+  setDataDirectory: vi.fn().mockResolvedValue(undefined),
+  setFloatingWidgetEnabled: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../assets/icons/hourglass.svg?react", () => ({

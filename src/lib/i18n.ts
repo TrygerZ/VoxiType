@@ -343,7 +343,9 @@ const id: Dict = {
   "data_directory.skip": "Lewati",
   "data_directory.continue": "Lanjut",
   "data_directory.restart": "Perubahan berlaku setelah aplikasi direstart. VoxiType tidak akan restart otomatis.",
+  "data_directory.pending_restart": "Menunggu restart: {path}",
   "data_directory.success": "Lokasi tersimpan. Restart aplikasi untuk menerapkan perubahan.",
+  "data_directory.fallback_error": "Pemindahan folder gagal: {reason}",
   "data_directory.error_network": "Network drive tidak didukung. Pilih folder lokal.",
   "data_directory.error_unwritable": "Folder tidak dapat ditulis. Pilih folder lain yang memiliki izin tulis.",
   // Complete next steps (heuristic: help users recognize what to do next)
@@ -741,7 +743,9 @@ const en: Dict = {
   "data_directory.skip": "Skip",
   "data_directory.continue": "Continue",
   "data_directory.restart": "Changes apply after restarting the app. VoxiType will not restart automatically.",
+  "data_directory.pending_restart": "Pending restart: {path}",
   "data_directory.success": "Location saved. Restart the app to apply the change.",
+  "data_directory.fallback_error": "Folder migration failed: {reason}",
   "data_directory.error_network": "Network drives are not supported. Choose a local folder.",
   "data_directory.error_unwritable": "This folder is not writable. Choose another folder with write permission.",
   // Complete next steps (heuristic: help users recognize what to do next)

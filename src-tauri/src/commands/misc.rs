@@ -7,6 +7,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::audio::DeviceInfo;
+pub use crate::data_dir::DataDirectoryStatus;
 use crate::error::AppError;
 use crate::hotkey;
 use crate::storage::SettingsManager;
@@ -219,12 +220,16 @@ pub fn set_data_directory(
         &state.default_app_data_dir,
         &state.app_data_dir,
         Path::new(&path),
-    )
+    )?;
+    crate::data_dir::clear_error(&state.default_app_data_dir);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn get_data_directory(state: State<'_, AppStateInner>) -> String {
-    state.app_data_dir.to_string_lossy().into_owned()
+pub fn get_data_directory(
+    state: State<'_, AppStateInner>,
+) -> crate::data_dir::DataDirectoryStatus {
+    crate::data_dir::get_status(&state.default_app_data_dir, &state.app_data_dir)
 }
 
 fn pick_data_directory_blocking() -> std::result::Result<Option<String>, AppError> {

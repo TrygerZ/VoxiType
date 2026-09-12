@@ -142,11 +142,19 @@ pub fn run() {
 
             // Initialize logging (stderr + rotating file) once the log dir is known.
             let log_guard = logging::init(&default_app_data_dir.join("logs"));
-            let resolved_data_dir = data_dir::resolve_app_data_dir(default_app_data_dir.clone());
+            let mut fallback_occurred = false;
+            let (resolved_data_dir, resolve_fallback) =
+                data_dir::resolve_app_data_dir_checked(default_app_data_dir.clone());
+            if resolve_fallback {
+                fallback_occurred = true;
+            }
             let migration_source =
                 data_dir::migration_source(&default_app_data_dir, &resolved_data_dir);
             let app_data_dir =
                 data_dir::migrate_data_if_needed(&migration_source, &resolved_data_dir);
+            if app_data_dir != resolved_data_dir {
+                fallback_occurred = true;
+            }
 
             // Initialize shared state (DB + pipeline).
             let state = match AppStateInner::new(
@@ -156,14 +164,14 @@ pub fn run() {
             ) {
                 Ok(state) => state,
                 Err(error) if app_data_dir != default_app_data_dir => {
-                    tracing::error!(
-                        "{}",
-                        data_dir::fallback_error_message(
-                            &app_data_dir,
-                            &default_app_data_dir,
-                            &error
-                        )
+                    fallback_occurred = true;
+                    let message = data_dir::fallback_error_message(
+                        &app_data_dir,
+                        &default_app_data_dir,
+                        &error,
                     );
+                    tracing::error!("{message}");
+                    data_dir::record_error(&default_app_data_dir, &message);
                     let _ = std::fs::remove_file(
                         default_app_data_dir.join(data_dir::DATA_DIR_MARKER_FILE),
                     );
@@ -186,13 +194,11 @@ pub fn run() {
                 state.app_data_dir.display(),
                 db_path.display()
             );
-            if state.app_data_dir != state.default_app_data_dir {
-                if let Err(error) =
-                    data_dir::graduate_marker(&state.default_app_data_dir, &state.app_data_dir)
-                {
-                    tracing::warn!("Failed to graduate data directory marker: {error}");
-                }
-            }
+            data_dir::finish_startup(
+                &state.default_app_data_dir,
+                &state.app_data_dir,
+                fallback_occurred,
+            );
 
             // Load hotkey config from settings (fallback to default).
             let hotkey_cfg = SettingsManager::new(&state.db)
