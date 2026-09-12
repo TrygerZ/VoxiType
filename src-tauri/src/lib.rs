@@ -63,6 +63,7 @@ impl AppStateInner {
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
     ) -> error::Result<Self> {
         let db_path = app_data_dir.join("data").join("voxitype.db");
+        tracing::info!("Opening database at '{}'", db_path.display());
         let db = Database::open(&db_path)?;
         let master_key = crypto::get_master_key(&app_data_dir)?;
 
@@ -156,7 +157,12 @@ pub fn run() {
                 Ok(state) => state,
                 Err(error) if app_data_dir != default_app_data_dir => {
                     tracing::error!(
-                        "Custom data directory initialization failed; recovering with default directory: {error}"
+                        "{}",
+                        data_dir::fallback_error_message(
+                            &app_data_dir,
+                            &default_app_data_dir,
+                            &error
+                        )
                     );
                     let _ = std::fs::remove_file(
                         default_app_data_dir.join(data_dir::DATA_DIR_MARKER_FILE),
@@ -171,6 +177,15 @@ pub fn run() {
                 }
                 Err(error) => return Err(format!("Failed to init app state: {error}").into()),
             };
+
+            let db_path = state.app_data_dir.join("data").join("voxitype.db");
+            tracing::info!(
+                "Storage paths initialized: default_app_data_dir='{}', resolved_data_dir='{}', app_data_dir='{}', db_path='{}'",
+                state.default_app_data_dir.display(),
+                resolved_data_dir.display(),
+                state.app_data_dir.display(),
+                db_path.display()
+            );
             if state.app_data_dir != state.default_app_data_dir {
                 if let Err(error) =
                     data_dir::graduate_marker(&state.default_app_data_dir, &state.app_data_dir)

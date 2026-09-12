@@ -11,3 +11,13 @@ vi.mock("../lib/tauri", () => ({
   onEvent: vi.fn().mockResolvedValue(() => undefined),
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock("../assets/icons/hourglass.svg?react", () => ({
+  default: () => null,
+}));
+vi.mock("../assets/icons/sparkle.svg?react", () => ({
+  default: () => null,
+}));
+vi.mock("../assets/icons/scroll-text.svg?react", () => ({
+  default: () => null,
+}));

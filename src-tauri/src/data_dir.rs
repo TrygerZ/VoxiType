@@ -19,14 +19,39 @@ struct DataDirMarker {
     pending: Option<PathBuf>,
 }
 
+/// Formats an error log message when custom data directory initialization,
+/// resolution, or migration fails and falls back to another directory.
+///
+/// Ensures both the failed path and the fallback path are logged, and explicitly
+/// warns that settings and history may appear empty.
+pub fn fallback_error_message(
+    failed_path: &Path,
+    fallback_path: &Path,
+    error: &dyn std::fmt::Display,
+) -> String {
+    format!(
+        "Data directory failure for '{}': {error}; falling back to '{}'. Settings and history may appear empty.",
+        failed_path.display(),
+        fallback_path.display()
+    )
+}
+
 /// Resolves a valid custom data directory, falling back to `default_dir`.
 pub fn resolve_app_data_dir(default_dir: PathBuf) -> PathBuf {
     match resolve_custom_dir(&default_dir) {
         Ok(Some(custom_dir)) => custom_dir,
         Ok(None) => default_dir,
         Err(error) => {
-            tracing::warn!("Data directory marker ignored: {error}");
-            let _ = std::fs::remove_file(default_dir.join(DATA_DIR_MARKER_FILE));
+            let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
+            let failed_target = std::fs::read_to_string(&marker_path)
+                .ok()
+                .map(|s| PathBuf::from(s.trim()))
+                .unwrap_or_else(|| marker_path.clone());
+            tracing::error!(
+                "{}",
+                fallback_error_message(&failed_target, &default_dir, &error)
+            );
+            let _ = std::fs::remove_file(&marker_path);
             default_dir
         }
     }
@@ -60,7 +85,10 @@ pub fn migrate_data_if_needed(default_dir: &Path, target_dir: &Path) -> PathBuf 
     match migrate_data(default_dir, target_dir) {
         Ok(()) => target_dir.to_path_buf(),
         Err(error) => {
-            tracing::warn!("Data directory migration skipped; using default directory: {error}");
+            tracing::error!(
+                "{}",
+                fallback_error_message(target_dir, default_dir, &error)
+            );
             let _ = std::fs::remove_file(default_dir.join(DATA_DIR_MARKER_FILE));
             default_dir.to_path_buf()
         }
@@ -323,6 +351,16 @@ fn ensure_free_space(_path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn fallback_error_message_contains_both_paths_and_warning() {
+        let failed = Path::new("D:\\custom\\path");
+        let fallback = Path::new("C:\\Users\\default\\path");
+        let message = fallback_error_message(failed, fallback, &"permission denied");
+        assert!(message.contains("D:\\custom\\path"));
+        assert!(message.contains("C:\\Users\\default\\path"));
+        assert!(message.contains("Settings and history may appear empty"));
+    }
 
     struct TempDir(PathBuf);
 

@@ -4,6 +4,8 @@ type Dict = Record<string, string>;
 
 const id: Dict = {
   "app.name": "VoxiType",
+  "error.settings_load_failed": "Gagal memuat pengaturan",
+  "error.retry": "Coba lagi",
   "nav.home": "Beranda",
   "nav.settings": "Pengaturan",
   "nav.history": "Riwayat",
@@ -400,6 +402,8 @@ const id: Dict = {
 
 const en: Dict = {
   "app.name": "VoxiType",
+  "error.settings_load_failed": "Failed to load settings",
+  "error.retry": "Retry",
   "nav.home": "Home",
   "nav.settings": "Settings",
   "nav.history": "History",

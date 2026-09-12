@@ -5,6 +5,7 @@ import { getSettings, setWhisperCppPaths, updateSetting } from "../lib/tauri";
 interface SettingsStore {
   settings: Settings;
   loaded: boolean;
+  error: string | null;
   load: () => Promise<void>;
   update: (key: string, value: unknown) => Promise<void>;
   /** Persist whisper.cpp paths via the picker-gated command. Pass null to
@@ -18,13 +19,16 @@ interface SettingsStore {
 export const useSettingsStore = create<SettingsStore>((set) => ({
   settings: {},
   loaded: false,
+  error: null,
 
   load: async () => {
     try {
       const settings = await getSettings();
-      set({ settings, loaded: true });
-    } catch {
-      set({ loaded: true });
+      set({ settings, loaded: true, error: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Failed to load settings:", err);
+      set({ loaded: true, error: message });
     }
   },
 

@@ -41,6 +41,8 @@ export interface AppInfo {
   name: string;
   version: string;
   tauri: string;
+  data_dir?: string;
+  db_path?: string;
 }
 
 export interface Snippet {

@@ -46,10 +46,14 @@ pub fn set_hotkey<R: Runtime>(
 
 #[tauri::command]
 pub fn get_app_info<R: Runtime>(app: AppHandle<R>) -> Value {
+    let state = app.state::<AppStateInner>();
+    let db_path = state.app_data_dir.join("data").join("voxitype.db");
     serde_json::json!({
         "name": "VoxiType",
         "version": app.package_info().version.to_string(),
         "tauri": "2",
+        "data_dir": state.app_data_dir.to_string_lossy(),
+        "db_path": db_path.to_string_lossy(),
     })
 }
 
