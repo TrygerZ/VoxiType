@@ -196,6 +196,28 @@ mod.rs exports:
 | CI | Push/PR to `main` | tsc, vite build, cargo fmt, clippy, test (all `--no-default-features`) |
 | Release | Push tag `v*` | tauri-action unsigned build + GitHub Release draft |
 
+## Git Workflow
+
+### Branch & Commit Rules
+
+| Change Type | Branch | Commit | Push | Merge |
+|---|---|---|---|---|
+| **Significant** (new features, refactoring, architecture changes) | `feature/<name>` or `fix/<name>` | Automatic | User approval required | User approval required |
+| **Minor** (documentation, typos, comments) | Direct to `main` | Automatic | User approval required | User approval required |
+
+#### Criteria:
+1. **New branch required** for: adding features, refactoring, API changes, modifying business logic, significant UI changes
+2. **Direct to `main`** for: documentation fixes, typos, comments, README updates, changelog updates
+3. **Commit automatically** — agent determines appropriate commit message
+4. **Push & Merge** — always require explicit user approval
+
+### Workflow:
+1. Agent determines whether changes are *significant* or *minor*
+2. If *significant*: create new branch from `main`, work on that branch, commit automatically
+3. If *minor*: commit directly to `main`, commit automatically
+4. Agent **never** pushes or merges without user approval
+5. After commit is complete, agent notifies user and requests approval for push + merge
+
 ## Session Handoff
 After completing a phase or significant task:
 - Save all changes, commit if applicable
@@ -216,3 +238,12 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Documentation Style
+
+- In prose, use ONLY single ASCII hyphens (`-`). Never use em dashes (U+2014), en dashes (U+2013), or double hyphens (`--`) as punctuation or parenthetical separators; replace them with periods, commas, colons, or parentheses. Machine rule: `test/i18n.test.ts` rejects U+2013/U+2014 in catalogs, extended here repo-wide.
+- CRITICAL EXCEPTION: the dash rule applies ONLY to prose. In inline code, code blocks, commands, and argv, keep `--` intact. `--` before user paths in `src/git.ts` is a security invariant; CLI flags (`--noEmit`, `--watch`, `--production`, `--cached`) must remain intact. NEVER run a global find-replace for `--`.
+- Zero emojis, zero stickers, zero decorative ASCII art, zero badges. Plain Markdown only.
+- Professional English, declarative sentences, high density over expressiveness (tables and bullets over paragraphs). No hype, no pleasantries ("we are excited to"), no filler words (very, really, simply, just, obviously).
+- Write instructions in imperative mood ("Run X", "Never import Y"), not narrative or optional advice.
+- Scope: applies to `AGENTS.md`, `README.md`, `CHANGELOG.md`, `dokumen/**`, code docblocks, commit messages, and PR descriptions.
