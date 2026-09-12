@@ -194,7 +194,38 @@ mod.rs exports:
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
 | CI | Push/PR to `main` | tsc, vite build, cargo fmt, clippy, test (all `--no-default-features`) |
-| Release | Push tag `v*` | tauri-action unsigned build + GitHub Release draft |
+| Release | Push tag `v*` | tauri-action unsigned build, creates GitHub Release draft with NSIS installer, manual publish required, fallback to local build if CI fails |
+
+## Release Procedure
+
+### Versioning and prep
+- Bump version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` in one commit `chore: bump version to X.Y.Z`.
+- Fold `## [Unreleased]` CHANGELOG into `## [X.Y.Z] - YYYY-MM-DD` before tagging.
+- Run `npm ci` so `package-lock.json` updates; verify CI gates (tsc, build, fmt, clippy, test) green on main.
+
+### Primary path (CI)
+1. Create annotated tag: `git tag -a vX.Y.Z -m "VoxiType vX.Y.Z"`
+2. Push tag: `git push origin main vX.Y.Z`
+3. Tag `v*` triggers Release workflow (`.github/workflows/release.yml`): windows-latest, tauri-action unsigned build, creates GitHub Release DRAFT named "VoxiType vX.Y.Z" with NSIS asset `VoxiType_X.Y.Z_x64-setup.exe` and updater artifacts.
+4. Monitor: `gh run list --workflow=Release --limit 3` or `gh run watch <id>`.
+5. Publish draft: `gh release edit vX.Y.Z --draft=false`.
+6. Verify: `gh release view vX.Y.Z --json isDraft,assets --jq '{draft:.isDraft,assets:[.assets[].name]}'`.
+
+### Fallback path (manual, used when CI Release workflow fails; precedent: v0.4.3)
+1. Build locally: `rtk npm run tauri build` (output in `src-tauri/target/release/bundle/nsis/`).
+2. Create release: `gh release create vX.Y.Z "src-tauri/target/release/bundle/nsis/VoxiType_X.Y.Z_x64-setup.exe" --title "VoxiType vX.Y.Z" --notes-file <file>` (or `gh release upload vX.Y.Z <file> --clobber` if draft exists).
+3. Publish if created as draft: `gh release edit vX.Y.Z --draft=false`.
+
+### Writing the release description
+- Source: `git log <previous tag>..HEAD --oneline` plus CHANGELOG section for this version.
+- Format follows previous releases: heading `### VoxiType vX.Y.Z`, then subsections `#### New Features`, `#### Bug Fixes`, `#### Improvements` (add `#### Security` only if relevant).
+- One bullet per user-facing change; use past tense ("Fixed...", "Added..."); mention source version if fixing regression.
+- Professional English, no emoji, prose uses only single ASCII hyphen; end with line: `Builds are unsigned; Windows SmartScreen may warn on first run.`
+- Save notes in temporary file and use `--notes-file` to avoid shell quoting issues.
+
+### Post-release
+- Add `SESSION.md` handoff note.
+- Run `graphify update .` only if code changed (docs do not require).
 
 ## Git Workflow
 
