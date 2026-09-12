@@ -226,9 +226,7 @@ pub fn set_data_directory(
 }
 
 #[tauri::command]
-pub fn get_data_directory(
-    state: State<'_, AppStateInner>,
-) -> crate::data_dir::DataDirectoryStatus {
+pub fn get_data_directory(state: State<'_, AppStateInner>) -> crate::data_dir::DataDirectoryStatus {
     crate::data_dir::get_status(&state.default_app_data_dir, &state.app_data_dir)
 }
 

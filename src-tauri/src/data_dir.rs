@@ -101,8 +101,8 @@ pub fn resolve_app_data_dir_checked(default_dir: PathBuf) -> (PathBuf, bool) {
         Ok(None) => (default_dir, false),
         Err(error) => {
             let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
-            let failed_target = read_marker_target(&marker_path)
-                .unwrap_or_else(|| marker_path.clone());
+            let failed_target =
+                read_marker_target(&marker_path).unwrap_or_else(|| marker_path.clone());
             let message = fallback_error_message(&failed_target, &default_dir, &error);
             tracing::error!("{message}");
             record_error(&default_dir, &message);
@@ -563,7 +563,10 @@ mod tests {
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
             .collect();
-        assert!(tmp_files.is_empty(), "temporary marker files should be cleaned up");
+        assert!(
+            tmp_files.is_empty(),
+            "temporary marker files should be cleaned up"
+        );
     }
 
     #[test]
@@ -572,11 +575,17 @@ mod tests {
         let target = TempDir::new();
         write_marker(&default_dir.0, &default_dir.0, &target.0).expect("marker should be writable");
 
-        assert_eq!(read_pending(&default_dir.0), Some(target.0.to_string_lossy().into_owned()));
+        assert_eq!(
+            read_pending(&default_dir.0),
+            Some(target.0.to_string_lossy().into_owned())
+        );
         let status = get_status(&default_dir.0, &default_dir.0);
         assert_eq!(status.active, default_dir.0.to_string_lossy());
         assert_eq!(status.default, default_dir.0.to_string_lossy());
-        assert_eq!(status.pending, Some(target.0.to_string_lossy().into_owned()));
+        assert_eq!(
+            status.pending,
+            Some(target.0.to_string_lossy().into_owned())
+        );
         assert_eq!(status.last_error, None);
 
         assert_eq!(resolve_app_data_dir(default_dir.0.clone()), target.0);
@@ -782,7 +791,10 @@ mod tests {
         assert!(fallback, "fallback should be detected on invalid target");
         assert!(!default_dir.0.join(DATA_DIR_MARKER_FILE).exists());
         finish_startup(&default_dir.0, &resolved, fallback);
-        assert!(read_error(&default_dir.0).is_some(), "error should remain after failed startup");
+        assert!(
+            read_error(&default_dir.0).is_some(),
+            "error should remain after failed startup"
+        );
 
         // 2. Subsequent clean run without marker: resolve succeeds with default and no fallback.
         let (resolved_next, fallback_next) = resolve_app_data_dir_checked(default_dir.0.clone());
