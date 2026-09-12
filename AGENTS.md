@@ -233,21 +233,40 @@ mod.rs exports:
 
 | Change Type | Branch | Commit | Push | Merge |
 |---|---|---|---|---|
-| **Significant** (new features, refactoring, architecture changes) | `feature/<name>` or `fix/<name>` | Automatic | User approval required | User approval required |
+| **Significant** (new features, refactoring, architecture changes) | `<type>/<kebab-case-slug>` | Automatic | User approval required | User approval required |
 | **Minor** (documentation, typos, comments) | Direct to `main` | Automatic | User approval required | User approval required |
 
 #### Criteria:
-1. **New branch required** for: adding features, refactoring, API changes, modifying business logic, significant UI changes
-2. **Direct to `main`** for: documentation fixes, typos, comments, README updates, changelog updates
-3. **Commit automatically** — agent determines appropriate commit message
-4. **Push & Merge** — always require explicit user approval
+1. **New branch required** for: adding features, refactoring, API changes, modifying business logic, significant UI changes. Branch names use Conventional Commits types (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`, `ci`), e.g. `feat/onboarding-smoke-test`.
+2. **Direct to `main`** for: documentation fixes, typos, comments, README updates, changelog updates.
+3. **When in doubt whether a change is minor, create a branch.**
+4. **Commit automatically** whenever meaningful progress exists so the full development journey stays documented.
+5. **Push & Merge** always require explicit user approval; task completion and passing all gates do not constitute approval.
+
+### Commit Format
+- Conventional Commits with scope in lowercase imperative without trailing period: `feat(stt): ...`, `fix(injection): ...`, `chore(release): ...`.
+
+### Granular Commits
+- Commit each logical change as a separate commit while working; never batch an entire feature, its tests, and unrelated edits into one commit.
+- Split by type and scope, e.g. `fix(audio): flush ringbuf on vad end` stays separate from `chore(ci): pin actions to sha`.
+- Stage files explicitly per commit; never use `git add -A` or `git add .` when composing commits. A single commit mixing layers (Rust, TypeScript, config) is allowed only when splitting would break compilation; explain that coupling in the commit body.
+- The ban applies at commit composition time; `git add -A` remains acceptable for scratch flows such as stashing a WIP snapshot.
+
+### Merge Gates
+Before reporting results and requesting merge approval, all checks must pass cleanly on the branch:
+- `rtk cargo fmt --check`, `rtk cargo clippy --no-default-features -- -D warnings`, `rtk cargo test --no-default-features` (in `src-tauri/`)
+- `rtk npx tsc --noEmit`, `rtk npm run test`, `rtk npm run build`
+Never merge to `main` until user explicitly approves.
+
+### Prohibitions
+- Never `push --force`, never `reset --hard` on published branches, never delete branches (`branch -D`), never rewrite history.
 
 ### Workflow:
 1. Agent determines whether changes are *significant* or *minor*
-2. If *significant*: create new branch from `main`, work on that branch, commit automatically
+2. If *significant*: create `<type>/<kebab-case-slug>` branch from `main`, work on that branch, commit granularly and automatically
 3. If *minor*: commit directly to `main`, commit automatically
-4. Agent **never** pushes or merges without user approval
-5. After commit is complete, agent notifies user and requests approval for push + merge
+4. Run merge gates on the branch, report results, request approval
+5. Agent **never** pushes or merges without user approval
 
 ## Session Handoff
 After completing a phase or significant task:
