@@ -101,6 +101,7 @@ export const setDataDirectory = (path: string) =>
   invoke<void>("set_data_directory", { path });
 export const getDataDirectory = () =>
   invoke<DataDirectoryStatus>("get_data_directory");
+export const restartApp = () => invoke<void>("restart_app");
 
 // Whisper.cpp paths are gated backend-side: only paths previously returned
 // by pickSetupFile are accepted (see set_whisper_cpp_paths in commands/misc).

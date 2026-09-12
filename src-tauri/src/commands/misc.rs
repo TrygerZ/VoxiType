@@ -232,6 +232,12 @@ pub fn get_data_directory(
     crate::data_dir::get_status(&state.default_app_data_dir, &state.app_data_dir)
 }
 
+#[tauri::command]
+pub fn restart_app(app: AppHandle) {
+    tracing::info!("Restarting application via restart_app command");
+    app.restart();
+}
+
 fn pick_data_directory_blocking() -> std::result::Result<Option<String>, AppError> {
     let script = r#"
 Add-Type -AssemblyName System.Windows.Forms

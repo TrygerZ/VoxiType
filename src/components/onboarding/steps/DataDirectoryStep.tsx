@@ -5,11 +5,13 @@ import {
   ChevronRight,
   FolderOpen,
   HardDrive,
+  RotateCw,
 } from "lucide-react";
 
 import {
   getDataDirectory,
   pickDataDirectory,
+  restartApp,
   setDataDirectory,
 } from "../../../lib/tauri";
 import { formatDirectoryError } from "../../../lib/dataDirectory";
@@ -30,13 +32,17 @@ export function DataDirectoryStep(props: Props) {
   const { t } = props;
   const [activePath, setActivePath] = useState("");
   const [selectedPath, setSelectedPath] = useState("");
+  const [pendingRestart, setPendingRestart] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void getDataDirectory()
-      .then((status) => setActivePath(status.active))
+      .then((status) => {
+        setActivePath(status.active);
+        setPendingRestart(status.pending);
+      })
       .catch((e: unknown) => setError(formatDirectoryError(e, t)));
   }, [t]);
   const choose = async () => {
@@ -57,11 +63,24 @@ export function DataDirectoryStep(props: Props) {
     try {
       setError("");
       await setDataDirectory(selectedPath);
+      setPendingRestart(selectedPath);
       setSelectedPath("");
       setStatus(t("data_directory.success"));
     } catch (e: unknown) {
       setError(formatDirectoryError(e, t));
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setError("");
+      await restartApp();
+    } catch (e: unknown) {
+      setError(formatDirectoryError(e, t));
       setBusy(false);
     }
   };
@@ -127,7 +146,29 @@ export function DataDirectoryStep(props: Props) {
             <Check className="h-4 w-4" />
             {t("data_directory.apply")}
           </Button>
+          {pendingRestart && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void handleRestart()}
+              data-testid="restart-app-button"
+            >
+              <RotateCw className="h-4 w-4" />
+              {t("data_directory.restart_now")}
+            </Button>
+          )}
         </div>
+        {pendingRestart && (
+          <div
+            className="mt-3 rounded bg-vx-accent-soft/30 px-3 py-2"
+            data-testid="pending-data-directory"
+          >
+            <p className="break-all font-mono text-xs text-vx-accent">
+              {t("data_directory.pending_restart", { path: pendingRestart })}
+            </p>
+          </div>
+        )}
         <p className="mt-4 text-xs leading-relaxed text-vx-text-dim">
           {t("data_directory.restart")}
         </p>

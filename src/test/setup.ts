@@ -18,6 +18,7 @@ vi.mock("../lib/tauri", () => ({
   }),
   pickDataDirectory: vi.fn().mockResolvedValue(null),
   setDataDirectory: vi.fn().mockResolvedValue(undefined),
+  restartApp: vi.fn().mockResolvedValue(undefined),
   setFloatingWidgetEnabled: vi.fn().mockResolvedValue(undefined),
 }));
 

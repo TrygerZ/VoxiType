@@ -32,6 +32,7 @@ describe("GeneralTab data directory settings", () => {
       "/active/data/dir",
     );
     expect(screen.queryByTestId("pending-data-directory")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("restart-app-button")).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("data-directory-last-error"),
     ).not.toBeInTheDocument();
@@ -53,6 +54,7 @@ describe("GeneralTab data directory settings", () => {
     const pendingElement = await screen.findByTestId("pending-data-directory");
     expect(pendingElement).toBeInTheDocument();
     expect(pendingElement).toHaveTextContent("/pending/restart/dir");
+    expect(screen.getByTestId("restart-app-button")).toBeInTheDocument();
     expect(
       screen.queryByTestId("data-directory-last-error"),
     ).not.toBeInTheDocument();
@@ -120,6 +122,7 @@ describe("GeneralTab data directory settings", () => {
     // Assert pending restart element is shown with the new path
     const pendingElement = await screen.findByTestId("pending-data-directory");
     expect(pendingElement).toHaveTextContent("/new/chosen/dir");
+    expect(screen.getByTestId("restart-app-button")).toBeInTheDocument();
 
     // Assert success status is displayed
     expect(screen.getByTestId("data-directory-status")).toBeInTheDocument();
@@ -198,5 +201,24 @@ describe("GeneralTab data directory settings", () => {
       expect(chooseButton).toBeEnabled();
       expect(applyButton).toBeEnabled();
     });
+  });
+
+  it("clicking restart button calls restartApp", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: "/pending/restart/dir",
+      lastError: null,
+    });
+    vi.mocked(tauri.restartApp).mockResolvedValueOnce(undefined);
+
+    render(<GeneralTab />);
+
+    const restartBtn = await screen.findByTestId("restart-app-button");
+    expect(restartBtn).toBeInTheDocument();
+    await user.click(restartBtn);
+
+    expect(tauri.restartApp).toHaveBeenCalledOnce();
   });
 });

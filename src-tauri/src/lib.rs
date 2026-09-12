@@ -265,6 +265,7 @@ pub fn run() {
             commands::pick_data_directory,
             commands::set_data_directory,
             commands::get_data_directory,
+            commands::restart_app,
             commands::test_groq_api,
             commands::test_whisper_cpp,
             commands::get_usage_stats,

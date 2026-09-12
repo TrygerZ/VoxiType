@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, RotateCw } from "lucide-react";
 import {
   formatTauriError,
   getDataDirectory,
   pickDataDirectory,
+  restartApp,
   setDataDirectory,
   setFloatingWidgetEnabled,
   type DataDirectoryStatus,
@@ -66,6 +67,18 @@ export function GeneralTab() {
     } catch (e: unknown) {
       setDataError(formatDirectoryError(e, t));
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setDataError("");
+      await restartApp();
+    } catch (e: unknown) {
+      setDataError(formatTauriError(e));
       setBusy(false);
     }
   };
@@ -164,6 +177,18 @@ export function GeneralTab() {
               >
                 {t("data_directory.apply")}
               </Button>
+              {pendingRestart && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void handleRestart()}
+                  data-testid="restart-app-button"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  {t("data_directory.restart_now")}
+                </Button>
+              )}
             </div>
             {selectedDirectory && (
               <span

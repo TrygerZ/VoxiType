@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - Add RCA report for v0.4.3 onboarding and PTT race bugs
 - Add MIT LICENSE file and rewrite README for v0.4.3 accuracy
+- Add Restart now button in Settings General and onboarding after data directory change
 
 ### Changed
 - Update AGENTS.md documentation
