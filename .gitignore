@@ -37,5 +37,12 @@ src-tauri/gen/
 .env
 .env.local
 
+# Local runtime, keys, and database files
+master.key
+*.db
+*.sqlite
+*.sqlite3
+data_dir.txt
+
 # Windows
 Thumbs.db
