@@ -64,4 +64,26 @@ describe("settingsStore", () => {
     expect(state.settings).toEqual({ onboarding_completed: true });
     consoleSpy.mockRestore();
   });
+
+  it("drops stale responses when overlapping load calls resolve out of order", async () => {
+    let resolveFirst!: (value: Record<string, unknown>) => void;
+    const firstPromise = new Promise<Record<string, unknown>>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    vi.mocked(tauri.getSettings)
+      .mockImplementationOnce(() => firstPromise)
+      .mockResolvedValueOnce({ active_mode: "email" });
+
+    const load1 = useSettingsStore.getState().load();
+    const load2 = useSettingsStore.getState().load();
+
+    await load2;
+    expect(useSettingsStore.getState().settings).toEqual({ active_mode: "email" });
+
+    resolveFirst({ active_mode: "dictation" });
+    await load1;
+
+    expect(useSettingsStore.getState().settings).toEqual({ active_mode: "email" });
+  });
 });
