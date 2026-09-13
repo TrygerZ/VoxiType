@@ -68,8 +68,9 @@ impl TextInjector for HybridInjector {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         let started = Instant::now();
 
-        // Save current clipboard content
+        // Save current clipboard content before writing dictation text.
         let prev = clipboard::read_snapshot();
+        let mut restore_guard = ClipboardRestoreGuard::new(prev);
 
         clipboard::write_text(text)?;
 
@@ -84,7 +85,7 @@ impl TextInjector for HybridInjector {
         // Keystrokes are processed asynchronously by the target app.
         std::thread::sleep(std::time::Duration::from_millis(PASTE_CONSUME_DELAY_MS));
 
-        restore_clipboard(&prev);
+        restore_guard.restore();
 
         Ok(InjectResult {
             success: true,
@@ -103,6 +104,32 @@ impl TextInjector for HybridInjector {
             chars_injected: chars,
             duration_ms: started.elapsed().as_millis() as u64,
         })
+    }
+}
+
+/// RAII guard ensuring clipboard restoration on all exit paths.
+struct ClipboardRestoreGuard {
+    snapshot: Option<clipboard::ClipboardSnapshot>,
+}
+
+impl ClipboardRestoreGuard {
+    fn new(snapshot: clipboard::ClipboardSnapshot) -> Self {
+        Self {
+            snapshot: Some(snapshot),
+        }
+    }
+
+    /// Restore previous clipboard content and disarm guard.
+    fn restore(&mut self) {
+        if let Some(snapshot) = self.snapshot.take() {
+            restore_clipboard(&snapshot);
+        }
+    }
+}
+
+impl Drop for ClipboardRestoreGuard {
+    fn drop(&mut self) {
+        self.restore();
     }
 }
 
@@ -208,5 +235,32 @@ mod tests {
         }
 
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn restore_guard_restores_on_drop() {
+        use crate::injection::clipboard::{self, ClipboardSnapshot};
+
+        let test_prev = "VOXITYPE_TEST_GUARD_PREV";
+        clipboard::write_text(test_prev).unwrap();
+
+        {
+            let guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
+            clipboard::write_text("OVERWRITTEN").unwrap();
+            assert_eq!(clipboard::read_text().as_deref(), Some("OVERWRITTEN"));
+            drop(guard);
+        }
+
+        assert_eq!(clipboard::read_text().as_deref(), Some(test_prev));
+    }
+
+    #[test]
+    fn restore_guard_explicit_restore_disarms() {
+        use crate::injection::clipboard::ClipboardSnapshot;
+
+        let test_prev = "VOXITYPE_TEST_GUARD_EXPLICIT";
+        let mut guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
+        guard.restore();
+        assert!(guard.snapshot.is_none());
     }
 }
