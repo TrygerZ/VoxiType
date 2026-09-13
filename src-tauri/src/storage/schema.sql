@@ -93,9 +93,6 @@ CREATE TABLE IF NOT EXISTS snippets (
     is_active       INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE INDEX IF NOT EXISTS idx_snippets_trigger
-    ON snippets(trigger_phrase);
-
 -- ============================================================
 -- Settings (flat key-value, JSON-encoded values)
 CREATE TABLE IF NOT EXISTS settings (
