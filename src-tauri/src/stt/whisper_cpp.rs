@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -16,6 +17,8 @@ use crate::error::{AppError, Result};
 use std::os::windows::process::CommandExt;
 
 const SAMPLE_RATE: u64 = 16_000;
+const WHISPER_PROCESS_TIMEOUT: Duration = Duration::from_secs(300);
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -124,25 +127,68 @@ fn run_whisper(run: WhisperRun) -> Result<String> {
     let output_prefix = dir.path.join("transcript");
     fs::write(&wav_path, encode_wav_16k_mono(&run.audio))?;
 
+    let stdout_path = dir.path.join("stdout.log");
+    let stderr_path = dir.path.join("stderr.log");
+    let child = spawn_whisper_child(&run, &wav_path, &output_prefix, &stdout_path, &stderr_path)?;
+
+    let status = wait_child_bounded(child, WHISPER_PROCESS_TIMEOUT)?;
+    if !status.success() {
+        let err_msg = read_command_error(&stderr_path, &stdout_path);
+        return Err(AppError::stt(format!("whisper.cpp failed: {err_msg}")));
+    }
+
+    read_transcription_output(&output_prefix, &stdout_path)
+}
+
+fn spawn_whisper_child(
+    run: &WhisperRun,
+    wav_path: &Path,
+    output_prefix: &Path,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<std::process::Child> {
+    let stdout_file = fs::File::create(stdout_path)?;
+    let stderr_file = fs::File::create(stderr_path)?;
+
     let mut command = Command::new(&run.binary_path);
-    command.args(build_args(&run, &wav_path, &output_prefix));
+    command.args(build_args(run, wav_path, output_prefix));
+    command.stdout(stdout_file);
+    command.stderr(stderr_file);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
-    let output = command
-        .output()
-        .map_err(|e| AppError::stt(format!("Failed to run whisper.cpp: {e}")))?;
-    if !output.status.success() {
-        return Err(AppError::stt(format!(
-            "whisper.cpp failed: {}",
-            command_error(&output)
-        )));
-    }
+    command
+        .spawn()
+        .map_err(|e| AppError::stt(format!("Failed to run whisper.cpp: {e}")))
+}
 
-    let txt_path = output_prefix.with_extension("txt");
-    match fs::read_to_string(&txt_path) {
-        Ok(text) => Ok(clean_text(&text)),
-        Err(_) => Ok(clean_text(&String::from_utf8_lossy(&output.stdout))),
+fn wait_child_bounded(
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus> {
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(AppError::timeout(format!(
+                        "whisper.cpp process timed out after {}s",
+                        timeout.as_secs()
+                    )));
+                }
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(AppError::stt(format!(
+                    "Failed to check whisper.cpp process: {e}"
+                )));
+            }
+        }
     }
 }
 
@@ -178,12 +224,24 @@ fn build_args(run: &WhisperRun, wav_path: &Path, output_prefix: &Path) -> Vec<St
     args
 }
 
-fn command_error(output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.is_empty() {
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    } else {
-        stderr
+fn read_command_error(stderr_path: &Path, stdout_path: &Path) -> String {
+    let stderr_bytes = fs::read(stderr_path).unwrap_or_default();
+    let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    let stdout_bytes = fs::read(stdout_path).unwrap_or_default();
+    String::from_utf8_lossy(&stdout_bytes).trim().to_string()
+}
+
+fn read_transcription_output(output_prefix: &Path, stdout_path: &Path) -> Result<String> {
+    let txt_path = output_prefix.with_extension("txt");
+    match fs::read_to_string(&txt_path) {
+        Ok(text) => Ok(clean_text(&text)),
+        Err(_) => {
+            let bytes = fs::read(stdout_path).unwrap_or_default();
+            Ok(clean_text(&String::from_utf8_lossy(&bytes)))
+        }
     }
 }
 
@@ -329,5 +387,42 @@ printf "halo offline\n" > "$out.txt"
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).unwrap();
         path
+    }
+
+    #[cfg(windows)]
+    fn fake_hanging_cli(dir: &Path) -> PathBuf {
+        let path = dir.join("fake-hanging.cmd");
+        fs::write(
+            &path,
+            r#"@echo off
+:loop
+goto loop
+"#,
+        )
+        .unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn fake_hanging_cli(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = dir.join("fake-hanging");
+        fs::write(&path, "#!/bin/sh\nwhile true; do sleep 1; done\n").unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    #[test]
+    fn wait_child_bounded_kills_on_timeout() {
+        let dir = TempRunDir::new().unwrap();
+        let path = fake_hanging_cli(&dir.path);
+        let child = Command::new(&path).spawn().unwrap();
+        let res = wait_child_bounded(child, Duration::from_millis(150));
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::Timeout);
     }
 }
