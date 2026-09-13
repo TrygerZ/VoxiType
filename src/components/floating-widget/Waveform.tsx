@@ -16,6 +16,11 @@ const boostLevel = (lvl: number): number => {
   return Math.min(1, Math.pow(lvl, 0.4) * 2);
 };
 
+const nextBarValue = (lvl: number): number => {
+  const jitter = 0.75 + Math.random() * 0.5;
+  return Math.max(0.08, Math.min(1, boostLevel(lvl) * jitter));
+};
+
 function useWaveformBars(active: boolean, level?: number): number[] {
   const [bars, setBars] = useState<number[]>(STATIC_WAVE);
   const levelRef = useRef(level ?? 0);
@@ -30,24 +35,15 @@ function useWaveformBars(active: boolean, level?: number): number[] {
       levelRef.current = 0;
       return;
     }
-    let unlisten: (() => void) | undefined;
-    void onEvent<AudioLevelEvent>("audio_level", (p) => {
+    const unlistenPromise = onEvent<AudioLevelEvent>("audio_level", (p) => {
       levelRef.current = p.level;
-    }).then((fn) => {
-      unlisten = fn;
     });
     const id = setInterval(() => {
-      setBars((prev) => {
-        const next = prev.slice(1);
-        const jitter = 0.75 + Math.random() * 0.5;
-        const boosted = boostLevel(levelRef.current);
-        next.push(Math.max(0.08, Math.min(1, boosted * jitter)));
-        return next;
-      });
+      setBars((prev) => [...prev.slice(1), nextBarValue(levelRef.current)]);
     }, 50);
     return () => {
       clearInterval(id);
-      unlisten?.();
+      void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [active]);
 
