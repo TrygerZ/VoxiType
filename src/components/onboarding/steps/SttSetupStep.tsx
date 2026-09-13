@@ -1,4 +1,10 @@
-import { type ButtonHTMLAttributes, type ReactNode, useState } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   Check,
@@ -70,19 +76,32 @@ export function SttSetupStep(props: SttSetupStepProps) {
   const [groqStatus, setGroqStatus] = useState<TestStatus>("idle");
   const [whisperStatus, setWhisperStatus] = useState<TestStatus>("idle");
   const [error, setError] = useState("");
+  const groqTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const whisperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (groqTimerRef.current) clearTimeout(groqTimerRef.current);
+      if (whisperTimerRef.current) clearTimeout(whisperTimerRef.current);
+    };
+  }, []);
 
   const testApi = async () => {
     if (!apiKey.trim()) return;
-    await runStatus(setGroqStatus, async () => testGroqApi(apiKey.trim()));
+    await runStatus(setGroqStatus, groqTimerRef, async () => testGroqApi(apiKey.trim()));
   };
   const testWhisper = async () => {
     const missing = validateWhisperSetup(whisperBinary, whisperModel, t);
     if (missing) {
+      if (whisperTimerRef.current) {
+        clearTimeout(whisperTimerRef.current);
+        whisperTimerRef.current = null;
+      }
       setError(missing);
       setWhisperStatus("fail");
       return;
     }
-    await runStatus(setWhisperStatus, async () =>
+    await runStatus(setWhisperStatus, whisperTimerRef, async () =>
       testWhisperCpp(
         whisperBinary.trim(),
         whisperModel.trim(),
@@ -243,8 +262,13 @@ function validateWhisperSetup(binaryPath: string, modelPath: string, t: TFunc) {
 }
 async function runStatus(
   setStatus: (status: TestStatus) => void,
+  timerRef: { current: ReturnType<typeof setTimeout> | null },
   test: () => Promise<void>,
 ) {
+  if (timerRef.current) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
   setStatus("testing");
   try {
     await test();
@@ -258,7 +282,10 @@ async function runStatus(
         : "err",
     );
   } finally {
-    setTimeout(() => setStatus("idle"), 3000);
+    timerRef.current = setTimeout(() => {
+      setStatus("idle");
+      timerRef.current = null;
+    }, 3000);
   }
 }
 function errorCode(err: unknown) {

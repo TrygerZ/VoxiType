@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, XCircle } from "lucide-react";
 import { Input } from "../ui/Input";
 import { useDebouncedApiKey } from "../../hooks/useDebouncedApiKey";
@@ -16,6 +16,13 @@ export function LLMTab() {
   const update = useSettingsStore((s) => s.update);
   const engine = (settings.llm_engine as string) ?? "ollama";
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail" | "err">("idle");
+  const testTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (testTimerRef.current) clearTimeout(testTimerRef.current);
+    };
+  }, []);
 
   const { localKey, onKeyChange } = useDebouncedApiKey(
     (settings.groq_api_key as string) ?? "",
@@ -25,12 +32,15 @@ export function LLMTab() {
 
   const handleTestApi = async () => {
     if (!localKey.trim() && !(settings.groq_api_key_set as boolean)) return;
+    if (testTimerRef.current) {
+      clearTimeout(testTimerRef.current);
+      testTimerRef.current = null;
+    }
     setTestStatus("testing");
     try {
       await testGroqApi(localKey.trim());
       setTestStatus("ok");
       toast(t("settings.llm.connected"));
-      setTimeout(() => setTestStatus("idle"), 3000);
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
       if (code === "LlmApiKeyInvalid" || code === "SttApiKeyInvalid") {
@@ -40,7 +50,11 @@ export function LLMTab() {
         setTestStatus("err");
         toast(formatTauriError(e), "error");
       }
-      setTimeout(() => setTestStatus("idle"), 3000);
+    } finally {
+      testTimerRef.current = setTimeout(() => {
+        setTestStatus("idle");
+        testTimerRef.current = null;
+      }, 3000);
     }
   };
 
