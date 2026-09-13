@@ -27,6 +27,7 @@ export function HistoryPanel() {
   const t = useT();
   const items = useHistoryStore((s) => s.items);
   const loading = useHistoryStore((s) => s.loading);
+  const error = useHistoryStore((s) => s.error);
   const query = useHistoryStore((s) => s.query);
   const load = useHistoryStore((s) => s.load);
   const search = useHistoryStore((s) => s.search);
@@ -164,78 +165,94 @@ export function HistoryPanel() {
       <div className="flex-1 overflow-y-auto px-10 pb-8">
         {loading && <p className="text-sm text-vx-text-dim">{t("history.loading")}</p>}
 
-        {filtered.length === 0 && !loading && (
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="max-w-md space-y-1">
+              <p className="text-sm font-semibold text-vx-text-primary">
+                {t("error.history_load_failed")}
+              </p>
+              <p className="text-xs font-mono text-vx-text-dim break-all">{error}</p>
+            </div>
+            <Button size="sm" onClick={() => void load()}>
+              {t("error.retry")}
+            </Button>
+          </div>
+        )}
+
+        {filtered.length === 0 && !loading && !error && (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <HistoryIcon className="h-10 w-10 text-vx-text-dim/40" />
             <p className="text-sm text-vx-text-dim">{t("history.empty")}</p>
           </div>
         )}
 
-        <div className="flex flex-col divide-y divide-vx-divider">
-          {filtered.map((item) => (
-            <div
-              key={item.id}
-              className="group flex items-start gap-3 py-4 transition-opacity"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm leading-relaxed text-vx-text-primary line-clamp-2">
-                  {item.text_formatted || item.text_raw}
-                </p>
-                <div className="mt-1.5 flex items-center gap-2 text-xs text-vx-text-dim">
-                  <span className="rounded-full bg-vx-bg-tertiary px-2 py-0.5 capitalize">
-                    {t(`settings.modes.${item.mode}`)}
-                  </span>
-                  <span>{t("history.words_suffix", { count: item.word_count })}</span>
-                  <span>&middot;</span>
-                  <span>{formatDateTime(item.created_at)}</span>
+        {!error && (
+          <div className="flex flex-col divide-y divide-vx-divider">
+            {filtered.map((item) => (
+              <div
+                key={item.id}
+                className="group flex items-start gap-3 py-4 transition-opacity"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-relaxed text-vx-text-primary line-clamp-2">
+                    {item.text_formatted || item.text_raw}
+                  </p>
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-vx-text-dim">
+                    <span className="rounded-full bg-vx-bg-tertiary px-2 py-0.5 capitalize">
+                      {t(`settings.modes.${item.mode}`)}
+                    </span>
+                    <span>{t("history.words_suffix", { count: item.word_count })}</span>
+                    <span>&middot;</span>
+                    <span>{formatDateTime(item.created_at)}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => void togglePin(item.id, !item.is_pinned)}
+                    className={`rounded-lg p-1.5 transition-colors ${
+                      item.is_pinned
+                        ? "bg-vx-accent-soft text-vx-accent"
+                        : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+                    }`}
+                    title={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
+                  >
+                    <Pin className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
+                    className={`rounded-lg p-1.5 transition-colors ${
+                      copied === item.id
+                        ? "bg-vx-success/15 text-vx-success"
+                        : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+                    }`}
+                    title={t("history.copy_tooltip")}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void reInject(item.id)}
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+                    title={t("history.re_inject_tooltip")}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void remove(item.id)}
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                    title={t("history.delete_tooltip")}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-
-              <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                <button
-                  type="button"
-                  onClick={() => void togglePin(item.id, !item.is_pinned)}
-                  className={`rounded-lg p-1.5 transition-colors ${
-                    item.is_pinned
-                      ? "bg-vx-accent-soft text-vx-accent"
-                      : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
-                  }`}
-                  title={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
-                >
-                  <Pin className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
-                  className={`rounded-lg p-1.5 transition-colors ${
-                    copied === item.id
-                      ? "bg-vx-success/15 text-vx-success"
-                      : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
-                  }`}
-                  title={t("history.copy_tooltip")}
-                >
-                  <Copy className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void reInject(item.id)}
-                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
-                  title={t("history.re_inject_tooltip")}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void remove(item.id)}
-                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
-                  title={t("history.delete_tooltip")}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

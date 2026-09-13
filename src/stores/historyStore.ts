@@ -4,6 +4,7 @@ import type { TranscriptionEntry } from "../types/app";
 import {
   clearHistory,
   deleteHistory,
+  formatTauriError,
   getHistory,
   pinHistory,
   searchHistory,
@@ -12,6 +13,7 @@ import {
 interface HistoryStore {
   items: TranscriptionEntry[];
   loading: boolean;
+  error: string | null;
   query: string;
   load: () => Promise<void>;
   search: (query: string) => Promise<void>;
@@ -42,17 +44,19 @@ export const useHistoryStore = create<HistoryStore>((set) => {
   return {
     items: [],
     loading: false,
+    error: null,
     query: "",
 
     load: async () => {
       const seq = ++requestSeq;
-      set({ loading: true });
+      set({ loading: true, error: null });
       try {
         const items = await getHistory();
-        if (seq === requestSeq) set({ items, loading: false, query: "" });
+        if (seq === requestSeq) set({ items, loading: false, error: null, query: "" });
         else set({ loading: false });
-      } catch {
-        set({ loading: false });
+      } catch (err: unknown) {
+        if (seq === requestSeq) set({ loading: false, error: formatTauriError(err) });
+        else set({ loading: false });
       }
     },
 

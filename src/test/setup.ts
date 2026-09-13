@@ -3,7 +3,13 @@ import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
 vi.mock("../lib/tauri", () => ({
-  formatTauriError: (error: unknown) => String(error),
+  formatTauriError: (error: unknown) => {
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === "object" && "message" in error) {
+      return String((error as { message: unknown }).message);
+    }
+    return String(error);
+  },
   getSettings: vi.fn().mockResolvedValue({}),
   updateSetting: vi.fn().mockResolvedValue(undefined),
   setWhisperCppPaths: vi.fn().mockResolvedValue(undefined),
@@ -20,6 +26,24 @@ vi.mock("../lib/tauri", () => ({
   setDataDirectory: vi.fn().mockResolvedValue(undefined),
   restartApp: vi.fn().mockResolvedValue(undefined),
   setFloatingWidgetEnabled: vi.fn().mockResolvedValue(undefined),
+  getDictionary: vi.fn().mockResolvedValue([]),
+  addDictionaryWord: vi.fn().mockResolvedValue(undefined),
+  deleteDictionaryWord: vi.fn().mockResolvedValue(undefined),
+  setDictionaryActive: vi.fn().mockResolvedValue(undefined),
+  getHistory: vi.fn().mockResolvedValue([]),
+  searchHistory: vi.fn().mockResolvedValue([]),
+  deleteHistory: vi.fn().mockResolvedValue(undefined),
+  clearHistory: vi.fn().mockResolvedValue(undefined),
+  pinHistory: vi.fn().mockResolvedValue(undefined),
+  reInject: vi.fn().mockResolvedValue(undefined),
+  getSnippets: vi.fn().mockResolvedValue([]),
+  addSnippet: vi.fn().mockResolvedValue(undefined),
+  deleteSnippet: vi.fn().mockResolvedValue(undefined),
+  getUsageStats: vi.fn().mockResolvedValue({
+    total_words: 0,
+    total_duration_ms: 0,
+    total_sessions: 0,
+  }),
 }));
 
 vi.mock("../assets/icons/hourglass.svg?react", () => ({

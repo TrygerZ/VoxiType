@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { UsageStats } from "../types/app";
-import { getUsageStats } from "../lib/tauri";
+import { formatTauriError, getUsageStats } from "../lib/tauri";
 
 /**
  * Lifetime usage totals sourced from the backend `get_usage_stats` command,
@@ -11,6 +11,7 @@ import { getUsageStats } from "../lib/tauri";
 interface StatsStore {
   totals: UsageStats;
   loaded: boolean;
+  error: string | null;
   load: () => Promise<void>;
 }
 
@@ -23,15 +24,16 @@ const EMPTY: UsageStats = {
 export const useStatsStore = create<StatsStore>((set) => ({
   totals: EMPTY,
   loaded: false,
+  error: null,
 
   load: async () => {
     try {
       const totals = await getUsageStats();
-      set({ totals, loaded: true });
-    } catch {
+      set({ totals, loaded: true, error: null });
+    } catch (err: unknown) {
       // Leave the last-known totals in place on failure rather than zeroing
-      // the dashboard.
-      set({ loaded: true });
+      // the dashboard, but record error for UI retry.
+      set({ loaded: true, error: formatTauriError(err) });
     }
   },
 }));
