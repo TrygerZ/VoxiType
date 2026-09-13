@@ -121,6 +121,15 @@ pub fn reveal_floating_widget<R: Runtime>(app: AppHandle<R>) -> std::result::Res
     Ok(())
 }
 
+/// Reset the floating-widget idle timeout timer upon pointer activity (hover, click, hold).
+#[tauri::command]
+pub fn reset_widget_idle_timer(
+    state: State<'_, AppStateInner>,
+) -> std::result::Result<(), AppError> {
+    crate::overlay::reset_idle_timer(&state);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn pick_setup_file(
     state: State<'_, AppStateInner>,

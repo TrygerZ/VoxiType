@@ -1,6 +1,7 @@
 //! Shared runtime helpers for STT/LLM config building and the core
 //! recording → process → inject → persist pipeline.
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -230,6 +231,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     if audio.is_empty() {
         let _ = state.pipeline.finish_processing();
         events::emit_state(&app, state.pipeline.state_tag());
+        crate::overlay::reset_idle_timer(&state);
         crate::overlay::maybe_hide(&app);
         return;
     }
@@ -271,6 +273,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                         0,
                     );
                     events::emit_state(&app, state.pipeline.state_tag());
+                    crate::overlay::reset_idle_timer(&state);
                     hide_overlay_soon(app.clone());
                     return;
                 }
@@ -389,6 +392,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 out.transcription.duration_ms as i64,
             );
             events::emit_state(&app, state.pipeline.state_tag());
+            crate::overlay::reset_idle_timer(&state);
             hide_overlay_soon(app.clone());
         }
         Err(e) => {
@@ -405,6 +409,8 @@ pub fn fail<R: Runtime>(app: &AppHandle<R>, pipeline: &PipelineOrchestrator, e: 
     pipeline.set_error(e);
     events::emit_transcription_error(app, &e.message, &format!("{:?}", e.code));
     events::emit_state(app, pipeline.state_tag());
+    let state = app.state::<AppStateInner>();
+    crate::overlay::reset_idle_timer(&state);
     hide_overlay_soon(app.clone());
 }
 
@@ -443,6 +449,11 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     if sound_cues_enabled(&state.db) {
         crate::sound::play(crate::sound::Cue::Start);
     }
+    state
+        .widget_timer
+        .hidden_by_timeout
+        .store(false, Ordering::SeqCst);
+    crate::overlay::reset_idle_timer(&state);
     crate::overlay::ensure_visible(app);
     events::emit_state(app, tag);
     spawn_level_emitter(app.clone());
@@ -503,11 +514,13 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
         if duration.as_secs_f32() <= MIN_RECORDING_DURATION_SECS {
             let _ = state.pipeline.cancel_recording();
             events::emit_state(app, state.pipeline.state_tag());
+            crate::overlay::reset_idle_timer(&state);
             crate::overlay::maybe_hide(app);
             return;
         }
     }
 
+    crate::overlay::reset_idle_timer(&state);
     match state.pipeline.stop_recording() {
         Ok(audio) => {
             if sound_cues_enabled(&state.db) {

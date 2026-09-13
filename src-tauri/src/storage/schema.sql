@@ -127,7 +127,8 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('command_mode', 'false'),
     ('per_app_mode', 'false'),
     ('floating_widget', 'true'),
-    ('floating_widget_pos', 'null');
+    ('floating_widget_pos', 'null'),
+    ('floating_widget_auto_hide_seconds', '0');
 
 -- ============================================================
 -- Usage Stats (opt-in telemetry, anonymous)
