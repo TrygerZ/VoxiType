@@ -155,7 +155,7 @@ export function PerAppTab() {
                 <button
                   type="button"
                   onClick={() => void handleRemove(m.id)}
-                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                   title={t("settings.app_rules.delete_tooltip")}
                   aria-label={t("settings.app_rules.delete_rule", { app: m.app_process_name })}
                 >

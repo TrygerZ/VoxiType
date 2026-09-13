@@ -38,7 +38,7 @@ export function SettingsPanel() {
 
   return (
     <div className="mx-auto flex h-full max-w-4xl">
-      <div className="flex w-56 shrink-0 flex-col gap-0.5 px-4 py-9">
+      <div className="flex w-56 shrink-0 flex-col gap-0.5 px-4 py-9" role="tablist" aria-orientation="vertical">
         <h1 className="mb-4 px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-vx-text-dim">
           Preferences
         </h1>
@@ -46,8 +46,10 @@ export function SettingsPanel() {
           <button
             key={id}
             type="button"
+            role="tab"
+            aria-selected={active === id}
             onClick={() => setActive(id)}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
               active === id
                 ? "font-medium text-vx-text-primary bg-vx-bg-tertiary shadow-vx-sm"
                 : "font-normal text-vx-text-dim hover:text-vx-text-secondary hover:bg-vx-bg-tertiary/50"

@@ -206,7 +206,7 @@ export function DictionaryPanel() {
                   <button
                     type="button"
                     onClick={() => void handleToggle(e.id, e.is_active)}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
                     aria-label={e.is_active ? t("dictionary.deactivate_word", { word: e.word }) : t("dictionary.activate_word", { word: e.word })}
                   >
@@ -219,7 +219,7 @@ export function DictionaryPanel() {
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => remove(e.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={t("dictionary.delete_tooltip")}
                     aria-label={t("dictionary.delete_word", { word: e.word })}
                   >

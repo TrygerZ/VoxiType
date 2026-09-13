@@ -208,8 +208,9 @@ export function HomeView() {
             type="button"
             onClick={handleMicClick}
             disabled={isProcessing}
-            className="group relative mb-6 flex h-40 w-40 items-center justify-center rounded-full focus:outline-none disabled:cursor-not-allowed"
+            className="group relative mb-6 flex h-40 w-40 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-primary disabled:cursor-not-allowed"
             title={isRecording ? t("home.mic_recording_tooltip") : t("home.mic_tooltip")}
+            aria-label={isRecording ? t("home.mic_recording_tooltip") : t("home.mic_tooltip")}
           >
             {/* Outer soft state ring — calm tint, no colored bloom */}
             <span
@@ -406,7 +407,7 @@ export function HomeView() {
                     key={m.id}
                     type="button"
                     onClick={() => void invokeAction(() => updateSetting("active_mode", m.id))}
-                    className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none ${
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       activeMode === m.id
                         ? "border-vx-accent/50 bg-vx-accent/5 text-vx-text-primary"
                         : "border-vx-border/30 bg-vx-bg-tertiary/30 text-vx-text-dim hover:text-vx-text-secondary hover:border-vx-border/60"
@@ -437,7 +438,8 @@ export function HomeView() {
                   <select
                     value={translationTarget}
                     onChange={(e) => void invokeAction(() => updateSetting("translation_target", e.target.value))}
-                    className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none"
+                    className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    aria-label={t("settings.general.lang")}
                   >
                     <option value="en">English</option>
                     <option value="id">Indonesia</option>
@@ -445,8 +447,11 @@ export function HomeView() {
                 )}
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={translationEnabled}
+                  aria-label={t("home.translate_desc")}
                   onClick={() => void invokeAction(() => updateSetting("translation_enabled", !translationEnabled))}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                     translationEnabled ? "bg-vx-accent" : "bg-vx-border-strong"
                   }`}
                 >
@@ -497,13 +502,14 @@ export function HomeView() {
                       </p>
 
                       {/* Copy, Re-inject, Pin Action buttons */}
-                      <div className="flex shrink-0 items-center gap-1 opacity-60 transition-opacity group-hover/item:opacity-100">
+                      <div className="flex shrink-0 items-center gap-1 opacity-60 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100">
                         {/* Copy */}
                         <button
                           type="button"
                           onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                           title={t("history.copy_tooltip")}
+                          aria-label={t("history.copy_tooltip")}
                         >
                           {copiedId === item.id ? (
                             <Check className="h-4 w-4 text-vx-success" />
@@ -516,8 +522,9 @@ export function HomeView() {
                         <button
                           type="button"
                           onClick={() => void handleReInject(item.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                           title={t("history.re_inject_tooltip")}
+                          aria-label={t("history.re_inject_tooltip")}
                         >
                           {injectedId === item.id ? (
                             <Check className="h-4 w-4 text-vx-success" />
@@ -530,12 +537,13 @@ export function HomeView() {
                         <button
                           type="button"
                           onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none ${
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                             item.is_pinned
                               ? "text-vx-accent"
                               : "text-vx-text-secondary hover:text-vx-text-primary"
                           }`}
                           title={item.is_pinned ? t("home.unpin_tooltip") : t("home.pin_tooltip")}
+                          aria-label={item.is_pinned ? t("home.unpin_tooltip") : t("home.pin_tooltip")}
                         >
                           <Pin className="h-4 w-4" />
                         </button>

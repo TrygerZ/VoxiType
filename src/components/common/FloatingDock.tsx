@@ -43,7 +43,7 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
               onClick={() => onChange(id)}
               aria-label={t(labelKey)}
               aria-current={isActive ? "page" : undefined}
-              className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-colors duration-200 ease-out hover:-translate-y-0.5 hover:bg-vx-bg-tertiary active:scale-95 focus:outline-none ${
+              className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-colors duration-200 ease-out hover:-translate-y-0.5 hover:bg-vx-bg-tertiary active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                 isActive ? "text-vx-text-primary" : "text-vx-text-secondary hover:text-vx-text-primary"
               }`}
               title={t(labelKey)}
@@ -60,7 +60,7 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
             </button>
 
             {/* Tooltip (macOS style) */}
-            <div className="absolute -top-10 left-1/2 pointer-events-none flex -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <div className="absolute -top-10 left-1/2 pointer-events-none flex -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <span className="whitespace-nowrap rounded-md border border-vx-border bg-vx-bg-tertiary px-2.5 py-1 text-xs font-medium text-vx-text-primary shadow-vx-sm">
                 {t(labelKey)}
               </span>

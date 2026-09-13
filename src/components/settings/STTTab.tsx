@@ -265,7 +265,7 @@ function PathPickerField({
       <button
         type="button"
         onClick={onBrowse}
-        className="mt-6 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-vx-bg-tertiary px-4 py-2.5 text-sm font-medium text-vx-text-primary transition-colors duration-150 hover:bg-vx-bg-elevated"
+        className="mt-6 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-vx-bg-tertiary px-4 py-2.5 text-sm font-medium text-vx-text-primary transition-colors duration-150 hover:bg-vx-bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
       >
         <FolderOpen className="h-4 w-4" />
         {browseLabel}
@@ -292,7 +292,7 @@ function StatusButton({
   return (
     <button
       type="button"
-      className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${statusClasses(
+      className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${statusClasses(
         status,
       )} ${className}`}
       {...rest}

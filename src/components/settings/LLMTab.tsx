@@ -98,7 +98,7 @@ export function LLMTab() {
               type="button"
               onClick={handleTestApi}
               disabled={testStatus === "testing" || (!localKey.trim() && !(settings.groq_api_key_set as boolean))}
-              className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                 testStatus === "ok"
                   ? "border-green-500/40 bg-green-500/10 text-green-600"
                   : testStatus === "fail"
