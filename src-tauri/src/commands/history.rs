@@ -71,30 +71,63 @@ pub async fn re_inject(
     Ok(())
 }
 
+pub const MAX_EXPORT_RECORDS: usize = 10_000;
+
+pub fn validate_export_count(total: usize) -> std::result::Result<(), AppError> {
+    if total > MAX_EXPORT_RECORDS {
+        return Err(AppError::storage(format!(
+            "export exceeds maximum of {MAX_EXPORT_RECORDS} records"
+        )));
+    }
+    Ok(())
+}
+
+fn format_csv_export(items: &[TranscriptionEntry]) -> String {
+    let mut out = String::from("created_at,mode,source_lang,word_count,text_formatted\n");
+    for it in items {
+        out.push_str(&format!(
+            "\"{}\",\"{}\",\"{}\",{},\"{}\"\n",
+            runtime::csv_escape(&it.created_at),
+            runtime::csv_escape(&it.mode),
+            runtime::csv_escape(&it.source_lang),
+            it.word_count,
+            runtime::csv_escape(&it.text_formatted),
+        ));
+    }
+    out
+}
+
 #[tauri::command]
 pub fn export_history(
     state: State<'_, AppStateInner>,
     format: String,
 ) -> std::result::Result<String, AppError> {
-    let items = HistoryRepository::new(&state.db).list(&HistoryFilter {
-        limit: Some(10_000),
+    let repo = HistoryRepository::new(&state.db);
+    let total = repo.count()? as usize;
+    validate_export_count(total)?;
+    let items = repo.list(&HistoryFilter {
+        limit: Some(MAX_EXPORT_RECORDS as u32),
         ..Default::default()
     })?;
     match format.as_str() {
-        "csv" => {
-            let mut out = String::from("created_at,mode,source_lang,word_count,text_formatted\n");
-            for it in &items {
-                out.push_str(&format!(
-                    "\"{}\",\"{}\",\"{}\",{},\"{}\"\n",
-                    runtime::csv_escape(&it.created_at),
-                    runtime::csv_escape(&it.mode),
-                    runtime::csv_escape(&it.source_lang),
-                    it.word_count,
-                    runtime::csv_escape(&it.text_formatted),
-                ));
-            }
-            Ok(out)
-        }
+        "csv" => Ok(format_csv_export(&items)),
         _ => serde_json::to_string_pretty(&items).map_err(AppError::from),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_export_count_permits_under_and_at_cap() {
+        assert!(validate_export_count(0).is_ok());
+        assert!(validate_export_count(MAX_EXPORT_RECORDS).is_ok());
+    }
+
+    #[test]
+    fn validate_export_count_rejects_over_cap() {
+        let err = validate_export_count(MAX_EXPORT_RECORDS + 1).unwrap_err();
+        assert!(err.message.contains("exceeds maximum of 10000 records"));
     }
 }
