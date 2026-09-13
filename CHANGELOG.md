@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-09-13
+
+### Fixed
+- Reveal hover action rows on keyboard focus across history, dictionary, snippets, and home views
+- Add accessible labels to icon-only buttons and restore focus-visible rings on interactive controls
+- Cancel stale test status timers on retest in STT settings, onboarding, and LLM settings
+- Clear copy feedback and toast timers on unmount and cleanup
+- Cancel debounced API key updates when their component unmounts
+- Move i18n locale mutation out of the render path into store subscriptions
+- Guard dictionary, snippet, shortcut, and per-app mutations against duplicate in-flight submissions
+- Scope audio level updates to the waveform so HomeView no longer rerenders at 20 Hz
+- Wrap onboarding in the application error boundary
+- Replace blind settings casts with type guards across all settings tabs and onboarding
+- Route dictionary panel strings through the i18n catalog
+- Detach the waveform audio listener reliably on fast unmount
+- Normalize empty usage statistics to zeroed defaults to avoid error boundary crashes
+
+### Changed
+- Document that CSP style-src unsafe-inline remains required for the WebView2 transparency workaround
+
 ## [0.4.8] - 2026-09-13
 
 ### Fixed
