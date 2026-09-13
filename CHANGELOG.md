@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-09-13
+
+### Fixed
+- Prevent recovery-path panic by making logging initialization idempotent
+- Reject truncated LLM responses with finish_reason length instead of injecting incomplete text
+- Stop recordings at the exact 300-second cap boundary
+- Reject backslash URL authority ambiguity in open_url allowlist
+- Sanitize Ollama provider error bodies before logging
+- Resolve npm audit advisories in dev dependencies (esbuild, postcss, browserslist, nanoid, js-yaml, baseline-browser-mapping)
+
+### Security
+- Ignore local master key, database, and data marker files in git
+- Set explicit least-privilege permissions in CI workflows
+- Remove unused asset protocol entry from CSP
+
 ## [0.4.4] - 2026-09-12
 
 ### Fixed
