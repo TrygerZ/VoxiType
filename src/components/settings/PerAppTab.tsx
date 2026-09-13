@@ -23,6 +23,7 @@ export function PerAppTab() {
   const update = useSettingsStore((s) => s.update);
   const [modes, setModes] = useState<PerAppMode[]>([]);
   const [activeApp, setActiveApp] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const [proc, setProc] = useState("");
   const [mode, setMode] = useState("message");
@@ -35,13 +36,19 @@ export function PerAppTab() {
   }, []);
 
   const getActive = async () => {
-    await invokeAction(async () => {
-      const a = await invoke<string | null>("get_active_app");
-      if (a) {
-        setActiveApp(a);
-        setProc(a);
-      }
-    });
+    if (busy) return;
+    setBusy(true);
+    try {
+      await invokeAction(async () => {
+        const a = await invoke<string | null>("get_active_app");
+        if (a) {
+          setActiveApp(a);
+          setProc(a);
+        }
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -49,28 +56,39 @@ export function PerAppTab() {
   }, [load]);
 
   const handleAdd = async () => {
-    if (!proc.trim()) return;
-    const ok = await invokeAction(async () => {
-      await invoke("set_per_app_mode", {
-        mapping: {
-          id: 0,
-          app_process_name: proc.trim().toLowerCase(),
-          app_display_name: proc.trim(),
-          mode_id: mode,
-        },
+    if (busy || !proc.trim()) return;
+    setBusy(true);
+    try {
+      const ok = await invokeAction(async () => {
+        await invoke("set_per_app_mode", {
+          mapping: {
+            id: 0,
+            app_process_name: proc.trim().toLowerCase(),
+            app_display_name: proc.trim(),
+            mode_id: mode,
+          },
+        });
+        await load();
       });
-      await load();
-    });
-    if (ok) {
-      setProc("");
+      if (ok) {
+        setProc("");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleRemove = async (id: number) => {
-    await invokeAction(async () => {
-      await invoke("delete_per_app_mode", { id });
-      await load();
-    });
+    if (busy) return;
+    setBusy(true);
+    try {
+      await invokeAction(async () => {
+        await invoke("delete_per_app_mode", { id });
+        await load();
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const perAppOn = (settings.per_app_mode as boolean) ?? false;
@@ -106,7 +124,12 @@ export function PerAppTab() {
                   onChange={(e) => setProc(e.target.value)}
                 />
               </div>
-              <Button variant="ghost" onClick={() => void getActive()} title={t("settings.app_rules.detect_btn")}>
+              <Button
+                variant="ghost"
+                onClick={() => void getActive()}
+                disabled={busy}
+                title={t("settings.app_rules.detect_btn")}
+              >
                 <Crosshair className="h-4 w-4" /> {t("settings.app_rules.detect_btn")}
               </Button>
             </div>
@@ -124,7 +147,11 @@ export function PerAppTab() {
                   onChange={(e) => setMode(e.target.value)}
                 />
               </div>
-              <Button variant="primary" onClick={() => void handleAdd()}>
+              <Button
+                variant="primary"
+                onClick={() => void handleAdd()}
+                disabled={busy}
+              >
                 <Plus className="h-4 w-4" /> {t("settings.app_rules.add_btn")}
               </Button>
             </div>
@@ -155,7 +182,8 @@ export function PerAppTab() {
                 <button
                   type="button"
                   onClick={() => void handleRemove(m.id)}
-                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                  disabled={busy}
+                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary disabled:opacity-50"
                   title={t("settings.app_rules.delete_tooltip")}
                   aria-label={t("settings.app_rules.delete_rule", { app: m.app_process_name })}
                 >
