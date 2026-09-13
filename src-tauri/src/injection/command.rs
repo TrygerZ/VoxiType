@@ -6,20 +6,8 @@
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
+use super::KeyGuard;
 use crate::error::{AppError, Result};
-
-/// RAII guard that releases a key on drop, preventing keyboard state corruption
-/// if an error occurs mid-sequence.
-struct KeyGuard<'a> {
-    enigo: &'a mut Enigo,
-    key: Key,
-}
-
-impl<'a> Drop for KeyGuard<'a> {
-    fn drop(&mut self) {
-        let _ = self.enigo.key(self.key, Direction::Release);
-    }
-}
 
 /// Get the platform-appropriate modifier key (Cmd on macOS, Ctrl elsewhere).
 #[cfg(target_os = "macos")]

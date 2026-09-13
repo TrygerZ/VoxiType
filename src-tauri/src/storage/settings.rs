@@ -50,13 +50,27 @@ impl<'a> SettingsManager<'a> {
 
     /// Set a pre-encoded JSON string value.
     pub fn set_raw(&self, key: &str, json_value: &str) -> Result<()> {
+        self.set_raw_batch(&[(key, json_value)])
+    }
+
+    /// Set multiple pre-encoded JSON string values atomically in a single transaction.
+    pub fn set_raw_batch(&self, entries: &[(&str, &str)]) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
         self.db.with_conn(|c| {
-            c.execute(
-                "INSERT INTO settings (key, value, updated_at)
-                 VALUES (?1, ?2, datetime('now'))
-                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')",
-                rusqlite::params![key, json_value],
-            )?;
+            let tx = c.unchecked_transaction()?;
+            {
+                let mut stmt = tx.prepare(
+                    "INSERT INTO settings (key, value, updated_at)
+                     VALUES (?1, ?2, datetime('now'))
+                     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')",
+                )?;
+                for (key, json_value) in entries {
+                    stmt.execute(rusqlite::params![key, json_value])?;
+                }
+            }
+            tx.commit()?;
             Ok(())
         })
     }
@@ -100,5 +114,21 @@ mod tests {
         let mgr = SettingsManager::new(&db);
         let theme: Option<String> = mgr.get("theme").unwrap();
         assert_eq!(theme, Some("dark".to_string()));
+    }
+
+    #[test]
+    fn set_raw_batch_roundtrip() {
+        let db = Database::open_in_memory().unwrap();
+        let mgr = SettingsManager::new(&db);
+        mgr.set_raw_batch(&[("key_a", "\"val_a\""), ("key_b", "\"val_b\"")])
+            .unwrap();
+        assert_eq!(
+            mgr.get::<String>("key_a").unwrap(),
+            Some("val_a".to_string())
+        );
+        assert_eq!(
+            mgr.get::<String>("key_b").unwrap(),
+            Some("val_b".to_string())
+        );
     }
 }

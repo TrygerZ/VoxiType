@@ -29,7 +29,7 @@ impl GroqLlmFormatter {
 
     async fn chat(&self, system: &str, user: &str) -> Result<String> {
         if self.config.api_key.trim().is_empty() {
-            return Err(AppError::api_key_missing("Groq API key is not set"));
+            return Err(AppError::llm_api_key_missing("Groq API key is not set"));
         }
         let body = json!({
             "model": self.config.model,
@@ -155,5 +155,16 @@ mod tests {
     fn rejects_empty_completion() {
         let json = r#"{"choices":[{"message":{"content":"   "},"finish_reason":"stop"}]}"#;
         assert!(parse_chat_response(json).is_err());
+    }
+
+    #[tokio::test]
+    async fn missing_api_key_returns_llm_api_key_invalid() {
+        let formatter = GroqLlmFormatter::new(GroqLlmConfig {
+            api_key: String::new(),
+            ..Default::default()
+        });
+        let result = formatter.format("hello", &LlmMode::Dictation, "en").await;
+        let err = result.unwrap_err();
+        assert_eq!(err.code, ErrorCode::LlmApiKeyInvalid);
     }
 }

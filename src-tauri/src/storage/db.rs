@@ -55,6 +55,7 @@ impl Database {
             "UPDATE settings SET value = '\"whisper-large-v3-turbo\"' WHERE key = 'stt_model' AND value = '\"small\"'",
             [],
         );
+        let _ = conn.execute("DROP INDEX IF EXISTS idx_snippets_trigger", []);
         Ok(())
     }
 
@@ -83,5 +84,29 @@ mod tests {
             })
             .unwrap();
         assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn migration_drops_redundant_snippets_index() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE snippets (id TEXT PRIMARY KEY, trigger_phrase TEXT NOT NULL UNIQUE);
+             CREATE INDEX idx_snippets_trigger ON snippets(trigger_phrase);",
+        )
+        .unwrap();
+        let db = Database {
+            conn: Mutex::new(conn),
+        };
+        db.migrate().unwrap();
+        let exists: i64 = db
+            .with_conn(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_snippets_trigger'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(exists, 0);
     }
 }

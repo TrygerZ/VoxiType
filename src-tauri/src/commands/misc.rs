@@ -133,9 +133,17 @@ pub async fn pick_setup_file(
             .map_err(|e| AppError::internal(format!("File picker failed: {e}")))??
     };
     if let Some(path) = &picked {
-        remember_picker_dir(&state, &kind, path);
+        let canonical = Path::new(path)
+            .canonicalize()
+            .map_err(|e| AppError::internal(format!("Failed to canonicalize picked path: {e}")))?;
+        if canonical.is_dir() {
+            return Err(AppError::internal("Selected path cannot be a directory"));
+        }
+        let clean = canonical_to_clean_string(&canonical);
+        remember_picker_path(&state, &kind, canonical);
+        return Ok(Some(clean));
     }
-    Ok(picked)
+    Ok(None)
 }
 
 /// Picker kinds that gate whisper.cpp path settings.
@@ -143,18 +151,19 @@ const PICKER_KIND_BINARY: &str = "whisper_binary";
 const PICKER_KIND_MODEL: &str = "whisper_model";
 const PICKER_KIND_DATA_DIRECTORY: &str = "data_directory";
 
-fn remember_picker_dir(state: &AppStateInner, kind: &str, picked_path: &str) {
-    let Some(parent) = Path::new(picked_path).parent() else {
-        tracing::warn!("Picked '{kind}' file has no parent directory");
-        return;
-    };
-    let Ok(dir) = parent.canonicalize() else {
-        tracing::warn!("Could not canonicalize picker directory for '{kind}'");
-        return;
-    };
+fn canonical_to_clean_string(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        stripped.to_string()
+    } else {
+        s.into_owned()
+    }
+}
+
+fn remember_picker_path(state: &AppStateInner, kind: &str, canonical: PathBuf) {
     match state.last_picker_dirs.lock() {
         Ok(mut dirs) => {
-            dirs.insert(kind.to_string(), dir);
+            dirs.insert(kind.to_string(), canonical);
         }
         Err(_) => {
             tracing::warn!("Picker directory state poisoned; next gated write may be refused")
@@ -163,15 +172,15 @@ fn remember_picker_dir(state: &AppStateInner, kind: &str, picked_path: &str) {
 }
 
 /// A path is acceptable only when a dialog result of `kind` exists and the
-/// path canonicalizes under that result's parent directory. Canonicalizing
-/// both sides resolves `..` traversal and case differences on Windows; a
+/// path canonicalizes to the exact same canonical path selected by the user.
+/// Canonicalizing resolves `..` traversal and case differences on Windows; a
 /// missing file fails `canonicalize` and is rejected outright.
-fn path_matches_picker_dir(base: Option<&Path>, path: &str) -> bool {
-    let Some(base) = base else {
+fn path_matches_picker_path(expected: Option<&Path>, path: &str) -> bool {
+    let Some(expected) = expected else {
         return false;
     };
     match Path::new(path).canonicalize() {
-        Ok(candidate) => candidate.starts_with(base),
+        Ok(candidate) => candidate == expected,
         Err(_) => false,
     }
 }
@@ -185,7 +194,7 @@ fn ensure_picker_backed_path(
         .last_picker_dirs
         .lock()
         .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
-    if path_matches_picker_dir(dirs.get(kind).map(PathBuf::as_path), path) {
+    if path_matches_picker_path(dirs.get(kind).map(PathBuf::as_path), path) {
         Ok(())
     } else {
         Err(AppError::internal(format!(
@@ -206,13 +215,15 @@ pub async fn pick_data_directory(
         let canonical = Path::new(path)
             .canonicalize()
             .map_err(|e| AppError::data_directory(format!("Invalid selected directory: {e}")))?;
+        let clean = canonical_to_clean_string(&canonical);
         let mut dirs = state
             .last_picker_dirs
             .lock()
             .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
         dirs.insert(PICKER_KIND_DATA_DIRECTORY.to_string(), canonical);
+        return Ok(Some(clean));
     }
-    Ok(picked)
+    Ok(None)
 }
 
 #[tauri::command]
@@ -277,25 +288,61 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     Ok((!path.is_empty()).then_some(path))
 }
 
-/// Persist whisper.cpp paths. The only sanctioned write path for these
-/// settings: each value must live under the directory of a file the user
-/// actually picked with the native dialog in this session, so a compromised
-/// webview cannot point local STT at an attacker-controlled binary.
+/// Persist whisper.cpp paths atomically after validating both.
+///
+/// Both paths must resolve to the exact canonical files selected
+/// via the native setup dialog in this session.
 #[tauri::command]
 pub fn set_whisper_cpp_paths(
     state: State<'_, AppStateInner>,
     binary_path: Option<String>,
     model_path: Option<String>,
 ) -> std::result::Result<(), AppError> {
-    let settings = SettingsManager::new(&state.db);
-    if let Some(binary) = &binary_path {
+    // Validate both paths first so failure leaves existing settings untouched.
+    let canonical_binary = if let Some(binary) = &binary_path {
         ensure_picker_backed_path(&state, PICKER_KIND_BINARY, binary)?;
-        settings.set_raw("whisper_cpp_binary_path", &serde_json::to_string(binary)?)?;
-    }
-    if let Some(model) = &model_path {
+        let canonical = Path::new(binary).canonicalize().map_err(|e| {
+            AppError::stt(format!("Failed to canonicalize whisper binary path: {e}"))
+        })?;
+        if canonical.is_dir() {
+            return Err(AppError::stt("Whisper binary path cannot be a directory"));
+        }
+        Some(canonical_to_clean_string(&canonical))
+    } else {
+        None
+    };
+
+    let canonical_model = if let Some(model) = &model_path {
         ensure_picker_backed_path(&state, PICKER_KIND_MODEL, model)?;
-        settings.set_raw("whisper_cpp_model_path", &serde_json::to_string(model)?)?;
+        let canonical = Path::new(model).canonicalize().map_err(|e| {
+            AppError::stt(format!("Failed to canonicalize whisper model path: {e}"))
+        })?;
+        if canonical.is_dir() {
+            return Err(AppError::stt("Whisper model path cannot be a directory"));
+        }
+        Some(canonical_to_clean_string(&canonical))
+    } else {
+        None
+    };
+
+    let binary_json = canonical_binary
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let model_json = canonical_model
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+
+    let mut entries = Vec::with_capacity(2);
+    if let Some(ref val) = binary_json {
+        entries.push(("whisper_cpp_binary_path", val.as_str()));
     }
+    if let Some(ref val) = model_json {
+        entries.push(("whisper_cpp_model_path", val.as_str()));
+    }
+
+    SettingsManager::new(&state.db).set_raw_batch(&entries)?;
     Ok(())
 }
 
@@ -402,9 +449,19 @@ pub async fn test_whisper_cpp(
     ensure_picker_backed_path(&state, PICKER_KIND_BINARY, &binary_path)?;
     ensure_picker_backed_path(&state, PICKER_KIND_MODEL, &model_path)?;
 
+    let canonical_binary = Path::new(&binary_path)
+        .canonicalize()
+        .map_err(|e| AppError::stt(format!("Failed to canonicalize whisper binary path: {e}")))?;
+    if canonical_binary.is_dir() {
+        return Err(AppError::stt("Whisper binary path cannot be a directory"));
+    }
+    let canonical_model = Path::new(&model_path)
+        .canonicalize()
+        .map_err(|e| AppError::stt(format!("Failed to canonicalize whisper model path: {e}")))?;
+
     let engine = crate::stt::whisper_cpp::WhisperCppEngine::new(WhisperCppConfig {
-        binary_path,
-        model_path,
+        binary_path: canonical_to_clean_string(&canonical_binary),
+        model_path: canonical_to_clean_string(&canonical_model),
         threads: threads.max(1),
     });
     let config = SttConfig {
@@ -455,60 +512,72 @@ mod tests {
     }
 
     /// Create a unique scratch dir with one file inside; returns the
-    /// canonicalized dir and the canonicalized file path as a string.
+    /// canonicalized file path and the clean file path as a string.
     fn scratch_dir_with_file(test_name: &str) -> (PathBuf, String) {
         let dir = std::env::temp_dir().join(format!("voxitype-misc-{test_name}"));
         std::fs::create_dir_all(&dir).expect("scratch dir creation failed");
         let file = dir.join("tool.exe");
         std::fs::write(&file, b"stub").expect("stub file write failed");
-        let canonical_dir = dir.canonicalize().expect("canonicalize dir failed");
         let canonical_file = file.canonicalize().expect("canonicalize file failed");
-        (canonical_dir, canonical_file.to_string_lossy().into_owned())
+        let clean = canonical_to_clean_string(&canonical_file);
+        (canonical_file, clean)
     }
 
     #[test]
     fn picker_gated_path_accepts_dialog_result() {
-        let (dir, file) = scratch_dir_with_file("accept");
-        assert!(path_matches_picker_dir(Some(&dir), &file));
+        let (canonical_file, file) = scratch_dir_with_file("accept");
+        assert!(path_matches_picker_path(Some(&canonical_file), &file));
     }
 
     #[test]
     fn picker_gated_path_rejects_traversal_and_siblings() {
-        let (dir, _file) = scratch_dir_with_file("traversal");
+        let (canonical_file, _file) = scratch_dir_with_file("traversal");
+        let dir = canonical_file.parent().unwrap();
+
+        // Sibling file in the same directory.
+        let sibling_file = dir.join("sibling.exe");
+        std::fs::write(&sibling_file, b"stub").ok();
+        if let Ok(sibling) = sibling_file.canonicalize() {
+            assert!(!path_matches_picker_path(
+                Some(&canonical_file),
+                &sibling.to_string_lossy()
+            ));
+        }
+
         // Sibling directory with an existing file.
         let sibling = dir
             .parent()
-            .map(|p| p.join(".."))
+            .map(|p| p.join("voxitype-misc-sibling"))
             .unwrap_or_else(|| std::env::temp_dir().join("voxitype-misc-sibling"));
         std::fs::create_dir_all(&sibling).ok();
         let sibling_file = sibling.join("evil.exe");
         std::fs::write(&sibling_file, b"stub").ok();
         if let Ok(evil) = sibling_file.canonicalize() {
-            assert!(!path_matches_picker_dir(
-                Some(&dir),
+            assert!(!path_matches_picker_path(
+                Some(&canonical_file),
                 &evil.to_string_lossy()
             ));
         }
-        // Traversal that resolves outside the base dir.
+        // Traversal that resolves outside the selected file.
         let escaped = dir.join("..").join("voxitype-misc-accept").join("tool.exe");
-        assert!(!path_matches_picker_dir(
-            Some(&dir),
+        assert!(!path_matches_picker_path(
+            Some(&canonical_file),
             &escaped.to_string_lossy()
         ));
     }
 
     #[test]
     fn picker_gated_path_requires_prior_pick() {
-        let (_dir, file) = scratch_dir_with_file("no-base");
-        assert!(!path_matches_picker_dir(None, &file));
+        let (_canonical_file, file) = scratch_dir_with_file("no-base");
+        assert!(!path_matches_picker_path(None, &file));
     }
 
     #[test]
     fn picker_gated_path_rejects_missing_file() {
-        let (dir, _file) = scratch_dir_with_file("missing-file");
-        let ghost = dir.join("does-not-exist.exe");
-        assert!(!path_matches_picker_dir(
-            Some(&dir),
+        let (canonical_file, _file) = scratch_dir_with_file("missing-file");
+        let ghost = canonical_file.parent().unwrap().join("does-not-exist.exe");
+        assert!(!path_matches_picker_path(
+            Some(&canonical_file),
             &ghost.to_string_lossy()
         ));
     }

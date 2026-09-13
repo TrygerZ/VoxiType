@@ -88,6 +88,9 @@ fn encode_dpapi_key_file(blob: &[u8]) -> String {
     format!("{DPAPI_KEY_PREFIX}{}", B64.encode(blob))
 }
 
+const MAX_READ_ATTEMPTS: u32 = 10;
+const RETRY_DELAY_MS: u64 = 10;
+
 /// Load or create the 32-byte master key under `app_data_dir`.
 ///
 /// If the key file exists but cannot be read, is not exactly 32 legacy bytes,
@@ -98,17 +101,7 @@ fn encode_dpapi_key_file(blob: &[u8]) -> String {
 pub fn get_master_key(app_data_dir: &Path) -> Result<[u8; 32]> {
     let path = key_path(app_data_dir);
     match std::fs::read(&path) {
-        Ok(bytes) => match parse_stored_key_file(&bytes)? {
-            StoredKeyFile::LegacyRaw(key) => {
-                tracing::info!(
-                    "master.key uses the legacy unprotected format; \
-                     migrating to the DPAPI-wrapped format"
-                );
-                write_key_file(&path, &key)?;
-                Ok(key)
-            }
-            StoredKeyFile::DpapiWrapped(blob) => load_protected_key(&blob),
-        },
+        Ok(bytes) => parse_and_migrate_key(&path, &bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => generate_master_key(&path),
         Err(e) => Err(AppError::internal(format!(
             "failed to read master.key: {e}"
@@ -116,15 +109,97 @@ pub fn get_master_key(app_data_dir: &Path) -> Result<[u8; 32]> {
     }
 }
 
-/// Generate, persist, and return a fresh 32-byte master key at `path`.
+/// Parse stored key bytes and migrate legacy unprotected keys if encountered.
+fn parse_and_migrate_key(path: &Path, bytes: &[u8]) -> Result<[u8; 32]> {
+    match parse_stored_key_file(bytes)? {
+        StoredKeyFile::LegacyRaw(key) => {
+            tracing::info!(
+                "master.key uses the legacy unprotected format; \
+                 migrating to the DPAPI-wrapped format"
+            );
+            write_key_file(path, &key)?;
+            Ok(key)
+        }
+        StoredKeyFile::DpapiWrapped(blob) => load_protected_key(&blob),
+    }
+}
+
+/// Read existing master key file from disk.
+fn read_existing_key(path: &Path) -> Result<[u8; 32]> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| AppError::internal(format!("failed to read master.key: {e}")))?;
+    parse_and_migrate_key(path, &bytes)
+}
+
+/// Retry reading key file with backoff when losing a creation race.
+fn read_existing_key_with_retry(path: &Path) -> Result<[u8; 32]> {
+    let mut last_err = None;
+    for _ in 0..MAX_READ_ATTEMPTS {
+        match read_existing_key(path) {
+            Ok(key) => return Ok(key),
+            Err(e) => {
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        AppError::internal("failed to read master.key after concurrent creation")
+    }))
+}
+
+/// Generate, persist exclusively, and return a fresh 32-byte master key at `path`.
 fn generate_master_key(path: &Path) -> Result<[u8; 32]> {
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    write_key_file(path, &key)?;
-    Ok(key)
+    match create_exclusive_key_file(path, &key) {
+        Ok(()) => Ok(key),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // Another instance won the race to create the key file.
+            read_existing_key_with_retry(path)
+        }
+        Err(e) => Err(AppError::internal(format!(
+            "failed to create master.key: {e}"
+        ))),
+    }
+}
+
+/// Serialize master key for disk storage based on target platform.
+fn serialize_master_key(key: &[u8; 32]) -> Result<Vec<u8>> {
+    #[cfg(windows)]
+    {
+        let protected = dpapi::protect(key)?;
+        Ok(encode_dpapi_key_file(&protected).into_bytes())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(key.to_vec())
+    }
+}
+
+/// Exclusively create and write key file, failing if it already exists.
+fn create_exclusive_key_file(
+    path: &Path,
+    key: &[u8; 32],
+) -> std::result::Result<(), std::io::Error> {
+    use std::io::Write;
+    let payload = serialize_master_key(key).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    if let Err(e) = file.write_all(&payload).and_then(|_| file.sync_all()) {
+        let _ = std::fs::remove_file(path);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Unwrap a DPAPI blob into the raw 32-byte master key.
@@ -151,26 +226,22 @@ fn load_protected_key(blob: &[u8]) -> Result<[u8; MASTER_KEY_LEN]> {
 fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
+    let payload = serialize_master_key(key)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
         .mode(0o600)
         .open(path)?;
-    file.write_all(key)?;
+    file.write_all(&payload)?;
     file.sync_all()?;
     Ok(())
 }
 
 #[cfg(not(unix))]
 fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
-    // On Windows the key is DPAPI-wrapped (CurrentUser scope) before it hits
-    // disk; any other non-unix target (none supported today) stays plaintext.
-    #[cfg(windows)]
-    let contents = encode_dpapi_key_file(&dpapi::protect(key)?);
-    #[cfg(not(windows))]
-    let contents = key.to_vec();
-    std::fs::write(path, contents)?;
+    let payload = serialize_master_key(key)?;
+    std::fs::write(path, payload)?;
     Ok(())
 }
 
@@ -323,19 +394,16 @@ pub fn encrypt_api_key(plaintext: &str, master_key: &[u8; 32]) -> Result<String>
 
 /// Decrypt a value produced by [`encrypt_api_key`].
 ///
-/// Legacy plaintext values (no prefix) are still returned unchanged as a
-/// defensive fallback so a failed migration never bricks an existing install,
-/// but every hit is logged loudly: post-migration this should never happen.
+/// Plaintext values without the [`ENC_PREFIX`] are rejected — migration
+/// at startup ensures all stored keys are encrypted at rest.
 pub fn decrypt_api_key(stored: &str, master_key: &[u8; 32]) -> Result<String> {
     if stored.is_empty() {
         return Ok(String::new());
     }
     let Some(b64) = stored.strip_prefix(ENC_PREFIX) else {
-        tracing::warn!(
-            "decrypt_api_key got a value without '{ENC_PREFIX}' prefix; \
-             treating as legacy plaintext — migrate_legacy_api_key should have re-encrypted it"
-        );
-        return Ok(stored.to_string());
+        return Err(AppError::internal(
+            "unencrypted API key rejected: expected encrypted 'enc:v1:' prefix",
+        ));
     };
     let blob = B64
         .decode(b64)
@@ -379,10 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn plaintext_passthrough() {
+    fn unencrypted_key_rejected() {
         let key = [1u8; 32];
-        // Legacy plaintext without prefix decrypts to itself.
-        assert_eq!(decrypt_api_key("plainkey", &key).unwrap(), "plainkey");
+        assert!(decrypt_api_key("plainkey", &key).is_err());
     }
 
     #[test]
@@ -442,6 +509,17 @@ mod tests {
         let first = get_master_key(&dir).unwrap();
         // Second call must load the persisted key, not regenerate a new one.
         let second = get_master_key(&dir).unwrap();
+        assert_eq!(first, second);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn concurrent_create_reads_existing_key_on_conflict() {
+        let dir = std::env::temp_dir().join(format!("voxitype_key_race_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = key_path(&dir);
+        let first = get_master_key(&dir).unwrap();
+        // Direct generation on existing file must re-read rather than recreate.
+        let second = generate_master_key(&path).unwrap();
         assert_eq!(first, second);
         let _ = std::fs::remove_dir_all(&dir);
     }

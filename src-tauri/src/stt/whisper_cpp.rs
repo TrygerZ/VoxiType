@@ -150,7 +150,22 @@ fn spawn_whisper_child(
     let stdout_file = fs::File::create(stdout_path)?;
     let stderr_file = fs::File::create(stderr_path)?;
 
-    let mut command = Command::new(&run.binary_path);
+    let binary = if is_path_like(&run.binary_path) {
+        let canonical = Path::new(&run.binary_path)
+            .canonicalize()
+            .map_err(|e| AppError::stt(format!("Failed to resolve whisper binary path: {e}")))?;
+        if !canonical.is_file() {
+            return Err(AppError::stt(format!(
+                "whisper.cpp binary is not a file: {}",
+                canonical.display()
+            )));
+        }
+        canonical_to_exec_path(&canonical)
+    } else {
+        PathBuf::from(&run.binary_path)
+    };
+
+    let mut command = Command::new(&binary);
     command.args(build_args(run, wav_path, output_prefix));
     command.stdout(stdout_file);
     command.stderr(stderr_file);
@@ -160,6 +175,21 @@ fn spawn_whisper_child(
     command
         .spawn()
         .map_err(|e| AppError::stt(format!("Failed to run whisper.cpp: {e}")))
+}
+
+#[cfg(windows)]
+fn canonical_to_exec_path(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+#[cfg(not(windows))]
+fn canonical_to_exec_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
 }
 
 fn wait_child_bounded(
@@ -424,5 +454,24 @@ goto loop
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::Timeout);
+    }
+
+    #[test]
+    fn spawn_whisper_child_rejects_directory_binary() {
+        let dir = TempRunDir::new().unwrap();
+        let run = WhisperRun {
+            binary_path: dir.path.to_string_lossy().into_owned(),
+            model_path: "dummy".to_string(),
+            threads: 1,
+            language: "en".to_string(),
+            prompt: None,
+            temperature: 0.0,
+            audio: vec![],
+        };
+        let wav = dir.path.join("a.wav");
+        let out = dir.path.join("out");
+        let stdout = dir.path.join("out.log");
+        let stderr = dir.path.join("err.log");
+        assert!(spawn_whisper_child(&run, &wav, &out, &stdout, &stderr).is_err());
     }
 }

@@ -79,7 +79,7 @@ impl AppStateInner {
             tracing::warn!("Failed to prune old history: {e}");
         }
 
-        migrate_legacy_api_key(&db, &master_key);
+        migrate_legacy_api_key(&db, &master_key)?;
 
         Ok(Self {
             db,
@@ -97,36 +97,23 @@ impl AppStateInner {
 /// Upgrade-on-startup: re-encrypt a legacy plaintext `groq_api_key` in place.
 ///
 /// Idempotent — no-ops when the key is absent, empty, or already carries the
-/// `enc:v1:` prefix. Failures are logged but never abort startup; the
-/// defensive plaintext passthrough in [`crypto::decrypt_api_key`] keeps the
-/// app working until the next launch can retry the migration.
-fn migrate_legacy_api_key(db: &Database, master_key: &[u8; 32]) {
+/// `enc:v1:` prefix. Fails closed with an explicit error if re-encryption or
+/// persistence fails so unencrypted keys are never retained at rest.
+fn migrate_legacy_api_key(db: &Database, master_key: &[u8; 32]) -> error::Result<()> {
     const API_KEY_SETTING: &str = "groq_api_key";
     let settings = SettingsManager::new(db);
 
-    let stored = match settings.get::<String>(API_KEY_SETTING) {
-        Ok(stored) => stored,
-        Err(e) => {
-            tracing::warn!("API key migration skipped, cannot read setting: {e}");
-            return;
-        }
-    };
-
+    let stored = settings.get::<String>(API_KEY_SETTING)?;
     let Some(stored) = stored else {
-        return; // Key never set — nothing to migrate.
+        return Ok(()); // Key never set — nothing to migrate.
     };
 
-    match crypto::migrate_plaintext_key(&stored, master_key) {
-        Ok(Some(encrypted)) => {
-            if let Err(e) = settings.set(API_KEY_SETTING, &encrypted) {
-                tracing::warn!("API key migration failed to persist: {e}");
-            } else {
-                tracing::info!("Migrated legacy plaintext {API_KEY_SETTING} to encrypted storage");
-            }
-        }
-        Ok(None) => {}
-        Err(e) => tracing::warn!("API key migration failed: {e}"),
+    if let Some(encrypted) = crypto::migrate_plaintext_key(&stored, master_key)? {
+        settings.set(API_KEY_SETTING, &encrypted)?;
+        tracing::info!("Migrated legacy plaintext {API_KEY_SETTING} to encrypted storage");
     }
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

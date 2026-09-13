@@ -162,6 +162,15 @@ impl<'a> HistoryRepository<'a> {
         })
     }
 
+    /// Return the total number of entries in the transcriptions table.
+    pub fn count(&self) -> Result<i64> {
+        self.db.with_conn(|c| {
+            let count: i64 =
+                c.query_row("SELECT COUNT(*) FROM transcriptions", [], |r| r.get(0))?;
+            Ok(count)
+        })
+    }
+
     pub fn search(&self, query: &str) -> Result<Vec<TranscriptionEntry>> {
         self.db.with_conn(|c| {
             let mut stmt = c.prepare(
@@ -392,5 +401,15 @@ mod tests {
         let removed = repo.clear(false).unwrap();
         assert_eq!(removed, 1);
         assert_eq!(repo.list(&HistoryFilter::default()).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn count_returns_entry_count() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = HistoryRepository::new(&db);
+        assert_eq!(repo.count().unwrap(), 0);
+        repo.insert(&sample("a", "satu")).unwrap();
+        repo.insert(&sample("b", "dua")).unwrap();
+        assert_eq!(repo.count().unwrap(), 2);
     }
 }

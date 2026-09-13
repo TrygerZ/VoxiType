@@ -193,6 +193,68 @@ pub fn finish_startup(default_dir: &Path, active_dir: &Path, fallback_occurred: 
     }
 }
 
+fn sidecar_path(db_path: &Path, suffix: &str) -> PathBuf {
+    let mut file_name = db_path.file_name().unwrap_or_default().to_os_string();
+    file_name.push(suffix);
+    db_path.with_file_name(file_name)
+}
+
+fn remove_target_db_and_sidecars(target_db: &Path) {
+    let _ = std::fs::remove_file(target_db);
+    let _ = std::fs::remove_file(sidecar_path(target_db, "-wal"));
+    let _ = std::fs::remove_file(sidecar_path(target_db, "-shm"));
+}
+
+fn checkpoint_source_wal(source_db: &Path) -> Result<()> {
+    // Only checkpoint valid SQLite databases (header is at least 100 bytes).
+    let Ok(meta) = std::fs::metadata(source_db) else {
+        return Ok(());
+    };
+    if meta.len() < 100 {
+        return Ok(());
+    }
+    let conn = match rusqlite::Connection::open_with_flags(
+        source_db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+    ) {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::warn!("Could not open source DB for WAL checkpoint: {err}");
+            return Ok(());
+        }
+    };
+    if let Err(err) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+        tracing::warn!("Failed to checkpoint source WAL: {err}");
+    }
+    Ok(())
+}
+
+fn copy_database_files(
+    source_db: &Path,
+    target_db: &Path,
+    source_key: &Path,
+    target_key: &Path,
+) -> Result<()> {
+    copy_verified(source_db, target_db)?;
+    let copy_sidecars_and_key = || -> Result<()> {
+        let source_wal = sidecar_path(source_db, "-wal");
+        if source_wal.is_file() {
+            copy_verified(&source_wal, &sidecar_path(target_db, "-wal"))?;
+        }
+        let source_shm = sidecar_path(source_db, "-shm");
+        if source_shm.is_file() {
+            copy_verified(&source_shm, &sidecar_path(target_db, "-shm"))?;
+        }
+        copy_verified(source_key, target_key)?;
+        Ok(())
+    };
+    if let Err(error) = copy_sidecars_and_key() {
+        remove_target_db_and_sidecars(target_db);
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
     let source_db = default_dir.join("data").join("voxitype.db");
     let target_db = target_dir.join("data").join("voxitype.db");
@@ -208,7 +270,7 @@ fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
             tracing::info!(
                 "Recovering interrupted data migration by removing target database without master.key"
             );
-            std::fs::remove_file(&target_db)?;
+            remove_target_db_and_sidecars(&target_db);
         } else {
             return Err(AppError::data_directory("target database is invalid"));
         }
@@ -224,16 +286,14 @@ fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
         std::fs::remove_file(&target_key)?;
     }
 
+    checkpoint_source_wal(&source_db)?;
+
     std::fs::create_dir_all(
         target_db
             .parent()
             .ok_or_else(|| AppError::data_directory("target database has no parent directory"))?,
     )?;
-    copy_verified(&source_db, &target_db)?;
-    if let Err(error) = copy_verified(&source_key, &target_key) {
-        let _ = std::fs::remove_file(&target_db);
-        return Err(error);
-    }
+    copy_database_files(&source_db, &target_db, &source_key, &target_key)?;
     copy_logs_best_effort(default_dir, target_dir);
     tracing::info!("Migrated application data to {}", target_dir.display());
     Ok(())
@@ -808,5 +868,37 @@ mod tests {
         );
         let status = get_status(&default_dir.0, &default_dir.0);
         assert_eq!(status.last_error, None);
+    }
+
+    #[test]
+    fn migration_checkpoints_and_copies_wal_sidecar() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        let db_dir = source.0.join("data");
+        std::fs::create_dir_all(&db_dir).unwrap();
+        let source_db = db_dir.join("voxitype.db");
+        let source_key = source.0.join("master.key");
+        std::fs::write(&source_key, [7u8; 32]).unwrap();
+
+        // Populate a real SQLite database in WAL mode.
+        {
+            let conn = rusqlite::Connection::open(&source_db).unwrap();
+            conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+            conn.execute_batch(
+                "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT);
+                 INSERT INTO test (name) VALUES ('checkpoint_test');",
+            )
+            .unwrap();
+        }
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+
+        let target_db = target.0.join("data/voxitype.db");
+        assert!(target_db.exists());
+        let conn = rusqlite::Connection::open(&target_db).unwrap();
+        let name: String = conn
+            .query_row("SELECT name FROM test WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, "checkpoint_test");
     }
 }

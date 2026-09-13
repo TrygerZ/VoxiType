@@ -138,6 +138,23 @@ pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
     LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
 }
 
+/// Maximum number of hotwords included in Whisper initial prompt.
+/// Whisper caps prompt context at ~224 tokens; 150 words conservatively stays within this limit.
+pub const MAX_INITIAL_PROMPT_WORDS: usize = 150;
+
+pub fn build_initial_prompt(hotwords: &[String]) -> Option<String> {
+    if hotwords.is_empty() {
+        return None;
+    }
+    // Whisper context window is ~224 tokens. Truncate to MAX_INITIAL_PROMPT_WORDS to prevent overflow.
+    let capped = if hotwords.len() > MAX_INITIAL_PROMPT_WORDS {
+        &hotwords[..MAX_INITIAL_PROMPT_WORDS]
+    } else {
+        hotwords
+    };
+    Some(capped.join(", "))
+}
+
 pub fn build_stt_config(db: &Database) -> SttConfig {
     let language = string_setting(db, "stt_language", "auto");
     // When auto-detecting, skip hotwords to avoid biasing the STT model
@@ -149,11 +166,7 @@ pub fn build_stt_config(db: &Database) -> SttConfig {
             .get_hotwords_by_language(&language)
             .unwrap_or_default()
     };
-    let initial_prompt = if hotwords.is_empty() {
-        None
-    } else {
-        Some(hotwords.join(", "))
-    };
+    let initial_prompt = build_initial_prompt(&hotwords);
     SttConfig {
         language,
         initial_prompt,
@@ -510,5 +523,37 @@ pub fn hotkey_toggle<R: Runtime>(app: &AppHandle<R>) {
         }
         crate::pipeline::AppStateTag::Recording => hotkey_stop(app),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_hotwords_returns_none() {
+        assert_eq!(build_initial_prompt(&[]), None);
+    }
+
+    #[test]
+    fn hotwords_below_cap_joined_with_comma() {
+        let hotwords = vec!["alpha".to_string(), "beta".to_string()];
+        assert_eq!(
+            build_initial_prompt(&hotwords),
+            Some("alpha, beta".to_string())
+        );
+    }
+
+    #[test]
+    fn hotwords_capped_at_max_words() {
+        let hotwords: Vec<String> = (0..200).map(|i| format!("word{i}")).collect();
+        let prompt = build_initial_prompt(&hotwords).unwrap();
+        let words: Vec<&str> = prompt.split(", ").collect();
+        assert_eq!(words.len(), MAX_INITIAL_PROMPT_WORDS);
+        assert_eq!(words[0], "word0");
+        assert_eq!(
+            words[MAX_INITIAL_PROMPT_WORDS - 1],
+            format!("word{}", MAX_INITIAL_PROMPT_WORDS - 1)
+        );
     }
 }

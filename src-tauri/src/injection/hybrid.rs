@@ -68,8 +68,9 @@ impl TextInjector for HybridInjector {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         let started = Instant::now();
 
-        // Save current clipboard content
-        let prev = clipboard::read_text();
+        // Save current clipboard content before writing dictation text.
+        let prev = clipboard::read_snapshot();
+        let mut restore_guard = ClipboardRestoreGuard::new(prev);
 
         clipboard::write_text(text)?;
 
@@ -84,7 +85,7 @@ impl TextInjector for HybridInjector {
         // Keystrokes are processed asynchronously by the target app.
         std::thread::sleep(std::time::Duration::from_millis(PASTE_CONSUME_DELAY_MS));
 
-        restore_clipboard(prev.as_deref());
+        restore_guard.restore();
 
         Ok(InjectResult {
             success: true,
@@ -106,9 +107,35 @@ impl TextInjector for HybridInjector {
     }
 }
 
-fn restore_clipboard(prev: Option<&str>) {
+/// RAII guard ensuring clipboard restoration on all exit paths.
+struct ClipboardRestoreGuard {
+    snapshot: Option<clipboard::ClipboardSnapshot>,
+}
+
+impl ClipboardRestoreGuard {
+    fn new(snapshot: clipboard::ClipboardSnapshot) -> Self {
+        Self {
+            snapshot: Some(snapshot),
+        }
+    }
+
+    /// Restore previous clipboard content and disarm guard.
+    fn restore(&mut self) {
+        if let Some(snapshot) = self.snapshot.take() {
+            restore_clipboard(&snapshot);
+        }
+    }
+}
+
+impl Drop for ClipboardRestoreGuard {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
+fn restore_clipboard(prev: &clipboard::ClipboardSnapshot) {
     match prev {
-        Some(prev_text) => {
+        clipboard::ClipboardSnapshot::Text(prev_text) => {
             if let Err(e) = clipboard::write_text(prev_text) {
                 tracing::warn!(
                     "Failed to restore clipboard ({e}); wiping dictated text from clipboard"
@@ -116,7 +143,15 @@ fn restore_clipboard(prev: Option<&str>) {
                 wipe_clipboard_fail_safe();
             }
         }
-        None => {
+        clipboard::ClipboardSnapshot::NonText => {
+            // ponytail: non-text clipboard content (images, files) cannot be restored via
+            // text API without multi-format serialization. Leaving dictated text on clipboard
+            // instead of wiping to empty. Upgrade when arboard or platform API supports raw format preservation.
+            tracing::debug!(
+                "Non-text content on clipboard before injection; skipping text restoration"
+            );
+        }
+        clipboard::ClipboardSnapshot::Unavailable => {
             tracing::debug!("Clipboard was empty before injection; wiping dictated text");
             wipe_clipboard_fail_safe();
         }
@@ -155,6 +190,7 @@ mod tests {
 
     #[test]
     fn clipboard_save_restore_preserves_original() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         use crate::injection::clipboard;
 
         // Save whatever is currently on the clipboard.
@@ -200,5 +236,34 @@ mod tests {
         }
 
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn restore_guard_restores_on_drop() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+        use crate::injection::clipboard::{self, ClipboardSnapshot};
+
+        let test_prev = "VOXITYPE_TEST_GUARD_PREV";
+        clipboard::write_text(test_prev).unwrap();
+
+        {
+            let guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
+            clipboard::write_text("OVERWRITTEN").unwrap();
+            assert_eq!(clipboard::read_text().as_deref(), Some("OVERWRITTEN"));
+            drop(guard);
+        }
+
+        assert_eq!(clipboard::read_text().as_deref(), Some(test_prev));
+    }
+
+    #[test]
+    fn restore_guard_explicit_restore_disarms() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+        use crate::injection::clipboard::ClipboardSnapshot;
+
+        let test_prev = "VOXITYPE_TEST_GUARD_EXPLICIT";
+        let mut guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
+        guard.restore();
+        assert!(guard.snapshot.is_none());
     }
 }
