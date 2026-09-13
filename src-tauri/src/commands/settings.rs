@@ -61,14 +61,25 @@ pub fn update_setting(
     if !SETTABLE_KEYS.contains(&key.as_str()) {
         return Err(AppError::internal(format!("Unknown setting key '{key}'")));
     }
-    let encoded = if key == "groq_api_key" {
-        let plain = value.as_str().unwrap_or_default();
-        let enc = crate::crypto::encrypt_api_key(plain, &state.master_key)?;
-        serde_json::to_string(&enc)?
-    } else {
-        serde_json::to_string(&value)?
-    };
+    let encoded = encode_setting_value(&key, &value, &state.master_key)?;
     SettingsManager::new(&state.db).set_raw(&key, &encoded)
+}
+
+fn encode_setting_value(
+    key: &str,
+    value: &Value,
+    master_key: &[u8; 32],
+) -> std::result::Result<String, AppError> {
+    if key == "groq_api_key" {
+        // Prevent accidental type coercion from clearing the stored secret.
+        let plain = value
+            .as_str()
+            .ok_or_else(|| AppError::invalid_input("Setting 'groq_api_key' must be a string"))?;
+        let enc = crate::crypto::encrypt_api_key(plain, master_key)?;
+        Ok(serde_json::to_string(&enc)?)
+    } else {
+        Ok(serde_json::to_string(value)?)
+    }
 }
 
 #[tauri::command]
@@ -112,5 +123,32 @@ mod tests {
         assert!(!SETTABLE_KEYS.contains(&"floating_widget_pos"));
         assert!(!SETTABLE_KEYS.contains(&"hotkey"));
         assert!(!SETTABLE_KEYS.contains(&"evil_setting"));
+    }
+
+    #[test]
+    fn encode_groq_api_key_rejects_non_string() {
+        let key = [0u8; 32];
+        let bad_values = [
+            serde_json::json!(123),
+            serde_json::json!(true),
+            serde_json::json!(null),
+            serde_json::json!({"key": "val"}),
+            serde_json::json!(["abc"]),
+        ];
+        for v in bad_values {
+            let err = encode_setting_value("groq_api_key", &v, &key).unwrap_err();
+            assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+        }
+    }
+
+    #[test]
+    fn encode_groq_api_key_allows_empty_and_valid_string() {
+        let key = [0u8; 32];
+        let empty = encode_setting_value("groq_api_key", &serde_json::json!(""), &key).unwrap();
+        assert!(!empty.is_empty());
+
+        let valid =
+            encode_setting_value("groq_api_key", &serde_json::json!("gsk_test"), &key).unwrap();
+        assert!(!valid.is_empty());
     }
 }

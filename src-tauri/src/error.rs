@@ -37,6 +37,7 @@ pub enum ErrorCode {
     InvalidTransition,
     Timeout,
     // Misc
+    InvalidInput,
     NetworkError,
     Internal,
 }
@@ -120,6 +121,9 @@ impl AppError {
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Timeout, msg)
+    }
+    pub fn invalid_input(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::InvalidInput, msg)
     }
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Internal, msg)
