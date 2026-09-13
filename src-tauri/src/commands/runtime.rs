@@ -439,9 +439,7 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
                 tracing::debug!("Capture start skipped: recording already ended");
             }
             Err(e) => {
-                let _ = state
-                    .pipeline
-                    .apply(crate::pipeline::StateEvent::CancelRecording);
+                let _ = state.pipeline.cancel_recording();
                 fail(&app_clone, &state.pipeline, &e);
             }
         }

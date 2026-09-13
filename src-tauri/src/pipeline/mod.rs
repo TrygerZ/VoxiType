@@ -193,4 +193,27 @@ mod tests {
         assert!(!started);
         assert_eq!(pipeline.state_tag(), AppStateTag::Error);
     }
+
+    #[test]
+    fn cancel_then_error_allows_retry() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+
+        // Cancel recording cleans up and moves to Idle
+        pipeline.cancel_recording().unwrap();
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
+
+        // Set error sets state to Error
+        pipeline.set_error(&AppError::audio("startup failure"));
+        assert_eq!(pipeline.state_tag(), AppStateTag::Error);
+
+        // Retry: Recording -> Error -> Recording succeeds
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
 }
