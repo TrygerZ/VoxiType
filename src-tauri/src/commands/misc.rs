@@ -277,25 +277,39 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     Ok((!path.is_empty()).then_some(path))
 }
 
-/// Persist whisper.cpp paths. The only sanctioned write path for these
-/// settings: each value must live under the directory of a file the user
-/// actually picked with the native dialog in this session, so a compromised
-/// webview cannot point local STT at an attacker-controlled binary.
+/// Persist whisper.cpp paths atomically after validating both.
+///
+/// Both paths must live under the directory of a file the user selected
+/// via the native setup dialog in this session.
 #[tauri::command]
 pub fn set_whisper_cpp_paths(
     state: State<'_, AppStateInner>,
     binary_path: Option<String>,
     model_path: Option<String>,
 ) -> std::result::Result<(), AppError> {
-    let settings = SettingsManager::new(&state.db);
+    // Validate both paths first so failure leaves existing settings untouched.
     if let Some(binary) = &binary_path {
         ensure_picker_backed_path(&state, PICKER_KIND_BINARY, binary)?;
-        settings.set_raw("whisper_cpp_binary_path", &serde_json::to_string(binary)?)?;
     }
     if let Some(model) = &model_path {
         ensure_picker_backed_path(&state, PICKER_KIND_MODEL, model)?;
-        settings.set_raw("whisper_cpp_model_path", &serde_json::to_string(model)?)?;
     }
+
+    let binary_json = binary_path
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let model_json = model_path.as_ref().map(serde_json::to_string).transpose()?;
+
+    let mut entries = Vec::with_capacity(2);
+    if let Some(ref val) = binary_json {
+        entries.push(("whisper_cpp_binary_path", val.as_str()));
+    }
+    if let Some(ref val) = model_json {
+        entries.push(("whisper_cpp_model_path", val.as_str()));
+    }
+
+    SettingsManager::new(&state.db).set_raw_batch(&entries)?;
     Ok(())
 }
 
