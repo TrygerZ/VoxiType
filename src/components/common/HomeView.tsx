@@ -25,6 +25,11 @@ import { useStatsStore } from "../../stores/statsStore";
 import { useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import {
+  getBooleanSetting,
+  getStringSetting,
+  isHotkeyConfig,
+} from "../../lib/settingsGuards";
 import { Waveform } from "../floating-widget/Waveform";
 import { Button } from "../ui/Button";
 
@@ -128,12 +133,12 @@ export function HomeView() {
   }, []);
 
   // Safe config readouts with proper type guards
-  const activeMode = typeof settings.active_mode === "string" ? settings.active_mode : "dictation";
-  const translationEnabled = typeof settings.translation_enabled === "boolean" ? settings.translation_enabled : false;
-  const translationTarget = typeof settings.translation_target === "string" ? settings.translation_target : "en";
-  const micDevice = typeof settings.mic_device === "string" ? settings.mic_device : "default";
-  const hotkeyRaw = settings.hotkey as { key: string; mode: string } | undefined;
-  const shortcutKey = hotkeyRaw?.key ?? "Ctrl+Space";
+  const activeMode = getStringSetting(settings.active_mode, "dictation");
+  const translationEnabled = getBooleanSetting(settings.translation_enabled, false);
+  const translationTarget = getStringSetting(settings.translation_target, "en");
+  const micDevice = getStringSetting(settings.mic_device, "default");
+  const hotkey = isHotkeyConfig(settings.hotkey) ? settings.hotkey : undefined;
+  const shortcutKey = hotkey?.key ?? "Ctrl+Space";
 
   const recentItems = useMemo(() => {
     return historyItems.slice(0, 3);

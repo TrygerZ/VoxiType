@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import { setHotkey, formatTauriError } from "../../lib/tauri";
+import { isHotkeyConfig } from "../../lib/settingsGuards";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 
@@ -13,11 +14,9 @@ export function ShortcutsTab() {
   const settings = useSettingsStore((s) => s.settings);
   const loadSettings = useSettingsStore((s) => s.load);
 
-  const hotkeyRaw = settings.hotkey as
-    | { key: string; mode: string }
-    | undefined;
-  const [key, setKey] = useState(hotkeyRaw?.key ?? "Ctrl+Space");
-  const [mode, setMode] = useState(hotkeyRaw?.mode ?? "ptt");
+  const hotkey = isHotkeyConfig(settings.hotkey) ? settings.hotkey : undefined;
+  const [key, setKey] = useState(hotkey?.key ?? "Ctrl+Space");
+  const [mode, setMode] = useState(hotkey?.mode ?? "ptt");
   const [status, setStatus] = useState<"idle" | "ok" | string>("idle");
   const [busy, setBusy] = useState(false);
 
@@ -25,9 +24,9 @@ export function ShortcutsTab() {
   // this tab mounts (or change elsewhere), so mirror the store whenever the
   // persisted hotkey changes to avoid showing a stale combination.
   useEffect(() => {
-    if (hotkeyRaw?.key) setKey(hotkeyRaw.key);
-    if (hotkeyRaw?.mode) setMode(hotkeyRaw.mode);
-  }, [hotkeyRaw?.key, hotkeyRaw?.mode]);
+    if (hotkey?.key) setKey(hotkey.key);
+    if (hotkey?.mode) setMode(hotkey.mode);
+  }, [hotkey?.key, hotkey?.mode]);
 
   const handleApply = async () => {
     if (busy) return;
