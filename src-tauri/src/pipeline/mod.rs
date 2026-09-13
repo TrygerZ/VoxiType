@@ -9,6 +9,7 @@ pub mod state_machine;
 
 pub use state_machine::{AppState, AppStateTag, StateEvent};
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::audio::{AudioCaptureImpl, AudioConfig};
@@ -19,6 +20,7 @@ use crate::util::MutexExt;
 pub struct PipelineOrchestrator {
     state: Mutex<AppState>,
     audio: Mutex<AudioCaptureImpl>,
+    generation: AtomicU64,
 }
 
 impl Default for PipelineOrchestrator {
@@ -32,6 +34,7 @@ impl PipelineOrchestrator {
         Self {
             state: Mutex::new(AppState::Idle),
             audio: Mutex::new(AudioCaptureImpl::new()),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -71,6 +74,7 @@ impl PipelineOrchestrator {
             Ok(next) => {
                 let tag = next.tag();
                 *guard = next;
+                self.generation.fetch_add(1, Ordering::SeqCst);
                 Ok(tag)
             }
             Err((original, e)) => {
@@ -80,28 +84,53 @@ impl PipelineOrchestrator {
         }
     }
 
+    fn verify_session(&self, target_gen: u64) -> bool {
+        let guard = self.state.lock_recover();
+        matches!(*guard, AppState::Recording { .. })
+            && self.generation.load(Ordering::SeqCst) == target_gen
+    }
+
     /// Start the underlying audio capture stream, but only if the pipeline
     /// is still in the Recording state.
     ///
-    /// The capture task runs asynchronously after the Recording transition;
-    /// a fast press-and-release may already have cancelled or stopped the
-    /// session by the time it executes. Starting the stream then would leave
-    /// an orphaned cpal stream running while the app is Idle. The state lock
-    /// is held across both the check and the start, so a concurrent
-    /// stop/cancel cannot slip between them: it either completes before the
-    /// check (start gets skipped) or blocks until the stream is up and then
-    /// operates on a live session. Lock order is always state → audio; no
-    /// code path acquires them in the reverse order.
+    /// The state lock is NOT held during blocking device initialization.
+    /// A generation token tracks the session identity; after initialization,
+    /// the session is re-verified and cancelled if stop/cancel occurred meanwhile.
     ///
-    /// Returns `Ok(false)` when the start was skipped because recording had
-    /// already ended.
+    /// Returns `Ok(false)` when the start was skipped or cancelled because
+    /// recording had already ended.
     pub fn start_capture_if_recording(&self, config: &AudioConfig) -> Result<bool> {
-        let guard = self.state.lock_recover();
-        if !matches!(*guard, AppState::Recording { .. }) {
+        let target_gen = {
+            let guard = self.state.lock_recover();
+            if !matches!(*guard, AppState::Recording { .. }) {
+                return Ok(false);
+            }
+            self.generation.load(Ordering::SeqCst)
+        };
+
+        let active_capture = match AudioCaptureImpl::open_stream(config) {
+            Ok(capture) => capture,
+            Err(e) => {
+                if self.verify_session(target_gen) {
+                    return Err(e);
+                }
+                tracing::debug!("Suppressed error on aborted session: {e}");
+                return Ok(false);
+            }
+        };
+
+        if !self.verify_session(target_gen) {
+            active_capture.cancel();
             return Ok(false);
         }
-        self.audio.lock_recover().start(config)?;
+
+        self.audio.lock_recover().install(active_capture);
         Ok(true)
+    }
+
+    #[cfg(test)]
+    pub fn current_generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
     }
 
     /// Stop capturing and return the captured samples, moving to Processing.
@@ -215,5 +244,35 @@ mod tests {
             .apply(StateEvent::StartRecording { active_app: None })
             .unwrap();
         assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn generation_advances_on_state_transitions() {
+        let pipeline = PipelineOrchestrator::new();
+        assert_eq!(pipeline.current_generation(), 0);
+
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        assert_eq!(pipeline.current_generation(), 1);
+
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        assert_eq!(pipeline.current_generation(), 2);
+
+        pipeline.finish_processing().unwrap();
+        assert_eq!(pipeline.current_generation(), 3);
+    }
+
+    #[test]
+    fn session_aborted_when_generation_changes() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        let target_gen = pipeline.current_generation();
+        assert!(pipeline.verify_session(target_gen));
+
+        pipeline.cancel_recording().unwrap();
+        assert!(!pipeline.verify_session(target_gen));
     }
 }

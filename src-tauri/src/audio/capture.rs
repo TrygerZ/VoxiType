@@ -193,12 +193,70 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
     }
 }
 
-impl AudioCaptureImpl {
-    /// Begin capturing. Returns immediately; samples accumulate internally.
-    pub fn start(&mut self, config: &AudioConfig) -> Result<()> {
-        if self.active {
-            return Ok(());
+/// An initialized capture stream before installation into [`AudioCaptureImpl`].
+pub struct ActiveCapture {
+    shared: Arc<Shared>,
+    stop_tx: mpsc::Sender<()>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+impl ActiveCapture {
+    /// Cancel and join the capture thread immediately.
+    pub fn cancel(self) {
+        let _ = self.stop_tx.send(());
+        let _ = self.handle.join();
+    }
+}
+
+fn spawn_capture_thread(
+    device: cpal::Device,
+    supported: cpal::SupportedStreamConfig,
+    shared: Arc<Shared>,
+) -> (
+    mpsc::Receiver<Result<()>>,
+    mpsc::Sender<()>,
+    std::thread::JoinHandle<()>,
+) {
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+
+    let handle = std::thread::spawn(move || {
+        let stream = match build_stream(device, supported, shared) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = ready_tx.send(Err(e));
+                return;
+            }
+        };
+        if let Err(e) = stream.play() {
+            let _ = ready_tx.send(Err(AppError::audio(format!("Failed to start stream: {e}"))));
+            return;
         }
+        let _ = ready_tx.send(Ok(()));
+        let _ = stop_rx.recv();
+        let _ = stream.pause();
+    });
+
+    (ready_rx, stop_tx, handle)
+}
+
+fn wait_for_ready(
+    ready_rx: mpsc::Receiver<Result<()>>,
+    handle: std::thread::JoinHandle<()>,
+) -> Result<std::thread::JoinHandle<()>> {
+    match ready_rx.recv() {
+        Ok(Ok(())) => Ok(handle),
+        Ok(Err(e)) => {
+            let _ = handle.join();
+            Err(e)
+        }
+        Err(_) => Err(AppError::audio("Audio thread terminated unexpectedly")),
+    }
+}
+
+impl AudioCaptureImpl {
+    /// Initialize audio device and stream without mutating instance state.
+    pub fn open_stream(config: &AudioConfig) -> Result<ActiveCapture> {
         let device = resolve_device(&config.mic_device)?;
         let supported = device
             .default_input_config()
@@ -215,44 +273,31 @@ impl AudioCaptureImpl {
             noise_gate: config.noise_gate_threshold,
         });
 
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
-        let (stop_tx, stop_rx) = mpsc::channel::<()>();
-        let shared_thread = shared.clone();
-        let device_thread = device.clone();
-        let supported_thread = supported.clone();
+        let (ready_rx, stop_tx, handle) = spawn_capture_thread(device, supported, shared.clone());
+        let handle = wait_for_ready(ready_rx, handle)?;
 
-        // The cpal stream lives entirely on this thread because it is `!Send`.
-        let handle = std::thread::spawn(move || {
-            let stream = match build_stream(device_thread, supported_thread, shared_thread) {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
-                    return;
-                }
-            };
-            if let Err(e) = stream.play() {
-                let _ = ready_tx.send(Err(AppError::audio(format!("Failed to start stream: {e}"))));
-                return;
-            }
-            let _ = ready_tx.send(Ok(()));
-            // Block until asked to stop; then the stream is dropped on return.
-            let _ = stop_rx.recv();
-            let _ = stream.pause();
-        });
+        Ok(ActiveCapture {
+            shared,
+            stop_tx,
+            handle,
+        })
+    }
 
-        match ready_rx.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                let _ = handle.join();
-                return Err(e);
-            }
-            Err(_) => return Err(AppError::audio("Audio thread terminated unexpectedly")),
-        }
-
-        self.shared = Some(shared);
-        self.stop_tx = Some(stop_tx);
-        self.handle = Some(handle);
+    /// Install an active capture handle into this instance.
+    pub fn install(&mut self, capture: ActiveCapture) {
+        self.shared = Some(capture.shared);
+        self.stop_tx = Some(capture.stop_tx);
+        self.handle = Some(capture.handle);
         self.active = true;
+    }
+
+    /// Begin capturing. Returns immediately; samples accumulate internally.
+    pub fn start(&mut self, config: &AudioConfig) -> Result<()> {
+        if self.active {
+            return Ok(());
+        }
+        let capture = Self::open_stream(config)?;
+        self.install(capture);
         Ok(())
     }
 
