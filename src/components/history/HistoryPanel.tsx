@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Pin,
@@ -39,6 +39,13 @@ export function HistoryPanel() {
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const handleClear = async () => {
     setClearing(true);
@@ -69,8 +76,15 @@ export function HistoryPanel() {
 
   const handleCopy = (id: string, text: string) => {
     void navigator.clipboard.writeText(text);
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
     setCopied(id);
-    setTimeout(() => setCopied((c) => (c === id ? null : c)), 1200);
+    copyTimerRef.current = setTimeout(() => {
+      setCopied((c) => (c === id ? null : c));
+      copyTimerRef.current = null;
+    }, 1200);
   };
 
   const filtered = modeFilter
