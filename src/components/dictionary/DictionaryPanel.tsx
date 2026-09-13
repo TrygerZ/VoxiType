@@ -97,13 +97,13 @@ export function DictionaryPanel() {
       
       // Validate file size (5MB limit)
       if (file.size > 5 * 1024 * 1024) {
-        toast("File terlalu besar (maks 5MB)", "error");
+        toast(t("dictionary.file_too_large"), "error");
         return;
       }
       
       // Validate file extension
       if (!file.name.endsWith(".json")) {
-        toast("Hanya file JSON yang didukung", "error");
+        toast(t("dictionary.json_only"), "error");
         return;
       }
       

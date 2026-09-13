@@ -199,6 +199,8 @@ const id: Dict = {
   "dictionary.delete_word": "Hapus {word}",
   "dictionary.activate_word": "Aktifkan {word}",
   "dictionary.deactivate_word": "Nonaktifkan {word}",
+  "dictionary.file_too_large": "File terlalu besar (maks 5MB)",
+  "dictionary.json_only": "Hanya file JSON yang didukung",
 
   // Snippets Panel
   "snippets.title": "Snippet",
@@ -612,6 +614,8 @@ const en: Dict = {
   "dictionary.delete_word": "Delete {word}",
   "dictionary.activate_word": "Activate {word}",
   "dictionary.deactivate_word": "Deactivate {word}",
+  "dictionary.file_too_large": "File too large (max 5MB)",
+  "dictionary.json_only": "Only JSON files are supported",
 
   // Snippets Panel
   "snippets.title": "Snippets",
