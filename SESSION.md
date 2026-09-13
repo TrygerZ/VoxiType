@@ -406,3 +406,11 @@ All branches are linear and based on main at `4c8effb`.
 Decide whether to merge the branch stack into main. Merge in order or squash per phase. If desired, tag the v0.4.10 release using the release procedure in `AGENTS.md`.
 
 HANDOFF: full remediation completed - ready for push and merge approval
+
+## 2026-09-13 - v0.4.10 released
+
+- Tag v0.4.10 pushed; Release CI succeeded (run 34755353069) and reused the manual draft with the locally built NSIS installer.
+- Release published at https://github.com/TrygerZ/VoxiType/releases/tag/v0.4.10
+- Updater channel now serves v0.4.10.
+- No code changed post-merge; graphify not required.
+
