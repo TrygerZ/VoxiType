@@ -33,7 +33,6 @@ export function HomeView() {
 
   // App store states
   const state = useAppStore((s) => s.state);
-  const audioLevel = useAppStore((s) => s.audioLevel);
   const durationSec = useAppStore((s) => s.durationSec);
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
@@ -255,7 +254,6 @@ export function HomeView() {
                 </span>
                 <div className="w-full max-w-[150px] flex items-center justify-center">
                   <Waveform
-                    level={audioLevel}
                     active={isRecording}
                     barClassName="bg-vx-accent"
                   />

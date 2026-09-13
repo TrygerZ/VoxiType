@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { onEvent } from "../../lib/tauri";
+import type { AudioLevelEvent } from "../../types/events";
 
 interface WaveformProps {
-  level: number;
+  level?: number;
   active: boolean;
   barClassName?: string;
 }
@@ -14,35 +16,50 @@ const boostLevel = (lvl: number): number => {
   return Math.min(1, Math.pow(lvl, 0.4) * 2);
 };
 
-export function Waveform({ level, active, barClassName }: WaveformProps) {
-  // Keep a short rolling history so the bars look like a scrolling waveform
-  // rather than every bar reacting identically.
+function useWaveformBars(active: boolean, level?: number): number[] {
   const [bars, setBars] = useState<number[]>(STATIC_WAVE);
-  const levelRef = useRef(level);
-  levelRef.current = level;
+  const levelRef = useRef(level ?? 0);
+
+  useEffect(() => {
+    if (level !== undefined) levelRef.current = level;
+  }, [level]);
 
   useEffect(() => {
     if (!active) {
       setBars(STATIC_WAVE);
+      levelRef.current = 0;
       return;
     }
+    let unlisten: (() => void) | undefined;
+    void onEvent<AudioLevelEvent>("audio_level", (p) => {
+      levelRef.current = p.level;
+    }).then((fn) => {
+      unlisten = fn;
+    });
     const id = setInterval(() => {
       setBars((prev) => {
         const next = prev.slice(1);
-        // Add slight randomness around the current level for a lively feel.
         const jitter = 0.75 + Math.random() * 0.5;
         const boosted = boostLevel(levelRef.current);
-        const value = Math.max(0.08, Math.min(1, boosted * jitter));
-        next.push(value);
+        next.push(Math.max(0.08, Math.min(1, boosted * jitter)));
         return next;
       });
-    }, 50); // Speed up tick to match backend 50ms polling interval
-    return () => clearInterval(id);
+    }, 50);
+    return () => {
+      clearInterval(id);
+      unlisten?.();
+    };
   }, [active]);
+
+  return bars;
+}
+
+export function Waveform({ level, active, barClassName }: WaveformProps) {
+  const bars = useWaveformBars(active, level);
 
   return (
     <div className="flex h-5 flex-1 items-center gap-[2px]" aria-hidden>
-      {/* ponytail: index key is intentional — bars are stateless identical spans,
+      {/* ponytail: index key is intentional - bars are stateless identical spans,
           stable IDs would fight the sliding-window animation */}
       {bars.map((v, i) => (
         <span

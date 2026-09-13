@@ -8,7 +8,6 @@ export function FloatingWidget({
   alwaysRender?: boolean;
 }) {
   const state = useAppStore((s) => s.state);
-  const audioLevel = useAppStore((s) => s.audioLevel);
   const wordCount = useAppStore((s) => s.wordCount);
   const errorMessage = useAppStore((s) => s.errorMessage);
   const reset = useAppStore((s) => s.reset);
@@ -66,7 +65,6 @@ export function FloatingWidget({
   // Select color and state configuration for the waveform bars
   let barClassName = "bg-vx-accent";
   let waveformActive = false;
-  let displayLevel = audioLevel;
 
   if (errorMessage || state === "error") {
     barClassName = "bg-vx-error";
@@ -78,7 +76,6 @@ export function FloatingWidget({
   } else if (state === "processing") {
     barClassName = "bg-vx-warning animate-pulse";
     waveformActive = false;
-    displayLevel = 0.0;
   }
 
   return (
@@ -113,7 +110,6 @@ export function FloatingWidget({
           </div>
         ) : (
           <Waveform
-            level={displayLevel}
             active={waveformActive}
             barClassName={barClassName}
           />
