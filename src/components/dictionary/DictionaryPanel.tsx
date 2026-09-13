@@ -15,10 +15,10 @@ import { PanelHeader } from "../common/PanelHeader";
 import type { DictionaryEntry } from "../../types/app";
 import {
   exportDictionary,
-  formatTauriError,
   importDictionary,
   setDictionaryActive,
 } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { toast } from "../ui/Toast";
 
 export function DictionaryPanel() {
@@ -49,22 +49,22 @@ export function DictionaryPanel() {
       usage_count: 0,
       is_active: true,
     };
-    try {
-      await add(entry);
+    const ok = await invokeAction(() => add(entry));
+    if (ok) {
       setWord("");
       setReplacement("");
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
     }
   };
 
-  const handleToggle = async (id: string, current: boolean) => {
-    await setDictionaryActive(id, !current);
-    void load();
+  const handleToggle = (id: string, current: boolean) => {
+    void invokeAction(async () => {
+      await setDictionaryActive(id, !current);
+      await load();
+    });
   };
 
   const handleExport = async () => {
-    try {
+    await invokeAction(async () => {
       const data = await exportDictionary();
       const blob = new Blob([data], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -73,9 +73,7 @@ export function DictionaryPanel() {
       a.download = "voxitype-dictionary.json";
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      /* ignore */
-    }
+    });
   };
 
   const handleImport = () => {
@@ -98,13 +96,11 @@ export function DictionaryPanel() {
         return;
       }
       
-      try {
+      await invokeAction(async () => {
         const text = await file.text();
         await importDictionary(text);
-        void load();
-      } catch (e) {
-        toast(formatTauriError(e), "error");
-      }
+        await load();
+      });
     };
     input.click();
   };
@@ -219,7 +215,7 @@ export function DictionaryPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void remove(e.id)}
+                    onClick={() => void invokeAction(() => remove(e.id))}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
                   >
                     <Trash2 className="h-4 w-4" />

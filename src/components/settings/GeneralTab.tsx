@@ -10,6 +10,7 @@ import {
   type DataDirectoryStatus,
 } from "../../lib/tauri";
 import { formatDirectoryError } from "../../lib/dataDirectory";
+import { invokeAction } from "../../lib/invokeAction";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { Switch } from "../ui/Switch";
 import { Select } from "../ui/Select";
@@ -90,15 +91,16 @@ export function GeneralTab() {
     useSettingsStore.setState((s) => ({
       settings: { ...s.settings, floating_widget: v },
     }));
-    try {
-      await setFloatingWidgetEnabled(v);
-    } catch {
-      if (useSettingsStore.getState().settings.floating_widget === v) {
-        useSettingsStore.setState((s) => ({
-          settings: { ...s.settings, floating_widget: prev },
-        }));
-      }
-    }
+    await invokeAction(
+      () => setFloatingWidgetEnabled(v),
+      () => {
+        if (useSettingsStore.getState().settings.floating_widget === v) {
+          useSettingsStore.setState((s) => ({
+            settings: { ...s.settings, floating_widget: prev },
+          }));
+        }
+      },
+    );
   };
 
   return (
@@ -116,7 +118,7 @@ export function GeneralTab() {
               { value: "en", label: "English" },
             ]}
             value={(settings.language as string) ?? "en"}
-            onChange={(e) => void update("language", e.target.value)}
+            onChange={(e) => void invokeAction(() => update("language", e.target.value))}
             className="w-48"
           />
         </SettingsRow>
@@ -233,7 +235,7 @@ export function GeneralTab() {
         >
           <Button
             size="sm"
-            onClick={() => void update("onboarding_completed", false)}
+            onClick={() => void invokeAction(() => update("onboarding_completed", false))}
           >
             {t("settings.general.onboarding.button")}
           </Button>
@@ -244,7 +246,7 @@ export function GeneralTab() {
         >
           <Switch
             checked={(settings.auto_start as boolean) ?? false}
-            onChange={(v) => void update("auto_start", v)}
+            onChange={(v) => void invokeAction(() => update("auto_start", v))}
           />
         </SettingsRow>
         <SettingsRow
@@ -253,7 +255,7 @@ export function GeneralTab() {
         >
           <Switch
             checked={(settings.auto_update as boolean) ?? true}
-            onChange={(v) => void update("auto_update", v)}
+            onChange={(v) => void invokeAction(() => update("auto_update", v))}
           />
         </SettingsRow>
         <SettingsRow
@@ -262,7 +264,7 @@ export function GeneralTab() {
         >
           <Switch
             checked={(settings.sound_cues as boolean) ?? false}
-            onChange={(v) => void update("sound_cues", v)}
+            onChange={(v) => void invokeAction(() => update("sound_cues", v))}
           />
         </SettingsRow>
       </SettingsGroup>
@@ -274,7 +276,7 @@ export function GeneralTab() {
         >
           <Switch
             checked={(settings.command_mode as boolean) ?? false}
-            onChange={(v) => void update("command_mode", v)}
+            onChange={(v) => void invokeAction(() => update("command_mode", v))}
           />
         </SettingsRow>
         <SettingsRow
@@ -283,7 +285,7 @@ export function GeneralTab() {
         >
           <Switch
             checked={(settings.telemetry as boolean) ?? false}
-            onChange={(v) => void update("telemetry", v)}
+            onChange={(v) => void invokeAction(() => update("telemetry", v))}
           />
         </SettingsRow>
       </SettingsGroup>

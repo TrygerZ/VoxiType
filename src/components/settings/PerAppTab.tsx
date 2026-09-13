@@ -8,6 +8,7 @@ import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "../ui/Switch";
+import { invokeAction } from "../../lib/invokeAction";
 
 interface PerAppMode {
   id: number;
@@ -27,20 +28,20 @@ export function PerAppTab() {
   const [mode, setMode] = useState("message");
 
   const load = useCallback(async () => {
-    try {
+    await invokeAction(async () => {
       const res = await invoke<PerAppMode[]>("get_per_app_modes");
       setModes(res);
-    } catch {}
+    });
   }, []);
 
   const getActive = async () => {
-    try {
+    await invokeAction(async () => {
       const a = await invoke<string | null>("get_active_app");
       if (a) {
         setActiveApp(a);
         setProc(a);
       }
-    } catch {}
+    });
   };
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export function PerAppTab() {
 
   const handleAdd = async () => {
     if (!proc.trim()) return;
-    try {
+    const ok = await invokeAction(async () => {
       await invoke("set_per_app_mode", {
         mapping: {
           id: 0,
@@ -58,16 +59,18 @@ export function PerAppTab() {
           mode_id: mode,
         },
       });
+      await load();
+    });
+    if (ok) {
       setProc("");
-      void load();
-    } catch {}
+    }
   };
 
   const handleRemove = async (id: number) => {
-    try {
+    await invokeAction(async () => {
       await invoke("delete_per_app_mode", { id });
-      void load();
-    } catch {}
+      await load();
+    });
   };
 
   const perAppOn = (settings.per_app_mode as boolean) ?? false;
@@ -86,7 +89,7 @@ export function PerAppTab() {
         >
           <Switch
             checked={perAppOn}
-            onChange={(v) => void update("per_app_mode", v)}
+            onChange={(v) => void invokeAction(() => update("per_app_mode", v))}
           />
         </SettingsRow>
       </SettingsGroup>

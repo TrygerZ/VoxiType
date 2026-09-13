@@ -11,6 +11,7 @@ import {
 import { useHistoryStore } from "../../stores/historyStore";
 import { useT } from "../../lib/i18n";
 import { reInject, exportHistory } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { PanelHeader } from "../common/PanelHeader";
@@ -42,7 +43,7 @@ export function HistoryPanel() {
   const handleClear = async () => {
     setClearing(true);
     try {
-      await clear(true);
+      await invokeAction(() => clear(true));
     } finally {
       setClearing(false);
       setConfirmingClear(false);
@@ -54,7 +55,7 @@ export function HistoryPanel() {
   }, [load]);
 
   const handleExport = async (fmt: "json" | "csv") => {
-    try {
+    await invokeAction(async () => {
       const data = await exportHistory(fmt);
       const blob = new Blob([data], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
@@ -63,9 +64,7 @@ export function HistoryPanel() {
       a.download = `voxitype-history.${fmt}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      /* ignore */
-    }
+    });
   };
 
   const handleCopy = (id: string, text: string) => {
@@ -210,7 +209,7 @@ export function HistoryPanel() {
                 <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                   <button
                     type="button"
-                    onClick={() => void togglePin(item.id, !item.is_pinned)}
+                    onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
                     className={`rounded-lg p-1.5 transition-colors ${
                       item.is_pinned
                         ? "bg-vx-accent-soft text-vx-accent"
@@ -234,7 +233,7 @@ export function HistoryPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void reInject(item.id)}
+                    onClick={() => void invokeAction(() => reInject(item.id))}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                     title={t("history.re_inject_tooltip")}
                   >
@@ -242,7 +241,7 @@ export function HistoryPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void remove(item.id)}
+                    onClick={() => void invokeAction(() => remove(item.id))}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
                     title={t("history.delete_tooltip")}
                   >

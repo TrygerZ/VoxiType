@@ -1,36 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
 import { Check, AlertCircle } from "lucide-react";
 
-type ToastType = "success" | "error" | "info";
+import { useToastStore, toast, type ToastType } from "../../stores/toastStore";
 
-interface Toast {
-  id: number;
-  message: string;
-  type: ToastType;
-}
-
-let addToastFn: ((message: string, type?: ToastType) => void) | null = null;
-let nextToastId = 0;
-
-export function toast(message: string, type: ToastType = "success") {
-  addToastFn?.(message, type);
-}
+export { toast, type ToastType };
 
 export function ToastContainer() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const addToast = useCallback((message: string, type: ToastType = "success") => {
-    const id = ++nextToastId;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
-  }, []);
-
-  useEffect(() => {
-    addToastFn = addToast;
-    return () => { addToastFn = null; };
-  }, [addToast]);
+  const toasts = useToastStore((s) => s.toasts);
 
   if (toasts.length === 0) return null;
 

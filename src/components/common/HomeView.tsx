@@ -24,6 +24,7 @@ import { useHistoryStore } from "../../stores/historyStore";
 import { useStatsStore } from "../../stores/statsStore";
 import { useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { Waveform } from "../floating-widget/Waveform";
 import { Button } from "../ui/Button";
 
@@ -112,13 +113,11 @@ export function HomeView() {
   }, []);
 
   const handleReInject = useCallback(async (id: string) => {
-    try {
-      if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
-      await reInject(id);
+    if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
+    const ok = await invokeAction(() => reInject(id));
+    if (ok) {
       setInjectedId(id);
       injectTimerRef.current = setTimeout(() => setInjectedId(null), 2000);
-    } catch {
-      // ignore
     }
   }, []);
 
@@ -399,7 +398,7 @@ export function HomeView() {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => void updateSetting("active_mode", m.id)}
+                    onClick={() => void invokeAction(() => updateSetting("active_mode", m.id))}
                     className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none ${
                       activeMode === m.id
                         ? "border-vx-accent/50 bg-vx-accent/5 text-vx-text-primary"
@@ -430,7 +429,7 @@ export function HomeView() {
                 {translationEnabled && (
                   <select
                     value={translationTarget}
-                    onChange={(e) => void updateSetting("translation_target", e.target.value)}
+                    onChange={(e) => void invokeAction(() => updateSetting("translation_target", e.target.value))}
                     className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none"
                   >
                     <option value="en">English</option>
@@ -439,7 +438,7 @@ export function HomeView() {
                 )}
                 <button
                   type="button"
-                  onClick={() => void updateSetting("translation_enabled", !translationEnabled)}
+                  onClick={() => void invokeAction(() => updateSetting("translation_enabled", !translationEnabled))}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                     translationEnabled ? "bg-vx-accent" : "bg-vx-border-strong"
                   }`}
@@ -523,7 +522,7 @@ export function HomeView() {
                         {/* Pin */}
                         <button
                           type="button"
-                          onClick={() => void togglePin(item.id, !item.is_pinned)}
+                          onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
                           className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none ${
                             item.is_pinned
                               ? "text-vx-accent"

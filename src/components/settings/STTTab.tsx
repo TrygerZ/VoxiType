@@ -12,6 +12,7 @@ import {
   testGroqApi,
   testWhisperCpp,
 } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -66,25 +67,21 @@ export function STTTab() {
   // Whisper paths are only writable via the picker-gated backend command;
   // the backend refuses any path not returned by the native dialog.
   const handlePickBinary = async () => {
-    try {
+    await invokeAction(async () => {
       const file = await pickSetupFile("whisper_binary");
       if (file) {
         await updateWhisperPaths(file, null);
       }
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
-    }
+    });
   };
 
   const handlePickModel = async () => {
-    try {
+    await invokeAction(async () => {
       const file = await pickSetupFile("whisper_model");
       if (file) {
         await updateWhisperPaths(null, file);
       }
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
-    }
+    });
   };
 
   return (
@@ -102,7 +99,7 @@ export function STTTab() {
               { value: "whisper_cpp", label: "Offline whisper.cpp" },
             ]}
             value={engine}
-            onChange={(e) => void update("stt_engine", e.target.value)}
+            onChange={(e) => void invokeAction(() => update("stt_engine", e.target.value))}
             className="w-48"
           />
         </SettingsRow>
@@ -114,7 +111,7 @@ export function STTTab() {
               { value: "en", label: "English" },
             ]}
             value={language}
-            onChange={(e) => void update("stt_language", e.target.value)}
+            onChange={(e) => void invokeAction(() => update("stt_language", e.target.value))}
             className="w-48"
           />
         </SettingsRow>
@@ -146,9 +143,11 @@ export function STTTab() {
               max={32}
               value={whisperThreads}
               onChange={(e) =>
-                void update(
-                  "whisper_cpp_threads",
-                  Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                void invokeAction(() =>
+                  update(
+                    "whisper_cpp_threads",
+                    Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                  ),
                 )
               }
             />

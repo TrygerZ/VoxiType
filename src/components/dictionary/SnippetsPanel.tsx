@@ -5,8 +5,7 @@ import { useT } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { PanelHeader } from "../common/PanelHeader";
 import type { Snippet } from "../../types/app";
-import { formatTauriError } from "../../lib/tauri";
-import { toast } from "../ui/Toast";
+import { invokeAction } from "../../lib/invokeAction";
 
 export function SnippetsPanel() {
   const t = useT();
@@ -36,12 +35,10 @@ export function SnippetsPanel() {
       usage_count: 0,
       is_active: true,
     };
-    try {
-      await add(snippet);
+    const ok = await invokeAction(() => add(snippet));
+    if (ok) {
       setTrigger("");
       setContent("");
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
     }
   };
 
@@ -117,7 +114,7 @@ export function SnippetsPanel() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => void remove(s.id)}
+                  onClick={() => void invokeAction(() => remove(s.id))}
                   className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100"
                 >
                   <Trash2 className="h-4 w-4" />
