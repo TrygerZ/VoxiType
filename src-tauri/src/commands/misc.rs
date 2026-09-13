@@ -35,14 +35,16 @@ pub fn set_hotkey<R: Runtime>(
         "toggle" => hotkey::HotkeyMode::Toggle,
         _ => hotkey::HotkeyMode::Ptt,
     };
-    let cfg = hotkey::HotkeyConfig { key, mode: hk_mode };
+    let new_cfg = hotkey::HotkeyConfig { key, mode: hk_mode };
+    let state = app.state::<AppStateInner>();
+    let old_cfg = SettingsManager::new(&state.db)
+        .get::<hotkey::HotkeyConfig>("hotkey")
+        .ok()
+        .flatten();
 
-    hotkey::rebind(&app, &cfg)?;
-    {
-        let state = app.state::<AppStateInner>();
-        crate::storage::SettingsManager::new(&state.db).set("hotkey", &cfg)?;
-    }
-    Ok(())
+    hotkey::rebind(&app, &new_cfg, old_cfg.as_ref(), || {
+        SettingsManager::new(&state.db).set("hotkey", &new_cfg)
+    })
 }
 
 #[tauri::command]

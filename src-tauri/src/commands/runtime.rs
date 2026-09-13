@@ -430,18 +430,15 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
         let state = app_clone.state::<AppStateInner>();
         let config = build_audio_config(&state.db);
-        // The task may execute after a fast PTT tap already cancelled or
-        // stopped the session; only open the stream while still Recording,
-        // otherwise it would be orphaned with no one to stop it.
+        // Device initialization runs without holding the pipeline state lock so
+        // stop/cancel and UI transitions remain responsive during startup.
         match state.pipeline.start_capture_if_recording(&config) {
             Ok(true) => {}
             Ok(false) => {
                 tracing::debug!("Capture start skipped: recording already ended");
             }
             Err(e) => {
-                let _ = state
-                    .pipeline
-                    .apply(crate::pipeline::StateEvent::CancelRecording);
+                let _ = state.pipeline.cancel_recording();
                 fail(&app_clone, &state.pipeline, &e);
             }
         }

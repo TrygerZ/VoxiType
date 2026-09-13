@@ -8,7 +8,7 @@ pub mod capture;
 pub mod device;
 pub mod resampler;
 
-pub use capture::{AudioCaptureImpl, AudioConfig};
+pub use capture::{ActiveCapture, AudioCaptureImpl, AudioConfig};
 pub use device::DeviceInfo;
 
 /// Target sample rate for the whole downstream pipeline (Whisper wants 16 kHz mono).

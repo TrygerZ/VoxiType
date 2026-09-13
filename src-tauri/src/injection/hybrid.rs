@@ -1,9 +1,13 @@
 //! Hybrid injector: clipboard paste with keystroke fallback.
 
+use std::sync::Mutex;
 use std::time::Instant;
 
 use super::{clipboard, keystroke, InjectResult, InjectStrategy, TextInjector};
 use crate::error::Result;
+use crate::util::MutexExt;
+
+static CLIPBOARD_INJECTION_LOCK: Mutex<()> = Mutex::new(());
 
 /// Pause after writing to the clipboard before issuing the paste keystroke.
 ///
@@ -61,6 +65,7 @@ impl TextInjector for HybridInjector {
     }
 
     fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         let started = Instant::now();
 
         // Save current clipboard content
@@ -75,31 +80,11 @@ impl TextInjector for HybridInjector {
 
         keystroke::paste()?;
 
-        // CRITICAL: wait for the target app to consume the paste before
-        // restoring the clipboard.  enigo keystrokes are posted to the
-        // system input queue and processed asynchronously — if we restore
-        // the old clipboard immediately, the app reads the OLD content
-        // instead of our dictated text. See PASTE_CONSUME_DELAY_MS for the
-        // trade-off rationale (bug B-03).
+        // Wait for the target app to consume the paste before restoring.
+        // Keystrokes are processed asynchronously by the target app.
         std::thread::sleep(std::time::Duration::from_millis(PASTE_CONSUME_DELAY_MS));
 
-        // Restore previous clipboard state: put back the old content, or
-        // wipe when it was empty — either way the dictated text must not
-        // linger where other apps or clipboard managers can read it.
-        match prev.as_deref() {
-            Some(prev_text) => {
-                if let Err(e) = clipboard::write_text(prev_text) {
-                    tracing::warn!(
-                        "Failed to restore clipboard ({e}); wiping dictated text from clipboard"
-                    );
-                    wipe_clipboard_fail_safe();
-                }
-            }
-            None => {
-                tracing::debug!("Clipboard was empty before injection; wiping dictated text");
-                wipe_clipboard_fail_safe();
-            }
-        }
+        restore_clipboard(prev.as_deref());
 
         Ok(InjectResult {
             success: true,
@@ -118,6 +103,23 @@ impl TextInjector for HybridInjector {
             chars_injected: chars,
             duration_ms: started.elapsed().as_millis() as u64,
         })
+    }
+}
+
+fn restore_clipboard(prev: Option<&str>) {
+    match prev {
+        Some(prev_text) => {
+            if let Err(e) = clipboard::write_text(prev_text) {
+                tracing::warn!(
+                    "Failed to restore clipboard ({e}); wiping dictated text from clipboard"
+                );
+                wipe_clipboard_fail_safe();
+            }
+        }
+        None => {
+            tracing::debug!("Clipboard was empty before injection; wiping dictated text");
+            wipe_clipboard_fail_safe();
+        }
     }
 }
 
@@ -170,5 +172,33 @@ mod tests {
             let restored = clipboard::read_text();
             assert_eq!(restored.as_deref(), Some(orig.as_str()));
         }
+    }
+
+    #[test]
+    fn clipboard_lock_serializes_concurrent_access() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let active_count = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..4 {
+            let active = active_count.clone();
+            let max = max_active.clone();
+            handles.push(std::thread::spawn(move || {
+                let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+                let cur = active.fetch_add(1, Ordering::SeqCst) + 1;
+                max.fetch_max(cur, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(15));
+                active.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        assert_eq!(max_active.load(Ordering::SeqCst), 1);
     }
 }
