@@ -86,4 +86,46 @@ describe("settingsStore", () => {
 
     expect(useSettingsStore.getState().settings).toEqual({ active_mode: "email" });
   });
+
+  it("reloads settings after failed optimistic update", async () => {
+    useSettingsStore.setState({
+      settings: { language: "en" },
+      loaded: true,
+      error: null,
+    });
+
+    vi.mocked(tauri.updateSetting).mockRejectedValueOnce(new Error("disk full"));
+    vi.mocked(tauri.getSettings).mockResolvedValueOnce({ language: "en" });
+
+    await expect(
+      useSettingsStore.getState().update("language", "id"),
+    ).rejects.toThrow("disk full");
+
+    expect(tauri.getSettings).toHaveBeenCalled();
+    expect(useSettingsStore.getState().settings.language).toBe("en");
+  });
+
+  it("reloads settings after failed whisper paths update", async () => {
+    useSettingsStore.setState({
+      settings: { whisper_cpp_binary_path: "/old/bin" },
+      loaded: true,
+      error: null,
+    });
+
+    vi.mocked(tauri.setWhisperCppPaths).mockRejectedValueOnce(
+      new Error("invalid path"),
+    );
+    vi.mocked(tauri.getSettings).mockResolvedValueOnce({
+      whisper_cpp_binary_path: "/old/bin",
+    });
+
+    await expect(
+      useSettingsStore.getState().updateWhisperPaths("/new/bin", null),
+    ).rejects.toThrow("invalid path");
+
+    expect(tauri.getSettings).toHaveBeenCalled();
+    expect(useSettingsStore.getState().settings.whisper_cpp_binary_path).toBe(
+      "/old/bin",
+    );
+  });
 });

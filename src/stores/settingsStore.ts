@@ -21,48 +21,52 @@ interface SettingsStore {
   ) => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsStore>((set) => {
+export const useSettingsStore = create<SettingsStore>((set, get) => {
   let requestSeq = 0;
+
+  const load = async () => {
+    const seq = ++requestSeq;
+    try {
+      const settings = await getSettings();
+      if (seq === requestSeq) {
+        set({ settings, loaded: true, error: null });
+      }
+    } catch (err: unknown) {
+      const message = formatTauriError(err);
+      console.error("Failed to load settings:", err);
+      if (seq === requestSeq) {
+        set({ loaded: true, error: message });
+      }
+    }
+  };
 
   return {
     settings: {},
     loaded: false,
     error: null,
-
-    load: async () => {
-      const seq = ++requestSeq;
-      try {
-        const settings = await getSettings();
-        if (seq === requestSeq) {
-          set({ settings, loaded: true, error: null });
-        }
-      } catch (err: unknown) {
-        const message = formatTauriError(err);
-        console.error("Failed to load settings:", err);
-        if (seq === requestSeq) {
-          set({ loaded: true, error: message });
-        }
-      }
-    },
+    load,
 
     update: async (key, value) => {
-      const prev = useSettingsStore.getState().settings[key];
+      const prev = get().settings[key];
       set((s) => ({ settings: { ...s.settings, [key]: value } }));
       try {
         await updateSetting(key, value);
       } catch (err) {
-        // rollback only if the current value is still the optimistic one we set
-        if (useSettingsStore.getState().settings[key] === value) {
+        if (get().settings[key] === value) {
           set((s) => ({ settings: { ...s.settings, [key]: prev } }));
+        }
+        try {
+          await load();
+        } catch {
+          // ignore
         }
         throw err;
       }
     },
 
     updateWhisperPaths: async (binaryPath, modelPath) => {
-      const current = useSettingsStore.getState().settings;
-      const prevBinary = current.whisper_cpp_binary_path;
-      const prevModel = current.whisper_cpp_model_path;
+      const { whisper_cpp_binary_path: prevB, whisper_cpp_model_path: prevM } =
+        get().settings;
       set((s) => ({
         settings: {
           ...s.settings,
@@ -73,16 +77,21 @@ export const useSettingsStore = create<SettingsStore>((set) => {
       try {
         await setWhisperCppPaths(binaryPath, modelPath);
       } catch (err) {
-        const latest = useSettingsStore.getState().settings;
-        const rollback: Partial<Settings> = {};
-        if (binaryPath !== null && latest.whisper_cpp_binary_path === binaryPath) {
-          rollback.whisper_cpp_binary_path = prevBinary;
+        const cur = get().settings;
+        const rb: Partial<Settings> = {};
+        if (binaryPath !== null && cur.whisper_cpp_binary_path === binaryPath) {
+          rb.whisper_cpp_binary_path = prevB;
         }
-        if (modelPath !== null && latest.whisper_cpp_model_path === modelPath) {
-          rollback.whisper_cpp_model_path = prevModel;
+        if (modelPath !== null && cur.whisper_cpp_model_path === modelPath) {
+          rb.whisper_cpp_model_path = prevM;
         }
-        if (Object.keys(rollback).length > 0) {
-          set((s) => ({ settings: { ...s.settings, ...rollback } }));
+        if (Object.keys(rb).length > 0) {
+          set((s) => ({ settings: { ...s.settings, ...rb } }));
+        }
+        try {
+          await load();
+        } catch {
+          // ignore
         }
         throw err;
       }
