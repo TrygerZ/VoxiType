@@ -3,13 +3,14 @@ import { Switch } from "../ui/Switch";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { invokeAction } from "../../lib/invokeAction";
 import { useT } from "../../lib/i18n";
+import { getBooleanSetting, getStringSetting } from "../../lib/settingsGuards";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
 export function ModesTab() {
   const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
-  const translationOn = (settings.translation_enabled as boolean) ?? false;
+  const translationOn = getBooleanSetting(settings.translation_enabled, false);
 
   return (
     <div className="max-w-xl">
@@ -29,7 +30,7 @@ export function ModesTab() {
               { value: "message", label: t("settings.modes.message") },
               { value: "email", label: t("settings.modes.email") },
             ]}
-            value={(settings.active_mode as string) ?? "dictation"}
+            value={getStringSetting(settings.active_mode, "dictation")}
             onChange={(e) => void invokeAction(() => update("active_mode", e.target.value))}
             className="w-44"
           />
@@ -53,7 +54,7 @@ export function ModesTab() {
                 { value: "en", label: "English" },
                 { value: "id", label: "Bahasa Indonesia" },
               ]}
-              value={(settings.translation_target as string) ?? "en"}
+              value={getStringSetting(settings.translation_target, "en")}
               onChange={(e) => void invokeAction(() => update("translation_target", e.target.value))}
               className="w-44"
             />

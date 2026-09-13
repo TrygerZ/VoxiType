@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getBooleanSetting,
+  getHotkeySetting,
   getStringSetting,
   isBoolean,
   isHotkeyConfig,
@@ -34,5 +35,18 @@ describe("settingsGuards", () => {
     expect(getBooleanSetting(false, true)).toBe(false);
     expect(getBooleanSetting(null, true)).toBe(true);
     expect(getBooleanSetting(undefined, false)).toBe(false);
+  });
+
+  it("provides fallback for hotkey settings", () => {
+    const fallback = { key: "Ctrl+Space", mode: "ptt" };
+    expect(
+      getHotkeySetting({ key: "Alt+Space", mode: "toggle" }, fallback),
+    ).toEqual({
+      key: "Alt+Space",
+      mode: "toggle",
+    });
+    expect(getHotkeySetting(null, fallback)).toEqual(fallback);
+    expect(getHotkeySetting(undefined, fallback)).toEqual(fallback);
+    expect(getHotkeySetting({ key: "Ctrl+Space" }, fallback)).toEqual(fallback);
   });
 });

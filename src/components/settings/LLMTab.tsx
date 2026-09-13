@@ -7,6 +7,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import { testGroqApi, formatTauriError } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { getBooleanSetting, getStringSetting } from "../../lib/settingsGuards";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -14,7 +15,7 @@ export function LLMTab() {
   const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
-  const engine = (settings.llm_engine as string) ?? "ollama";
+  const engine = getStringSetting(settings.llm_engine, "ollama");
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail" | "err">("idle");
   const testTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -25,13 +26,13 @@ export function LLMTab() {
   }, []);
 
   const { localKey, onKeyChange } = useDebouncedApiKey(
-    (settings.groq_api_key as string) ?? "",
+    getStringSetting(settings.groq_api_key, ""),
     update,
     t("settings.stt.saved"),
   );
 
   const handleTestApi = async () => {
-    if (!localKey.trim() && !(settings.groq_api_key_set as boolean)) return;
+    if (!localKey.trim() && !getBooleanSetting(settings.groq_api_key_set, false)) return;
     if (testTimerRef.current) {
       clearTimeout(testTimerRef.current);
       testTimerRef.current = null;
@@ -84,7 +85,7 @@ export function LLMTab() {
             <Input
               label={t("settings.llm.ollama_model")}
               placeholder="qwen2.5:3b"
-              value={(settings.llm_model as string) ?? "qwen2.5:3b"}
+              value={getStringSetting(settings.llm_model, "qwen2.5:3b")}
               onChange={(e) => void invokeAction(() => update("llm_model", e.target.value))}
               hint={t("settings.llm.ollama_hint")}
             />
@@ -100,7 +101,7 @@ export function LLMTab() {
               type="password"
               showPasswordToggle
               placeholder={
-                (settings.groq_api_key_set as boolean)
+                getBooleanSetting(settings.groq_api_key_set, false)
                   ? t("settings.llm.saved_placeholder")
                   : "gsk_..."
               }
@@ -111,7 +112,7 @@ export function LLMTab() {
             <button
               type="button"
               onClick={handleTestApi}
-              disabled={testStatus === "testing" || (!localKey.trim() && !(settings.groq_api_key_set as boolean))}
+              disabled={testStatus === "testing" || (!localKey.trim() && !getBooleanSetting(settings.groq_api_key_set, false))}
               className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                 testStatus === "ok"
                   ? "border-green-500/40 bg-green-500/10 text-green-600"

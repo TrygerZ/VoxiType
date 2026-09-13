@@ -9,6 +9,7 @@ import { Select } from "../ui/Select";
 import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "../ui/Switch";
 import { invokeAction } from "../../lib/invokeAction";
+import { getBooleanSetting } from "../../lib/settingsGuards";
 
 interface PerAppMode {
   id: number;
@@ -91,7 +92,7 @@ export function PerAppTab() {
     }
   };
 
-  const perAppOn = (settings.per_app_mode as boolean) ?? false;
+  const perAppOn = getBooleanSetting(settings.per_app_mode, false);
 
   return (
     <div className="max-w-xl">

@@ -29,3 +29,10 @@ export function getStringSetting(value: unknown, fallback: string): string {
 export function getBooleanSetting(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
+
+export function getHotkeySetting(
+  value: unknown,
+  fallback: HotkeyConfig,
+): HotkeyConfig {
+  return isHotkeyConfig(value) ? value : fallback;
+}
