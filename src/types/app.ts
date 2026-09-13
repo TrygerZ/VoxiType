@@ -71,4 +71,28 @@ export interface UpdateInfo {
 }
 
 // Settings is a flat key->value map (values are JSON).
-export type Settings = Record<string, unknown>;
+export interface KnownSettings {
+  groq_api_key?: string;
+  groq_api_key_set?: boolean;
+  stt_engine?: string;
+  stt_language?: string;
+  whisper_cpp_binary_path?: string;
+  whisper_cpp_model_path?: string;
+  whisper_cpp_threads?: number;
+  llm_engine?: string;
+  llm_model?: string;
+  active_mode?: string;
+  language?: string;
+  sound_cues?: boolean;
+  translation_enabled?: boolean;
+  translation_target?: string;
+  command_mode?: boolean;
+  telemetry?: boolean;
+  per_app_mode?: boolean;
+  floating_widget?: boolean;
+  onboarding_completed?: boolean;
+  mic_device?: string;
+  hotkey?: unknown;
+}
+
+export type Settings = KnownSettings & Record<string, unknown>;

@@ -128,4 +128,34 @@ describe("settingsStore", () => {
       "/old/bin",
     );
   });
+
+  it("masks groq_api_key in store and sets groq_api_key_set indicator", async () => {
+    vi.mocked(tauri.updateSetting).mockResolvedValueOnce();
+
+    await useSettingsStore.getState().update("groq_api_key", "gsk_secret_123");
+
+    const state = useSettingsStore.getState();
+    expect(state.settings.groq_api_key).toBe("");
+    expect(state.settings.groq_api_key_set).toBe(true);
+    expect(tauri.updateSetting).toHaveBeenCalledWith(
+      "groq_api_key",
+      "gsk_secret_123",
+    );
+  });
+
+  it("updates groq_api_key_set to false when key is cleared", async () => {
+    useSettingsStore.setState({
+      settings: { groq_api_key: "", groq_api_key_set: true },
+      loaded: true,
+      error: null,
+    });
+    vi.mocked(tauri.updateSetting).mockResolvedValueOnce();
+
+    await useSettingsStore.getState().update("groq_api_key", "");
+
+    const state = useSettingsStore.getState();
+    expect(state.settings.groq_api_key).toBe("");
+    expect(state.settings.groq_api_key_set).toBe(false);
+    expect(tauri.updateSetting).toHaveBeenCalledWith("groq_api_key", "");
+  });
 });
