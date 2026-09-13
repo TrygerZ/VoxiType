@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-09-13
+
+### Fixed
+- Preserve non-text clipboard content such as images during injection
+- Restore the original clipboard content on every paste outcome through an RAII guard
+- Release modifier keys when keystroke paste errors mid-sequence
+- Persist whisper binary and model paths atomically in one transaction
+- Reject non-string API key values instead of silently clearing the stored key
+- Create the encryption master key exclusively and re-read on concurrent first-run conflicts
+- Checkpoint the source WAL file before data-directory migration copies the database
+- Reject history exports above the record cap instead of silently truncating
+- Use an LLM-specific error code for missing LLM API keys so frontend labels are correct
+- Cap the whisper initial prompt to its effective context window
+- Serialize start and stop sound cues so they no longer overlap
+- Fail closed when plaintext legacy API keys cannot be encrypted during migration
+- Bind whisper execution to the canonical binary path selected in the picker
+
+### Changed
+- Drop redundant snippets trigger index covered by the unique constraint
+
 ## [0.4.6] - 2026-09-13
 
 ### Fixed
@@ -175,7 +195,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.4.4...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/TrygerZ/VoxiType/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/TrygerZ/VoxiType/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/TrygerZ/VoxiType/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/TrygerZ/VoxiType/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/TrygerZ/VoxiType/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/TrygerZ/VoxiType/compare/v0.4.1...v0.4.2
