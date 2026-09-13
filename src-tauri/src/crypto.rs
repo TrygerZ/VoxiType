@@ -394,19 +394,16 @@ pub fn encrypt_api_key(plaintext: &str, master_key: &[u8; 32]) -> Result<String>
 
 /// Decrypt a value produced by [`encrypt_api_key`].
 ///
-/// Legacy plaintext values (no prefix) are still returned unchanged as a
-/// defensive fallback so a failed migration never bricks an existing install,
-/// but every hit is logged loudly: post-migration this should never happen.
+/// Plaintext values without the [`ENC_PREFIX`] are rejected — migration
+/// at startup ensures all stored keys are encrypted at rest.
 pub fn decrypt_api_key(stored: &str, master_key: &[u8; 32]) -> Result<String> {
     if stored.is_empty() {
         return Ok(String::new());
     }
     let Some(b64) = stored.strip_prefix(ENC_PREFIX) else {
-        tracing::warn!(
-            "decrypt_api_key got a value without '{ENC_PREFIX}' prefix; \
-             treating as legacy plaintext — migrate_legacy_api_key should have re-encrypted it"
-        );
-        return Ok(stored.to_string());
+        return Err(AppError::internal(
+            "unencrypted API key rejected: expected encrypted 'enc:v1:' prefix",
+        ));
     };
     let blob = B64
         .decode(b64)
@@ -450,10 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn plaintext_passthrough() {
+    fn unencrypted_key_rejected() {
         let key = [1u8; 32];
-        // Legacy plaintext without prefix decrypts to itself.
-        assert_eq!(decrypt_api_key("plainkey", &key).unwrap(), "plainkey");
+        assert!(decrypt_api_key("plainkey", &key).is_err());
     }
 
     #[test]
