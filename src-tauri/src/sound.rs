@@ -3,10 +3,19 @@
 //! Plays short premium WAV files via a dedicated cpal output stream.
 
 use std::sync::mpsc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
+
+use crate::util::MutexExt;
+
+/// Global lock serializing cue playback across threads to prevent audio overlap.
+static CUE_LOCK: Mutex<()> = Mutex::new(());
+
+const STREAM_TIMEOUT_PADDING_MS: u64 = 100;
+const HARDWARE_DRAIN_DELAY_MS: u64 = 150;
 
 /// Which cue to play.
 #[derive(Debug, Clone, Copy)]
@@ -98,9 +107,10 @@ fn parse_wav(bytes: &[u8]) -> Result<WavData, String> {
     })
 }
 
-/// Play a cue without blocking. Errors are logged, never propagated.
+/// Play a cue without blocking. Serialized by CUE_LOCK to prevent overlapping cues.
 pub fn play(cue: Cue) {
     std::thread::spawn(move || {
+        let _guard = CUE_LOCK.lock_recover();
         if let Err(e) = play_blocking(cue) {
             tracing::debug!("Sound cue skipped: {e}");
         }
@@ -159,6 +169,7 @@ fn play_blocking(cue: Cue) -> Result<(), String> {
         ($t:ty, $convert:expr) => {{
             let mut next = next_sample;
             let done_tx = done_tx.clone();
+            let mut finished = false;
             device.build_output_stream(
                 &config.clone().into(),
                 move |data: &mut [$t], _| {
@@ -171,7 +182,10 @@ fn play_blocking(cue: Cue) -> Result<(), String> {
                                 }
                             }
                             None => {
-                                let _ = done_tx.send(());
+                                if !finished {
+                                    finished = true;
+                                    let _ = done_tx.send(());
+                                }
                                 for sample in frame.iter_mut() {
                                     *sample = $convert(0.0);
                                 }
@@ -195,9 +209,16 @@ fn play_blocking(cue: Cue) -> Result<(), String> {
 
     stream.play().map_err(|e| e.to_string())?;
 
-    // Wait until the sound has finished playing, then drop the stream
-    let _ = done_rx.recv_timeout(Duration::from_millis(play_duration_ms + 100));
-    std::thread::sleep(Duration::from_millis(150));
+    // Wait until the sound has finished queuing samples.
+    if done_rx
+        .recv_timeout(Duration::from_millis(
+            play_duration_ms + STREAM_TIMEOUT_PADDING_MS,
+        ))
+        .is_ok()
+    {
+        // Paces stream teardown to allow hardware audio buffer to flush before drop.
+        std::thread::sleep(Duration::from_millis(HARDWARE_DRAIN_DELAY_MS));
+    }
     drop(stream);
     Ok(())
 }
@@ -244,5 +265,19 @@ mod tests {
         let parsed = parse_wav(&bytes).unwrap();
         assert_eq!(parsed.sample_rate, 48_000);
         assert_eq!(parsed.samples, vec![0]);
+    }
+
+    #[test]
+    fn test_cue_lock_serializes() {
+        let guard = CUE_LOCK.lock_recover();
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _inner = CUE_LOCK.lock_recover();
+            let _ = tx.send(true);
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+        drop(guard);
+        assert!(rx.recv_timeout(Duration::from_millis(500)).unwrap());
+        let _ = handle.join();
     }
 }
