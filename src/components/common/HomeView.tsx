@@ -62,6 +62,7 @@ export function HomeView() {
   // Timer refs for cleanup
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const injectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingPendingRef = useRef(false);
 
   // Load history, settings, and lifetime stats on mount
   useEffect(() => {
@@ -91,11 +92,17 @@ export function HomeView() {
   }, [t, lang]);
 
   // Toggle record from GUI
-  const handleMicClick = useCallback(() => {
-    if (isRecording) {
-      void stopRecording();
-    } else if (state === "idle" || state === "error") {
-      void startRecording();
+  const handleMicClick = useCallback(async () => {
+    if (recordingPendingRef.current) return;
+    recordingPendingRef.current = true;
+    try {
+      if (isRecording) {
+        await invokeAction(stopRecording);
+      } else if (state === "idle" || state === "error") {
+        await invokeAction(startRecording);
+      }
+    } finally {
+      recordingPendingRef.current = false;
     }
   }, [isRecording, state]);
 

@@ -10,6 +10,8 @@ vi.mock("../lib/tauri", () => ({
     }
     return String(error);
   },
+  startRecording: vi.fn().mockResolvedValue(undefined),
+  stopRecording: vi.fn().mockResolvedValue(undefined),
   getSettings: vi.fn().mockResolvedValue({}),
   updateSetting: vi.fn().mockResolvedValue(undefined),
   setWhisperCppPaths: vi.fn().mockResolvedValue(undefined),
