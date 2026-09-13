@@ -3,6 +3,7 @@ import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { getMicrophones } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { getStringSetting } from "../../lib/settingsGuards";
 import type { DeviceInfo } from "../../types/app";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { useT } from "../../lib/i18n";
@@ -31,7 +32,7 @@ export function AudioTab() {
         <SettingsRow label={t("settings.audio.mic")}>
           <Select
             options={devices.map((d) => ({ value: d.id, label: d.name }))}
-            value={(settings.mic_device as string) ?? "default"}
+            value={getStringSetting(settings.mic_device, "default")}
             onChange={(e) => void invokeAction(() => update("mic_device", e.target.value))}
             className="w-56"
           />

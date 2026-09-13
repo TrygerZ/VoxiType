@@ -12,6 +12,19 @@ export interface DebouncedApiKey {
   onKeyChange: (value: string) => void;
 }
 
+async function persistApiKey(
+  update: (key: string, value: unknown) => Promise<void>,
+  value: string,
+  savedLabel: string,
+) {
+  try {
+    await update("groq_api_key", value);
+    if (value.trim()) toast(savedLabel);
+  } catch (e: unknown) {
+    toast(formatTauriError(e), "error");
+  }
+}
+
 // Holds the Groq API key in local state for responsive typing while debouncing
 // the encrypted persist. storeValue resyncs the field when the shared key
 // changes externally (initial load, or saved from another view).
@@ -21,23 +34,15 @@ export function useDebouncedApiKey(
   savedLabel: string,
 ): DebouncedApiKey {
   const [localKey, setLocalKey] = useState(storeValue);
+  const savedLabelRef = useRef(savedLabel);
+  savedLabelRef.current = savedLabel;
 
   useEffect(() => {
     setLocalKey(storeValue);
   }, [storeValue]);
 
-  const savedLabelRef = useRef(savedLabel);
-  savedLabelRef.current = savedLabel;
-
   const persist = useCallback(
-    async (value: string) => {
-      try {
-        await update("groq_api_key", value);
-        if (value.trim()) toast(savedLabelRef.current);
-      } catch (e: unknown) {
-        toast(formatTauriError(e), "error");
-      }
-    },
+    (value: string) => void persistApiKey(update, value, savedLabelRef.current),
     [update],
   );
 
@@ -45,6 +50,12 @@ export function useDebouncedApiKey(
     () => debounce(persist, API_KEY_DEBOUNCE_MS),
     [persist],
   );
+
+  useEffect(() => {
+    return () => {
+      debouncedPersist.cancel();
+    };
+  }, [debouncedPersist]);
 
   const onKeyChange = (value: string) => {
     setLocalKey(value);

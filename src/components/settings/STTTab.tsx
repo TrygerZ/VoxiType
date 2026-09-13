@@ -1,4 +1,4 @@
-import { type ButtonHTMLAttributes, useState } from "react";
+import { type ButtonHTMLAttributes, useEffect, useRef, useState } from "react";
 import { Check, FolderOpen, Loader2, XCircle } from "lucide-react";
 
 import { Input } from "../ui/Input";
@@ -25,6 +25,15 @@ export function STTTab() {
   const updateWhisperPaths = useSettingsStore((s) => s.updateWhisperPaths);
   const [groqStatus, setGroqStatus] = useState<TestStatus>("idle");
   const [whisperStatus, setWhisperStatus] = useState<TestStatus>("idle");
+  const groqTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const whisperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (groqTimerRef.current) clearTimeout(groqTimerRef.current);
+      if (whisperTimerRef.current) clearTimeout(whisperTimerRef.current);
+    };
+  }, []);
 
   const engine = stringSetting(settings.stt_engine, "groq");
   const language = stringSetting(settings.stt_language, "auto");
@@ -45,7 +54,7 @@ export function STTTab() {
 
   const handleTestApi = async () => {
     if (!localKey.trim() && !groqKeySet) return;
-    await runStatus(setGroqStatus, async () => {
+    await runStatus(setGroqStatus, groqTimerRef, async () => {
       await testGroqApi(localKey.trim());
       toast(t("settings.stt.connected"));
     });
@@ -53,7 +62,7 @@ export function STTTab() {
 
   const handleTestWhisper = async () => {
     if (!whisperBinary.trim() || !whisperModel.trim()) return;
-    await runStatus(setWhisperStatus, async () => {
+    await runStatus(setWhisperStatus, whisperTimerRef, async () => {
       await testWhisperCpp(
         whisperBinary.trim(),
         whisperModel.trim(),
@@ -207,8 +216,13 @@ function numberSetting(value: unknown, fallback: number): number {
 
 async function runStatus(
   setStatus: (status: TestStatus) => void,
+  timerRef: { current: ReturnType<typeof setTimeout> | null },
   test: () => Promise<void>,
 ) {
+  if (timerRef.current) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
   setStatus("testing");
   try {
     await test();
@@ -224,7 +238,10 @@ async function runStatus(
     );
     toast(formatTauriError(e), "error");
   } finally {
-    setTimeout(() => setStatus("idle"), 3000);
+    timerRef.current = setTimeout(() => {
+      setStatus("idle");
+      timerRef.current = null;
+    }, 3000);
   }
 }
 
@@ -265,7 +282,7 @@ function PathPickerField({
       <button
         type="button"
         onClick={onBrowse}
-        className="mt-6 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-vx-bg-tertiary px-4 py-2.5 text-sm font-medium text-vx-text-primary transition-colors duration-150 hover:bg-vx-bg-elevated"
+        className="mt-6 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-vx-bg-tertiary px-4 py-2.5 text-sm font-medium text-vx-text-primary transition-colors duration-150 hover:bg-vx-bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
       >
         <FolderOpen className="h-4 w-4" />
         {browseLabel}
@@ -292,7 +309,7 @@ function StatusButton({
   return (
     <button
       type="button"
-      className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${statusClasses(
+      className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${statusClasses(
         status,
       )} ${className}`}
       {...rest}

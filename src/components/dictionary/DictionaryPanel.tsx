@@ -32,34 +32,45 @@ export function DictionaryPanel() {
 
   const [word, setWord] = useState("");
   const [replacement, setReplacement] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleAdd = async () => {
-    if (!word.trim()) return;
-    const entry: DictionaryEntry = {
-      id: "",
-      word: word.trim(),
-      pronunciation: null,
-      category: "custom",
-      replacement: replacement.trim() || null,
-      language: "id",
-      usage_count: 0,
-      is_active: true,
-    };
-    const ok = await invokeAction(() => add(entry));
-    if (ok) {
-      setWord("");
-      setReplacement("");
+    if (busy || !word.trim()) return;
+    setBusy(true);
+    try {
+      const entry: DictionaryEntry = {
+        id: "",
+        word: word.trim(),
+        pronunciation: null,
+        category: "custom",
+        replacement: replacement.trim() || null,
+        language: "id",
+        usage_count: 0,
+        is_active: true,
+      };
+      const ok = await invokeAction(() => add(entry));
+      if (ok) {
+        setWord("");
+        setReplacement("");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleToggle = (id: string, current: boolean) => {
+    if (togglingId === id) return;
+    setTogglingId(id);
     void invokeAction(async () => {
       await setDictionaryActive(id, !current);
       await load();
+    }).finally(() => {
+      setTogglingId(null);
     });
   };
 
@@ -86,13 +97,13 @@ export function DictionaryPanel() {
       
       // Validate file size (5MB limit)
       if (file.size > 5 * 1024 * 1024) {
-        toast("File terlalu besar (maks 5MB)", "error");
+        toast(t("dictionary.file_too_large"), "error");
         return;
       }
       
       // Validate file extension
       if (!file.name.endsWith(".json")) {
-        toast("Hanya file JSON yang didukung", "error");
+        toast(t("dictionary.json_only"), "error");
         return;
       }
       
@@ -118,6 +129,7 @@ export function DictionaryPanel() {
               size="sm"
               onClick={() => void handleExport()}
               title={t("dictionary.export_tooltip")}
+              aria-label={t("dictionary.export_tooltip")}
             >
               <Download className="h-3.5 w-3.5" />
             </Button>
@@ -126,6 +138,7 @@ export function DictionaryPanel() {
               size="sm"
               onClick={handleImport}
               title={t("dictionary.import_tooltip")}
+              aria-label={t("dictionary.import_tooltip")}
             >
               <Upload className="h-3.5 w-3.5" />
             </Button>
@@ -140,7 +153,7 @@ export function DictionaryPanel() {
           value={word}
           onChange={(e) => setWord(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void handleAdd();
+            if (e.key === "Enter" && !busy) void handleAdd();
           }}
         />
         <input
@@ -149,10 +162,15 @@ export function DictionaryPanel() {
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void handleAdd();
+            if (e.key === "Enter" && !busy) void handleAdd();
           }}
         />
-        <Button variant="primary" size="sm" onClick={() => void handleAdd()}>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => void handleAdd()}
+          disabled={busy}
+        >
           <Plus className="h-4 w-4" /> {t("dictionary.add_btn")}
         </Button>
       </div>
@@ -200,12 +218,14 @@ export function DictionaryPanel() {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
+                    disabled={togglingId === e.id}
                     onClick={() => void handleToggle(e.id, e.is_active)}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
+                    aria-label={e.is_active ? t("dictionary.deactivate_word", { word: e.word }) : t("dictionary.activate_word", { word: e.word })}
                   >
                     {e.is_active ? (
                       <ToggleRight className="h-4.5 w-4.5 text-vx-success" />
@@ -216,7 +236,9 @@ export function DictionaryPanel() {
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => remove(e.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    title={t("dictionary.delete_tooltip")}
+                    aria-label={t("dictionary.delete_word", { word: e.word })}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

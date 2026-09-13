@@ -5,7 +5,6 @@ import { useAppStore } from "../stores/appStore";
 import { useHistoryStore } from "../stores/historyStore";
 import { useStatsStore } from "../stores/statsStore";
 import type {
-  AudioLevelEvent,
   StateChangedEvent,
   TranscriptionCompleteEvent,
   TranscriptionErrorEvent,
@@ -17,7 +16,6 @@ import type {
  */
 export function useTauriEvents() {
   const setState = useAppStore((s) => s.setState);
-  const setAudioLevel = useAppStore((s) => s.setAudioLevel);
   const setDuration = useAppStore((s) => s.setDuration);
   const setResult = useAppStore((s) => s.setResult);
   const setError = useAppStore((s) => s.setError);
@@ -52,9 +50,6 @@ export function useTauriEvents() {
       }),
     );
     unlisteners.push(
-      onEvent<AudioLevelEvent>("audio_level", (p) => setAudioLevel(p.level)),
-    );
-    unlisteners.push(
       onEvent<TranscriptionCompleteEvent>("transcription_complete", (p) => {
         setResult(p.word_count);
         void reloadHistory();
@@ -73,5 +68,5 @@ export function useTauriEvents() {
         .then((fns) => fns.forEach((fn) => fn()))
         .catch(() => {});
     };
-  }, [setState, setAudioLevel, setDuration, setResult, setError, reloadHistory, reloadStats]);
+  }, [setState, setDuration, setResult, setError, reloadHistory, reloadStats]);
 }

@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { useSettingsStore } from "../stores/settingsStore";
+
 // Simple ID/EN translation dictionary for UI strings.
 
 type Dict = Record<string, string>;
@@ -135,6 +138,8 @@ const id: Dict = {
   "settings.app_rules.active_group": "Aturan Aktif",
   "settings.app_rules.empty": "Belum ada aturan aplikasi yang dikonfigurasi.",
   "settings.app_rules.applies_mode": "Menerapkan mode: {mode}",
+  "settings.app_rules.delete_tooltip": "Hapus",
+  "settings.app_rules.delete_rule": "Hapus aturan untuk {app}",
 
   // Shortcuts Tab
   "settings.shortcuts.title": "Pintasan",
@@ -190,6 +195,12 @@ const id: Dict = {
   "dictionary.empty": "Belum ada entri kamus",
   "dictionary.activate_tooltip": "Aktifkan",
   "dictionary.deactivate_tooltip": "Nonaktifkan",
+  "dictionary.delete_tooltip": "Hapus",
+  "dictionary.delete_word": "Hapus {word}",
+  "dictionary.activate_word": "Aktifkan {word}",
+  "dictionary.deactivate_word": "Nonaktifkan {word}",
+  "dictionary.file_too_large": "File terlalu besar (maks 5MB)",
+  "dictionary.json_only": "Hanya file JSON yang didukung",
 
   // Snippets Panel
   "snippets.title": "Snippet",
@@ -199,6 +210,8 @@ const id: Dict = {
   "snippets.add_btn": "Tambah snippet",
   "snippets.loading": "Memuat...",
   "snippets.empty": "Belum ada snippet",
+  "snippets.delete_tooltip": "Hapus",
+  "snippets.delete_snippet": "Hapus {phrase}",
 
   // Onboarding
   "onboarding.welcome.title": "Selamat datang di VoxiType",
@@ -540,6 +553,8 @@ const en: Dict = {
   "settings.app_rules.active_group": "Active Rules",
   "settings.app_rules.empty": "No app rules configured.",
   "settings.app_rules.applies_mode": "Applies mode: {mode}",
+  "settings.app_rules.delete_tooltip": "Delete",
+  "settings.app_rules.delete_rule": "Delete rule for {app}",
 
   // Shortcuts Tab
   "settings.shortcuts.title": "Shortcuts",
@@ -595,6 +610,12 @@ const en: Dict = {
   "dictionary.empty": "No dictionary entries",
   "dictionary.activate_tooltip": "Activate",
   "dictionary.deactivate_tooltip": "Deactivate",
+  "dictionary.delete_tooltip": "Delete",
+  "dictionary.delete_word": "Delete {word}",
+  "dictionary.activate_word": "Activate {word}",
+  "dictionary.deactivate_word": "Deactivate {word}",
+  "dictionary.file_too_large": "File too large (max 5MB)",
+  "dictionary.json_only": "Only JSON files are supported",
 
   // Snippets Panel
   "snippets.title": "Snippets",
@@ -604,6 +625,8 @@ const en: Dict = {
   "snippets.add_btn": "Add snippet",
   "snippets.loading": "Loading...",
   "snippets.empty": "No snippets yet",
+  "snippets.delete_tooltip": "Delete",
+  "snippets.delete_snippet": "Delete {phrase}",
 
   // Onboarding
   "onboarding.welcome.title": "Welcome to VoxiType",
@@ -820,8 +843,12 @@ export function setLanguage(lang: string) {
   if (dictionaries[lang]) currentLang = lang;
 }
 
-export function t(key: string, vars?: Record<string, string | number>): string {
-  const dict = dictionaries[currentLang] ?? id;
+function formatTranslation(
+  lang: string,
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
+  const dict = dictionaries[lang] ?? id;
   let value = dict[key] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
@@ -831,16 +858,28 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   return value;
 }
 
+export function t(key: string, vars?: Record<string, string | number>): string {
+  return formatTranslation(currentLang, key, vars);
+}
+
+useSettingsStore.subscribe((state) => {
+  const lang = state.settings.language;
+  if (typeof lang === "string") {
+    setLanguage(lang);
+  }
+});
+
+const initialLang = useSettingsStore.getState().settings.language;
+if (typeof initialLang === "string") {
+  setLanguage(initialLang);
+}
+
 // ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
-import { useMemo } from "react";
-import { useSettingsStore } from "../stores/settingsStore";
 export function useT() {
   const lang = useSettingsStore((s) => s.settings.language) as string | undefined;
-  const activeLang = lang && dictionaries[lang] ? lang : "en";
-  if (activeLang !== currentLang) {
-    currentLang = activeLang;
-  }
+  const activeLang = lang && dictionaries[lang] ? lang : currentLang;
   return useMemo(() => {
-    return (key: string, vars?: Record<string, string | number>) => t(key, vars);
+    return (key: string, vars?: Record<string, string | number>) =>
+      formatTranslation(activeLang, key, vars);
   }, [activeLang]);
 }

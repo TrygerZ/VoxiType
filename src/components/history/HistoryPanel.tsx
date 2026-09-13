@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Pin,
@@ -39,6 +39,13 @@ export function HistoryPanel() {
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const handleClear = async () => {
     setClearing(true);
@@ -69,8 +76,15 @@ export function HistoryPanel() {
 
   const handleCopy = (id: string, text: string) => {
     void navigator.clipboard.writeText(text);
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
     setCopied(id);
-    setTimeout(() => setCopied((c) => (c === id ? null : c)), 1200);
+    copyTimerRef.current = setTimeout(() => {
+      setCopied((c) => (c === id ? null : c));
+      copyTimerRef.current = null;
+    }, 1200);
   };
 
   const filtered = modeFilter
@@ -206,44 +220,48 @@ export function HistoryPanel() {
                   </div>
                 </div>
 
-                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
-                    className={`rounded-lg p-1.5 transition-colors ${
+                    className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       item.is_pinned
                         ? "bg-vx-accent-soft text-vx-accent"
                         : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                     }`}
                     title={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
+                    aria-label={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
                   >
                     <Pin className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
-                    className={`rounded-lg p-1.5 transition-colors ${
+                    className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       copied === item.id
                         ? "bg-vx-success/15 text-vx-success"
                         : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                     }`}
                     title={t("history.copy_tooltip")}
+                    aria-label={t("history.copy_tooltip")}
                   >
                     <Copy className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => reInject(item.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={t("history.re_inject_tooltip")}
+                    aria-label={t("history.re_inject_tooltip")}
                   >
                     <RefreshCw className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => remove(item.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={t("history.delete_tooltip")}
+                    aria-label={t("history.delete_tooltip")}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

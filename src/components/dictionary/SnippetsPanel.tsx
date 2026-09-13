@@ -18,27 +18,33 @@ export function SnippetsPanel() {
 
   const [trigger, setTrigger] = useState("");
   const [content, setContent] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleAdd = async () => {
-    if (!trigger.trim() || !content.trim()) return;
-    const snippet: Snippet = {
-      id: "",
-      name: trigger.trim(),
-      trigger_phrase: trigger.trim(),
-      content: content.trim(),
-      category: null,
-      mode: null,
-      usage_count: 0,
-      is_active: true,
-    };
-    const ok = await invokeAction(() => add(snippet));
-    if (ok) {
-      setTrigger("");
-      setContent("");
+    if (busy || !trigger.trim() || !content.trim()) return;
+    setBusy(true);
+    try {
+      const snippet: Snippet = {
+        id: "",
+        name: trigger.trim(),
+        trigger_phrase: trigger.trim(),
+        content: content.trim(),
+        category: null,
+        mode: null,
+        usage_count: 0,
+        is_active: true,
+      };
+      const ok = await invokeAction(() => add(snippet));
+      if (ok) {
+        setTrigger("");
+        setContent("");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -59,6 +65,9 @@ export function SnippetsPanel() {
           placeholder={t("snippets.placeholder_trigger")}
           value={trigger}
           onChange={(e) => setTrigger(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !busy) void handleAdd();
+          }}
         />
         <textarea
           className={`${inputCls} min-h-20 resize-none`}
@@ -67,7 +76,12 @@ export function SnippetsPanel() {
           onChange={(e) => setContent(e.target.value)}
         />
         <div className="flex justify-end">
-          <Button variant="primary" size="sm" onClick={() => void handleAdd()}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void handleAdd()}
+            disabled={busy}
+          >
             <Plus className="h-4 w-4" /> {t("snippets.add_btn")}
           </Button>
         </div>
@@ -115,7 +129,9 @@ export function SnippetsPanel() {
                 <button
                   type="button"
                   onClick={() => void invokeAction(() => remove(s.id))}
-                  className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100"
+                  className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                  title={t("snippets.delete_tooltip")}
+                  aria-label={t("snippets.delete_snippet", { phrase: s.trigger_phrase })}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

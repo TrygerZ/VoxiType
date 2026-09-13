@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { formatTauriError, setHotkey } from "../../lib/tauri";
 import { useT } from "../../lib/i18n";
+import { getHotkeySetting } from "../../lib/settingsGuards";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { CompleteStep } from "./steps/CompleteStep";
 import { DataDirectoryStep } from "./steps/DataDirectoryStep";
@@ -32,9 +33,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [binary, setBinary] = useState(setting(settings.whisper_cpp_binary_path, "whisper-cli"));
   const [model, setModel] = useState(setting(settings.whisper_cpp_model_path, ""));
   const [threads, setThreads] = useState(numberSetting(settings.whisper_cpp_threads, 4));
-  const hotkey = settings.hotkey as { key?: string; mode?: string } | undefined;
-  const [hotkeyKey, setHotkeyKey] = useState(hotkey?.key ?? "Ctrl+Space");
-  const [hotkeyMode, setHotkeyMode] = useState(hotkey?.mode ?? "ptt");
+  const hotkey = getHotkeySetting(settings.hotkey, { key: "Ctrl+Space", mode: "ptt" });
+  const [hotkeyKey, setHotkeyKey] = useState(hotkey.key);
+  const [hotkeyMode, setHotkeyMode] = useState(hotkey.mode);
   const [error, setError] = useState("");
   const [hotkeyError, setHotkeyError] = useState("");
   const currentStepIdx = STEPS.indexOf(step);

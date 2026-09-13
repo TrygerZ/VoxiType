@@ -11,6 +11,7 @@ import {
 } from "../../lib/tauri";
 import { formatDirectoryError } from "../../lib/dataDirectory";
 import { invokeAction } from "../../lib/invokeAction";
+import { getBooleanSetting, getStringSetting } from "../../lib/settingsGuards";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { Switch } from "../ui/Switch";
 import { Select } from "../ui/Select";
@@ -117,7 +118,7 @@ export function GeneralTab() {
               { value: "id", label: "Bahasa Indonesia" },
               { value: "en", label: "English" },
             ]}
-            value={(settings.language as string) ?? "en"}
+            value={getStringSetting(settings.language, "en")}
             onChange={(e) => void invokeAction(() => update("language", e.target.value))}
             className="w-48"
           />
@@ -127,7 +128,7 @@ export function GeneralTab() {
           description={t("settings.general.widget.desc")}
         >
           <Switch
-            checked={(settings.floating_widget as boolean) ?? true}
+            checked={getBooleanSetting(settings.floating_widget, true)}
             onChange={toggleFloatingWidget}
           />
         </SettingsRow>
@@ -245,7 +246,7 @@ export function GeneralTab() {
           description={t("settings.general.startup.desc")}
         >
           <Switch
-            checked={(settings.auto_start as boolean) ?? false}
+            checked={getBooleanSetting(settings.auto_start, false)}
             onChange={(v) => void invokeAction(() => update("auto_start", v))}
           />
         </SettingsRow>
@@ -254,7 +255,7 @@ export function GeneralTab() {
           description={t("settings.general.updates.desc")}
         >
           <Switch
-            checked={(settings.auto_update as boolean) ?? true}
+            checked={getBooleanSetting(settings.auto_update, true)}
             onChange={(v) => void invokeAction(() => update("auto_update", v))}
           />
         </SettingsRow>
@@ -263,7 +264,7 @@ export function GeneralTab() {
           description={t("settings.general.sound.desc")}
         >
           <Switch
-            checked={(settings.sound_cues as boolean) ?? false}
+            checked={getBooleanSetting(settings.sound_cues, false)}
             onChange={(v) => void invokeAction(() => update("sound_cues", v))}
           />
         </SettingsRow>
@@ -275,7 +276,7 @@ export function GeneralTab() {
           description={t("settings.general.command.desc")}
         >
           <Switch
-            checked={(settings.command_mode as boolean) ?? false}
+            checked={getBooleanSetting(settings.command_mode, false)}
             onChange={(v) => void invokeAction(() => update("command_mode", v))}
           />
         </SettingsRow>
@@ -284,7 +285,7 @@ export function GeneralTab() {
           description={t("settings.general.stats.desc")}
         >
           <Switch
-            checked={(settings.telemetry as boolean) ?? false}
+            checked={getBooleanSetting(settings.telemetry, false)}
             onChange={(v) => void invokeAction(() => update("telemetry", v))}
           />
         </SettingsRow>
