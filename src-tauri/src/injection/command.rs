@@ -65,6 +65,24 @@ impl VoiceCommand {
     }
 }
 
+/// Verify that the current foreground window matches the window that was active
+/// when capture started. If the window changed, abort to prevent executing
+/// editing macros in the wrong application.
+pub fn verify_target_window(expected: Option<&str>, current: Option<&str>) -> Result<()> {
+    if let Some(initial) = expected {
+        if current != Some(initial) {
+            let current_display = current.unwrap_or("none");
+            tracing::warn!(
+                "Foreground window changed from {initial} to {current_display}; aborting command injection"
+            );
+            return Err(AppError::injection(format!(
+                "Command aborted: target window changed from {initial} to {current_display}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Execute a voice command by simulating the corresponding keystrokes.
 pub fn execute(command: VoiceCommand) -> Result<()> {
     let mut enigo = Enigo::new(&Settings::default())
@@ -162,5 +180,18 @@ mod tests {
     fn rejects_unknown_phrases() {
         assert_eq!(VoiceCommand::from_phrase("halo dunia"), None);
         assert_eq!(VoiceCommand::from_phrase(""), None);
+    }
+
+    #[test]
+    fn verifies_target_window_matches() {
+        assert!(verify_target_window(Some("code"), Some("code")).is_ok());
+        assert!(verify_target_window(None, Some("code")).is_ok());
+        assert!(verify_target_window(None, None).is_ok());
+
+        let err_diff = verify_target_window(Some("code"), Some("chrome")).unwrap_err();
+        assert_eq!(err_diff.code, crate::error::ErrorCode::InjectionFailed);
+
+        let err_lost = verify_target_window(Some("code"), None).unwrap_err();
+        assert_eq!(err_lost.code, crate::error::ErrorCode::InjectionFailed);
     }
 }

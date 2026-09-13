@@ -251,6 +251,14 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
         match stt.transcribe(&audio, &stt_config).await {
             Ok(tr) => {
                 if let Some(cmd) = crate::injection::VoiceCommand::from_phrase(&tr.text) {
+                    let initial_app = state.pipeline.active_app();
+                    let current_app = crate::active_window::foreground_process_name();
+                    if let Err(e) = crate::injection::command::verify_target_window(
+                        initial_app.as_deref(),
+                        current_app.as_deref(),
+                    ) {
+                        return fail(&app, &state.pipeline, &e);
+                    }
                     if let Err(e) = crate::injection::command::execute(cmd) {
                         return fail(&app, &state.pipeline, &e);
                     }
