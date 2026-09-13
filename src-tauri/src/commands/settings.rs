@@ -10,8 +10,13 @@ use crate::AppStateInner;
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppStateInner>) -> std::result::Result<Value, AppError> {
     let mut all = SettingsManager::new(&state.db).all()?;
+    sanitize_settings_for_frontend(&mut all);
+    Ok(all)
+}
+
+pub(crate) fn sanitize_settings_for_frontend(all: &mut Value) {
     // Never leak secrets to the frontend.
-    if let Value::Object(map) = &mut all {
+    if let Value::Object(map) = all {
         let has_key = map
             .get("groq_api_key")
             .and_then(|v| v.as_str())
@@ -20,7 +25,6 @@ pub fn get_settings(state: State<'_, AppStateInner>) -> std::result::Result<Valu
         map.insert("groq_api_key".to_string(), Value::String(String::new()));
         map.insert("groq_api_key_set".to_string(), Value::Bool(has_key));
     }
-    Ok(all)
 }
 
 /// Keys the frontend may write via `update_setting`. Anything else is rejected
@@ -150,5 +154,32 @@ mod tests {
         let valid =
             encode_setting_value("groq_api_key", &serde_json::json!("gsk_test"), &key).unwrap();
         assert!(!valid.is_empty());
+    }
+
+    #[test]
+    fn sanitize_settings_masks_key_and_sets_indicator() {
+        let mut val = serde_json::json!({
+            "groq_api_key": "enc:v1:secret",
+            "language": "en"
+        });
+        sanitize_settings_for_frontend(&mut val);
+        assert_eq!(val["groq_api_key"], "");
+        assert_eq!(val["groq_api_key_set"], true);
+        assert_eq!(val["language"], "en");
+
+        let mut empty_val = serde_json::json!({
+            "groq_api_key": "",
+            "language": "en"
+        });
+        sanitize_settings_for_frontend(&mut empty_val);
+        assert_eq!(empty_val["groq_api_key"], "");
+        assert_eq!(empty_val["groq_api_key_set"], false);
+
+        let mut missing_val = serde_json::json!({
+            "language": "en"
+        });
+        sanitize_settings_for_frontend(&mut missing_val);
+        assert_eq!(missing_val["groq_api_key"], "");
+        assert_eq!(missing_val["groq_api_key_set"], false);
     }
 }

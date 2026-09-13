@@ -48,11 +48,36 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
 
     update: async (key, value) => {
       const prev = get().settings[key];
-      set((s) => ({ settings: { ...s.settings, [key]: value } }));
+      const prevApiKey =
+        typeof get().settings.groq_api_key === "string"
+          ? get().settings.groq_api_key
+          : "";
+      const prevSet = get().settings.groq_api_key_set;
+      const isApiKey = key === "groq_api_key";
+      set((s) => ({
+        settings: {
+          ...s.settings,
+          ...(isApiKey
+            ? {
+                groq_api_key: "",
+                groq_api_key_set:
+                  typeof value === "string" && value.trim().length > 0,
+              }
+            : { [key]: value }),
+        },
+      }));
       try {
         await updateSetting(key, value);
       } catch (err) {
-        if (get().settings[key] === value) {
+        if (isApiKey) {
+          set((s) => ({
+            settings: {
+              ...s.settings,
+              groq_api_key: prevApiKey,
+              groq_api_key_set: prevSet,
+            },
+          }));
+        } else if (get().settings[key] === value) {
           set((s) => ({ settings: { ...s.settings, [key]: prev } }));
         }
         try {
