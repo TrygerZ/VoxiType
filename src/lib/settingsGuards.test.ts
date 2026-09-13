@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   getBooleanSetting,
   getHotkeySetting,
+  getNumberSetting,
   getStringSetting,
   isBoolean,
   isHotkeyConfig,
+  isNumber,
   isString,
 } from "./settingsGuards";
 
@@ -14,6 +16,11 @@ describe("settingsGuards", () => {
     expect(isString(123)).toBe(false);
     expect(isBoolean(true)).toBe(true);
     expect(isBoolean("true")).toBe(false);
+    expect(isNumber(42)).toBe(true);
+    expect(isNumber(0)).toBe(true);
+    expect(isNumber(NaN)).toBe(false);
+    expect(isNumber("42")).toBe(false);
+    expect(isNumber(null)).toBe(false);
   });
 
   it("validates hotkey config shapes", () => {
@@ -35,6 +42,15 @@ describe("settingsGuards", () => {
     expect(getBooleanSetting(false, true)).toBe(false);
     expect(getBooleanSetting(null, true)).toBe(true);
     expect(getBooleanSetting(undefined, false)).toBe(false);
+  });
+
+  it("provides fallback for number settings", () => {
+    expect(getNumberSetting(10, 0)).toBe(10);
+    expect(getNumberSetting(0, 5)).toBe(0);
+    expect(getNumberSetting(null, 3)).toBe(3);
+    expect(getNumberSetting(undefined, 3)).toBe(3);
+    expect(getNumberSetting(NaN, 3)).toBe(3);
+    expect(getNumberSetting("10", 3)).toBe(3);
   });
 
   it("provides fallback for hotkey settings", () => {

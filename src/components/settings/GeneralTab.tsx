@@ -11,9 +11,14 @@ import {
 } from "../../lib/tauri";
 import { formatDirectoryError } from "../../lib/dataDirectory";
 import { invokeAction } from "../../lib/invokeAction";
-import { getBooleanSetting, getStringSetting } from "../../lib/settingsGuards";
+import {
+  getBooleanSetting,
+  getNumberSetting,
+  getStringSetting,
+} from "../../lib/settingsGuards";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { Switch } from "../ui/Switch";
+import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
@@ -31,6 +36,69 @@ export function GeneralTab() {
   const [dataStatus, setDataStatus] = useState("");
   const [dataError, setDataError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const widgetEnabled = getBooleanSetting(settings.floating_widget, true);
+  const autoHideRaw = getNumberSetting(
+    settings.floating_widget_auto_hide_seconds,
+    0,
+  );
+  const autoHideEnabled = autoHideRaw >= 3 && autoHideRaw <= 60;
+  const [autoHideSeconds, setAutoHideSeconds] = useState<number | string>(
+    autoHideRaw >= 3 && autoHideRaw <= 60 ? autoHideRaw : 3,
+  );
+
+  useEffect(() => {
+    if (autoHideRaw >= 3 && autoHideRaw <= 60) {
+      setAutoHideSeconds(autoHideRaw);
+    }
+  }, [autoHideRaw]);
+
+  const toggleAutoHide = (enabled: boolean) => {
+    if (enabled) {
+      const num =
+        typeof autoHideSeconds === "number"
+          ? autoHideSeconds
+          : parseInt(String(autoHideSeconds), 10);
+      const valid = !Number.isNaN(num) && num >= 3 && num <= 60 ? num : 3;
+      setAutoHideSeconds(valid);
+      void invokeAction(() => update("floating_widget_auto_hide_seconds", valid));
+    } else {
+      void invokeAction(() => update("floating_widget_auto_hide_seconds", 0));
+    }
+  };
+
+  const handleSecondsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setAutoHideSeconds(raw);
+    const parsed = parseInt(raw, 10);
+    if (!Number.isNaN(parsed) && parsed >= 3 && parsed <= 60) {
+      void invokeAction(() =>
+        update("floating_widget_auto_hide_seconds", parsed),
+      );
+    }
+  };
+
+  const handleSecondsBlur = () => {
+    const num =
+      typeof autoHideSeconds === "number"
+        ? autoHideSeconds
+        : parseInt(String(autoHideSeconds), 10);
+    if (Number.isNaN(num) || num < 3) {
+      setAutoHideSeconds(3);
+      if (autoHideEnabled) {
+        void invokeAction(() =>
+          update("floating_widget_auto_hide_seconds", 3),
+        );
+      }
+    } else if (num > 60) {
+      setAutoHideSeconds(60);
+      if (autoHideEnabled) {
+        void invokeAction(() =>
+          update("floating_widget_auto_hide_seconds", 60),
+        );
+      }
+    }
+  };
 
   useEffect(() => {
     void getDataDirectory()
@@ -128,9 +196,46 @@ export function GeneralTab() {
           description={t("settings.general.widget.desc")}
         >
           <Switch
-            checked={getBooleanSetting(settings.floating_widget, true)}
+            checked={widgetEnabled}
             onChange={toggleFloatingWidget}
           />
+        </SettingsRow>
+        <SettingsRow
+          label={t("settings.general.widget_auto_hide")}
+          description={t("settings.general.widget_auto_hide.desc")}
+        >
+          <div
+            className={`flex items-center gap-3 transition-opacity ${
+              !widgetEnabled ? "opacity-40" : ""
+            }`}
+          >
+            <Switch
+              checked={autoHideEnabled}
+              disabled={!widgetEnabled}
+              onChange={toggleAutoHide}
+              ariaLabel={t("settings.general.widget_auto_hide")}
+              data-testid="widget-auto-hide-switch"
+            />
+            <div className="flex items-center gap-1.5">
+              <div className="w-16">
+                <Input
+                  type="number"
+                  min={3}
+                  max={60}
+                  value={autoHideSeconds}
+                  disabled={!autoHideEnabled || !widgetEnabled}
+                  onChange={handleSecondsChange}
+                  onBlur={handleSecondsBlur}
+                  aria-label={t("settings.general.widget_auto_hide.seconds_label")}
+                  data-testid="widget-auto-hide-input"
+                  className="h-8 text-center !py-1 px-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                />
+              </div>
+              <span className="text-xs text-vx-text-dim">
+                {t("settings.general.widget_auto_hide.seconds")}
+              </span>
+            </div>
+          </div>
         </SettingsRow>
       </SettingsGroup>
 

@@ -32,6 +32,8 @@ export const updateSetting = (key: string, value: unknown) =>
   invoke<void>("update_setting", { key, value });
 export const setFloatingWidgetEnabled = (enabled: boolean) =>
   invoke<void>("set_floating_widget_enabled", { enabled });
+export const resetWidgetIdleTimer = () =>
+  invoke<void>("reset_widget_idle_timer");
 
 // Reveal the floating widget once its transparent content has mounted; the
 // backend keeps the overlay hidden until this is called to avoid a white

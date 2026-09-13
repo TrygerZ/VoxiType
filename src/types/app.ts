@@ -90,6 +90,7 @@ export interface KnownSettings {
   telemetry?: boolean;
   per_app_mode?: boolean;
   floating_widget?: boolean;
+  floating_widget_auto_hide_seconds?: number;
   onboarding_completed?: boolean;
   mic_device?: string;
   hotkey?: unknown;
