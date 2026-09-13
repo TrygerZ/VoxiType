@@ -57,7 +57,9 @@ impl OllamaFormatter {
         let status = resp.status();
         let text = resp.text().await?;
         if !status.is_success() {
-            return Err(AppError::llm(format!("Ollama error {status}: {text}")));
+            let safe_text = crate::util::sanitize_error_body(&text);
+            return Err(AppError::llm(format!("Ollama error {status}: {safe_text}"))
+                .with_http_status(status.as_u16()));
         }
         parse_response_text(&text)
     }

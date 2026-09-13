@@ -15,8 +15,8 @@ use tracing_subscriber::{fmt, EnvFilter};
 /// Initialize tracing. Returns a [`WorkerGuard`] that must be kept alive for
 /// the lifetime of the app so buffered file logs are flushed on shutdown.
 ///
-/// Safe to call once. If a file appender cannot be created, falls back to
-/// stderr-only logging.
+/// Idempotent. If called multiple times, subsequent calls return None without
+/// panicking. If a file appender cannot be created, falls back to stderr only.
 pub fn init(log_dir: &Path) -> Option<WorkerGuard> {
     let filter = || {
         EnvFilter::try_from_default_env()
@@ -24,18 +24,17 @@ pub fn init(log_dir: &Path) -> Option<WorkerGuard> {
     };
 
     if std::fs::create_dir_all(log_dir).is_err() {
-        // No file logging; stderr only.
-        tracing_subscriber::registry()
+        let _ = tracing_subscriber::registry()
             .with(filter())
             .with(fmt::layer().with_target(false))
-            .init();
+            .try_init();
         return None;
     }
 
     let file_appender = tracing_appender::rolling::daily(log_dir, "voxitype.log");
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
 
-    tracing_subscriber::registry()
+    let installed = tracing_subscriber::registry()
         .with(filter())
         .with(fmt::layer().with_target(false))
         .with(
@@ -44,8 +43,28 @@ pub fn init(log_dir: &Path) -> Option<WorkerGuard> {
                 .with_target(false)
                 .with_writer(file_writer),
         )
-        .init();
+        .try_init()
+        .is_ok();
 
-    tracing::info!("Logging initialized at {}", log_dir.display());
-    Some(guard)
+    if installed {
+        tracing::info!("Logging initialized at {}", log_dir.display());
+        Some(guard)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_init_idempotent() {
+        let dir = std::env::temp_dir().join(format!("voxitype_test_logs_{}", uuid::Uuid::new_v4()));
+        let _guard1 = init(&dir);
+        // Second call must not panic even if subscriber is already installed.
+        let guard2 = init(&dir);
+        assert!(guard2.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

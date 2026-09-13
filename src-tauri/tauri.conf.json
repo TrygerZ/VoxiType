@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "VoxiType",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "identifier": "com.voxitype.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -38,7 +38,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:11434 https://api.groq.com; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline';"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:11434 https://api.groq.com; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
     }
   },
   "bundle": {

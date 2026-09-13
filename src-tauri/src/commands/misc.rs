@@ -87,6 +87,11 @@ fn validate_open_url(url: &str) -> std::result::Result<String, AppError> {
             "Refused URL with scheme '{scheme}': only http/https allowed"
         )));
     }
+    if rest.contains('\\') {
+        return Err(AppError::internal(
+            "Refused URL: backslash not permitted in URL",
+        ));
+    }
     // Strip userinfo, port, path, query, fragment to isolate the host.
     let authority = rest.split('/').next().unwrap_or("");
     let host = authority
@@ -437,6 +442,14 @@ mod tests {
     fn strips_userinfo_and_port() {
         assert!(validate_open_url("https://user:pass@github.com:443/repo").is_ok());
         assert!(validate_open_url("https://user@evil.com").is_err());
+    }
+
+    #[test]
+    fn rejects_backslash_authority_ambiguity() {
+        assert!(validate_open_url(r"https://evil.com\@github.com").is_err());
+        assert!(validate_open_url(r"https://github.com\path").is_err());
+        assert!(validate_open_url("https://github.com").is_ok());
+        assert!(validate_open_url("file:///C:/Windows/System32/cmd.exe").is_err());
     }
 
     /// Create a unique scratch dir with one file inside; returns the

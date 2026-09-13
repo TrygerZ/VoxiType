@@ -76,21 +76,7 @@ impl GroqLlmFormatter {
         })
         .await?;
 
-        let parsed: ChatResponse = serde_json::from_str(&text)?;
-        let content = parsed
-            .choices
-            .into_iter()
-            .next()
-            .map(|c| c.message.content)
-            .unwrap_or_default();
-        let trimmed = content.trim();
-        // An empty completion is a failure, not a valid result. Returning
-        // `Ok("")` here would suppress the FallbackFormatter (which only
-        // triggers on `Err`) and hand the user blank text.
-        if trimmed.is_empty() {
-            return Err(AppError::llm("Groq returned an empty completion"));
-        }
-        Ok(trimmed.to_string())
+        parse_chat_response(&text)
     }
 }
 
@@ -102,11 +88,31 @@ struct ChatResponse {
 #[derive(Debug, Deserialize)]
 struct Choice {
     message: Message,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Message {
     content: String,
+}
+
+fn parse_chat_response(text: &str) -> Result<String> {
+    let parsed: ChatResponse = serde_json::from_str(text)?;
+    let choice = parsed.choices.into_iter().next();
+    if let Some(ref c) = choice {
+        if c.finish_reason.as_deref() == Some("length") {
+            return Err(AppError::llm(
+                "Groq response truncated because it reached max_tokens",
+            ));
+        }
+    }
+    let content = choice.map(|c| c.message.content).unwrap_or_default();
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::llm("Groq returned an empty completion"));
+    }
+    Ok(trimmed.to_string())
 }
 
 #[async_trait]
@@ -124,5 +130,30 @@ impl LlmFormatter for GroqLlmFormatter {
 
     fn name(&self) -> &'static str {
         "groq_llm"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_valid_response() {
+        let json = r#"{"choices":[{"message":{"content":"Hello world"},"finish_reason":"stop"}]}"#;
+        assert_eq!(parse_chat_response(json).unwrap(), "Hello world");
+    }
+
+    #[test]
+    fn rejects_truncated_length_response() {
+        let json =
+            r#"{"choices":[{"message":{"content":"Incomplete sent"},"finish_reason":"length"}]}"#;
+        let err = parse_chat_response(json).unwrap_err();
+        assert!(err.to_string().contains("truncated"));
+    }
+
+    #[test]
+    fn rejects_empty_completion() {
+        let json = r#"{"choices":[{"message":{"content":"   "},"finish_reason":"stop"}]}"#;
+        assert!(parse_chat_response(json).is_err());
     }
 }

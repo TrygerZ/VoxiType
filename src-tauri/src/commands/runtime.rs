@@ -2,6 +2,7 @@
 //! recording → process → inject → persist pipeline.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tauri::{AppHandle, Manager, Runtime};
 use uuid::Uuid;
@@ -457,7 +458,7 @@ fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
                     break;
                 }
                 if let Some(dur) = state.pipeline.recording_duration() {
-                    if dur.as_secs() > MAX_RECORDING_DURATION_SECS {
+                    if dur >= Duration::from_secs(MAX_RECORDING_DURATION_SECS) {
                         stop = true;
                     }
                 }
