@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { resetWidgetIdleTimer } from "../../lib/tauri";
 import { useAppStore } from "../../stores/appStore";
 import { Waveform } from "./Waveform";
 
@@ -78,9 +79,16 @@ export function FloatingWidget({
     waveformActive = false;
   }
 
+  const handlePointerActivity = () => {
+    void resetWidgetIdleTimer();
+  };
+
   return (
     <div
       data-tauri-drag-region
+      data-testid="floating-widget-pill"
+      onPointerEnter={handlePointerActivity}
+      onPointerDown={handlePointerActivity}
       className={`vx-scale-in pointer-events-auto flex h-10 w-28 items-center gap-2.5 rounded-full border px-2.5 select-none transition-colors duration-300 ${currentStyle.container}`}
     >
       {/* VoxiType Logo */}
