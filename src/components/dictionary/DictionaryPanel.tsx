@@ -200,7 +200,7 @@ export function DictionaryPanel() {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
                     onClick={() => void handleToggle(e.id, e.is_active)}

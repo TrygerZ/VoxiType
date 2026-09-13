@@ -206,7 +206,7 @@ export function HistoryPanel() {
                   </div>
                 </div>
 
-                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
