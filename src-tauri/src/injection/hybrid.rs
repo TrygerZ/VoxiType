@@ -69,7 +69,7 @@ impl TextInjector for HybridInjector {
         let started = Instant::now();
 
         // Save current clipboard content
-        let prev = clipboard::read_text();
+        let prev = clipboard::read_snapshot();
 
         clipboard::write_text(text)?;
 
@@ -84,7 +84,7 @@ impl TextInjector for HybridInjector {
         // Keystrokes are processed asynchronously by the target app.
         std::thread::sleep(std::time::Duration::from_millis(PASTE_CONSUME_DELAY_MS));
 
-        restore_clipboard(prev.as_deref());
+        restore_clipboard(&prev);
 
         Ok(InjectResult {
             success: true,
@@ -106,9 +106,9 @@ impl TextInjector for HybridInjector {
     }
 }
 
-fn restore_clipboard(prev: Option<&str>) {
+fn restore_clipboard(prev: &clipboard::ClipboardSnapshot) {
     match prev {
-        Some(prev_text) => {
+        clipboard::ClipboardSnapshot::Text(prev_text) => {
             if let Err(e) = clipboard::write_text(prev_text) {
                 tracing::warn!(
                     "Failed to restore clipboard ({e}); wiping dictated text from clipboard"
@@ -116,7 +116,15 @@ fn restore_clipboard(prev: Option<&str>) {
                 wipe_clipboard_fail_safe();
             }
         }
-        None => {
+        clipboard::ClipboardSnapshot::NonText => {
+            // ponytail: non-text clipboard content (images, files) cannot be restored via
+            // text API without multi-format serialization. Leaving dictated text on clipboard
+            // instead of wiping to empty. Upgrade when arboard or platform API supports raw format preservation.
+            tracing::debug!(
+                "Non-text content on clipboard before injection; skipping text restoration"
+            );
+        }
+        clipboard::ClipboardSnapshot::Unavailable => {
             tracing::debug!("Clipboard was empty before injection; wiping dictated text");
             wipe_clipboard_fail_safe();
         }
