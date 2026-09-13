@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { useSettingsStore } from "../stores/settingsStore";
+
 // Simple ID/EN translation dictionary for UI strings.
 
 type Dict = Record<string, string>;
@@ -836,8 +839,12 @@ export function setLanguage(lang: string) {
   if (dictionaries[lang]) currentLang = lang;
 }
 
-export function t(key: string, vars?: Record<string, string | number>): string {
-  const dict = dictionaries[currentLang] ?? id;
+function formatTranslation(
+  lang: string,
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
+  const dict = dictionaries[lang] ?? id;
   let value = dict[key] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
@@ -847,16 +854,28 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   return value;
 }
 
+export function t(key: string, vars?: Record<string, string | number>): string {
+  return formatTranslation(currentLang, key, vars);
+}
+
+useSettingsStore.subscribe((state) => {
+  const lang = state.settings.language;
+  if (typeof lang === "string") {
+    setLanguage(lang);
+  }
+});
+
+const initialLang = useSettingsStore.getState().settings.language;
+if (typeof initialLang === "string") {
+  setLanguage(initialLang);
+}
+
 // ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
-import { useMemo } from "react";
-import { useSettingsStore } from "../stores/settingsStore";
 export function useT() {
   const lang = useSettingsStore((s) => s.settings.language) as string | undefined;
-  const activeLang = lang && dictionaries[lang] ? lang : "en";
-  if (activeLang !== currentLang) {
-    currentLang = activeLang;
-  }
+  const activeLang = lang && dictionaries[lang] ? lang : currentLang;
   return useMemo(() => {
-    return (key: string, vars?: Record<string, string | number>) => t(key, vars);
+    return (key: string, vars?: Record<string, string | number>) =>
+      formatTranslation(activeLang, key, vars);
   }, [activeLang]);
 }
