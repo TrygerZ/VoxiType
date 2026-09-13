@@ -36,7 +36,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             <button
               type="button"
               onClick={() => setVisible((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-vx-text-dim hover:text-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-vx-text-dim hover:text-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary transition-colors"
               aria-label={
                 visible
                   ? label

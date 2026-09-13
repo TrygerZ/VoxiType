@@ -12,7 +12,7 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
       aria-checked={checked}
       aria-label={label || undefined}
       onClick={() => onChange(!checked)}
-      className="inline-flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 rounded-lg"
+      className="inline-flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
     >
       <span
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-in-out ${
