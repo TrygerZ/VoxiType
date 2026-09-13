@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-09-13
+
+### Fixed
+- Cancel partially initialized audio capture on startup failure instead of leaving it orphaned
+- Kill hung whisper-cli processes on timeout and return a typed error instead of wedging the pipeline in Processing
+- Serialize clipboard injection transactions process-wide to prevent concurrent read, write, paste, and restore races
+- Keep stop and cancel responsive while the audio device initializes by invalidating aborted sessions via generation IDs
+
 ## [0.4.5] - 2026-09-13
 
 ### Fixed
