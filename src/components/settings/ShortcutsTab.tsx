@@ -19,6 +19,7 @@ export function ShortcutsTab() {
   const [key, setKey] = useState(hotkeyRaw?.key ?? "Ctrl+Space");
   const [mode, setMode] = useState(hotkeyRaw?.mode ?? "ptt");
   const [status, setStatus] = useState<"idle" | "ok" | string>("idle");
+  const [busy, setBusy] = useState(false);
 
   // Keep the editor in sync with the stored hotkey. Settings may load after
   // this tab mounts (or change elsewhere), so mirror the store whenever the
@@ -29,6 +30,8 @@ export function ShortcutsTab() {
   }, [hotkeyRaw?.key, hotkeyRaw?.mode]);
 
   const handleApply = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       await setHotkey(key, mode);
       await loadSettings();
@@ -36,6 +39,8 @@ export function ShortcutsTab() {
       setTimeout(() => setStatus("idle"), 2000);
     } catch (e: unknown) {
       setStatus(formatTauriError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -67,7 +72,12 @@ export function ShortcutsTab() {
       </SettingsGroup>
 
       <div className="flex items-center gap-3">
-        <Button variant="primary" size="sm" onClick={() => void handleApply()}>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => void handleApply()}
+          disabled={busy}
+        >
           {t("settings.shortcuts.apply_btn")}
         </Button>
         {status === "ok" && (

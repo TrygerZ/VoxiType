@@ -32,34 +32,45 @@ export function DictionaryPanel() {
 
   const [word, setWord] = useState("");
   const [replacement, setReplacement] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleAdd = async () => {
-    if (!word.trim()) return;
-    const entry: DictionaryEntry = {
-      id: "",
-      word: word.trim(),
-      pronunciation: null,
-      category: "custom",
-      replacement: replacement.trim() || null,
-      language: "id",
-      usage_count: 0,
-      is_active: true,
-    };
-    const ok = await invokeAction(() => add(entry));
-    if (ok) {
-      setWord("");
-      setReplacement("");
+    if (busy || !word.trim()) return;
+    setBusy(true);
+    try {
+      const entry: DictionaryEntry = {
+        id: "",
+        word: word.trim(),
+        pronunciation: null,
+        category: "custom",
+        replacement: replacement.trim() || null,
+        language: "id",
+        usage_count: 0,
+        is_active: true,
+      };
+      const ok = await invokeAction(() => add(entry));
+      if (ok) {
+        setWord("");
+        setReplacement("");
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleToggle = (id: string, current: boolean) => {
+    if (togglingId === id) return;
+    setTogglingId(id);
     void invokeAction(async () => {
       await setDictionaryActive(id, !current);
       await load();
+    }).finally(() => {
+      setTogglingId(null);
     });
   };
 
@@ -142,7 +153,7 @@ export function DictionaryPanel() {
           value={word}
           onChange={(e) => setWord(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void handleAdd();
+            if (e.key === "Enter" && !busy) void handleAdd();
           }}
         />
         <input
@@ -151,10 +162,15 @@ export function DictionaryPanel() {
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void handleAdd();
+            if (e.key === "Enter" && !busy) void handleAdd();
           }}
         />
-        <Button variant="primary" size="sm" onClick={() => void handleAdd()}>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => void handleAdd()}
+          disabled={busy}
+        >
           <Plus className="h-4 w-4" /> {t("dictionary.add_btn")}
         </Button>
       </div>
@@ -205,8 +221,9 @@ export function DictionaryPanel() {
                 <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
+                    disabled={togglingId === e.id}
                     onClick={() => void handleToggle(e.id, e.is_active)}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
                     aria-label={e.is_active ? t("dictionary.deactivate_word", { word: e.word }) : t("dictionary.activate_word", { word: e.word })}
                   >
