@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-09-13
+
+### Security
+- Pin all GitHub Actions to immutable commit SHAs in CI and release workflows
+- Add cargo audit to the CI pipeline
+- Upgrade h2 past RUSTSEC-2026-0258 and quick-xml past RUSTSEC-2026-0194 and RUSTSEC-2026-0195
+- Stop echoing the decrypted Groq API key to the UI and expose a configured indicator instead
+
 ## [0.4.9] - 2026-09-13
 
 ### Fixed
