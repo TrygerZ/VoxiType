@@ -282,12 +282,22 @@ This project has a knowledge graph at graphify-out/ with god nodes, community st
 
 When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
 
+Routing table (pick the command by situation):
+
+| Situation | Command |
+|---|---|
+| Orienting on "where/how does X work" at session start | `graphify query "<question>"` |
+| Refactoring or changing an API - find what a symbol impacts | `graphify affected "X" --depth 2` |
+| Relationship between two specific modules or components | `graphify path "<A>" "<B>"` |
+| Understanding one concept plus its neighbors | `graphify explain "<X>"` |
+| Planning architecture work or assessing module coupling | `graphify god-nodes --top 15` |
+
 Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- For codebase questions, run `graphify query "<question>"` first when graphify-out/graph.json exists. These commands return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Before any cross-module refactor or signature change, run `graphify affected "<symbol>"` first, then grep. Treat its output as the impact set to verify.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost). After refactors that delete code, use `graphify update . --force` so removed symbols drop out of the graph.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
 
 ## Documentation Style
 
