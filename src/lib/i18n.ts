@@ -876,7 +876,7 @@ if (typeof initialLang === "string") {
 
 // ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
 export function useT() {
-  const lang = useSettingsStore((s) => s.settings.language) as string | undefined;
+  const lang = useSettingsStore((s) => s.settings.language);
   const activeLang = lang && dictionaries[lang] ? lang : currentLang;
   return useMemo(() => {
     return (key: string, vars?: Record<string, string | number>) =>
