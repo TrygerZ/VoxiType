@@ -29,6 +29,24 @@ describe("statsStore", () => {
     expect(state.totals).toEqual(mockStats);
   });
 
+  it("normalizes null or undefined stats to zeroed defaults", async () => {
+    vi.mocked(tauri.getUsageStats).mockResolvedValueOnce(
+      // @ts-expect-error testing null response from backend
+      null,
+    );
+
+    await useStatsStore.getState().load();
+
+    const state = useStatsStore.getState();
+    expect(state.loaded).toBe(true);
+    expect(state.error).toBeNull();
+    expect(state.totals).toEqual({
+      total_words: 0,
+      total_duration_ms: 0,
+      total_sessions: 0,
+    });
+  });
+
   it("sets error and keeps previous totals on load failure", async () => {
     vi.mocked(tauri.getUsageStats).mockRejectedValueOnce(
       new Error("stats query failed"),

@@ -21,6 +21,14 @@ const EMPTY: UsageStats = {
   total_sessions: 0,
 };
 
+const normalizeStats = (stats?: Partial<UsageStats> | null): UsageStats => ({
+  total_words: typeof stats?.total_words === "number" ? stats.total_words : 0,
+  total_duration_ms:
+    typeof stats?.total_duration_ms === "number" ? stats.total_duration_ms : 0,
+  total_sessions:
+    typeof stats?.total_sessions === "number" ? stats.total_sessions : 0,
+});
+
 export const useStatsStore = create<StatsStore>((set) => ({
   totals: EMPTY,
   loaded: false,
@@ -29,7 +37,7 @@ export const useStatsStore = create<StatsStore>((set) => ({
   load: async () => {
     try {
       const totals = await getUsageStats();
-      set({ totals, loaded: true, error: null });
+      set({ totals: normalizeStats(totals), loaded: true, error: null });
     } catch (err: unknown) {
       // Leave the last-known totals in place on failure rather than zeroing
       // the dashboard, but record error for UI retry.
