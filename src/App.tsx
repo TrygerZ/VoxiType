@@ -96,9 +96,11 @@ export default function App() {
 
   if (showOnboarding) {
     return (
-      <div className="flex h-full flex-col">
-        <OnboardingFlow onComplete={() => setShowOnboarding(false)} />
-      </div>
+      <ErrorBoundary>
+        <div className="flex h-full flex-col">
+          <OnboardingFlow onComplete={() => setShowOnboarding(false)} />
+        </div>
+      </ErrorBoundary>
     );
   }
 
