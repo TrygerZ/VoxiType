@@ -11,9 +11,23 @@ pub mod keystroke;
 pub use command::VoiceCommand;
 pub use hybrid::HybridInjector;
 
+use enigo::{Direction, Enigo, Key, Keyboard};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+
+/// RAII guard that releases a key on drop, preventing keyboard state corruption
+/// if an error occurs mid-sequence.
+pub(crate) struct KeyGuard<'a> {
+    pub(crate) enigo: &'a mut Enigo,
+    pub(crate) key: Key,
+}
+
+impl<'a> Drop for KeyGuard<'a> {
+    fn drop(&mut self) {
+        let _ = self.enigo.key(self.key, Direction::Release);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InjectStrategy {

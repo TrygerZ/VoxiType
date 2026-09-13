@@ -2,6 +2,7 @@
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
+use super::KeyGuard;
 use crate::error::{AppError, Result};
 
 /// Type text character-by-character (Unicode-aware).
@@ -21,11 +22,13 @@ pub fn paste() -> Result<()> {
     enigo
         .key(Key::Control, Direction::Press)
         .map_err(|e| AppError::injection(format!("Ctrl press failed: {e}")))?;
-    enigo
+    let _guard = KeyGuard {
+        enigo: &mut enigo,
+        key: Key::Control,
+    };
+    _guard
+        .enigo
         .key(Key::Unicode('v'), Direction::Click)
         .map_err(|e| AppError::injection(format!("V click failed: {e}")))?;
-    enigo
-        .key(Key::Control, Direction::Release)
-        .map_err(|e| AppError::injection(format!("Ctrl release failed: {e}")))?;
     Ok(())
 }
