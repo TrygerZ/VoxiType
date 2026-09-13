@@ -118,6 +118,7 @@ export function DictionaryPanel() {
               size="sm"
               onClick={() => void handleExport()}
               title={t("dictionary.export_tooltip")}
+              aria-label={t("dictionary.export_tooltip")}
             >
               <Download className="h-3.5 w-3.5" />
             </Button>
@@ -126,6 +127,7 @@ export function DictionaryPanel() {
               size="sm"
               onClick={handleImport}
               title={t("dictionary.import_tooltip")}
+              aria-label={t("dictionary.import_tooltip")}
             >
               <Upload className="h-3.5 w-3.5" />
             </Button>
@@ -206,6 +208,7 @@ export function DictionaryPanel() {
                     onClick={() => void handleToggle(e.id, e.is_active)}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary"
                     title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
+                    aria-label={e.is_active ? t("dictionary.deactivate_word", { word: e.word }) : t("dictionary.activate_word", { word: e.word })}
                   >
                     {e.is_active ? (
                       <ToggleRight className="h-4.5 w-4.5 text-vx-success" />
@@ -217,6 +220,8 @@ export function DictionaryPanel() {
                     type="button"
                     onClick={() => void invokeAction(() => remove(e.id))}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                    title={t("dictionary.delete_tooltip")}
+                    aria-label={t("dictionary.delete_word", { word: e.word })}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

@@ -116,6 +116,8 @@ export function SnippetsPanel() {
                   type="button"
                   onClick={() => void invokeAction(() => remove(s.id))}
                   className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+                  title={t("snippets.delete_tooltip")}
+                  aria-label={t("snippets.delete_snippet", { phrase: s.trigger_phrase })}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

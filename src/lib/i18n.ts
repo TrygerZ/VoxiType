@@ -135,6 +135,8 @@ const id: Dict = {
   "settings.app_rules.active_group": "Aturan Aktif",
   "settings.app_rules.empty": "Belum ada aturan aplikasi yang dikonfigurasi.",
   "settings.app_rules.applies_mode": "Menerapkan mode: {mode}",
+  "settings.app_rules.delete_tooltip": "Hapus",
+  "settings.app_rules.delete_rule": "Hapus aturan untuk {app}",
 
   // Shortcuts Tab
   "settings.shortcuts.title": "Pintasan",
@@ -190,6 +192,10 @@ const id: Dict = {
   "dictionary.empty": "Belum ada entri kamus",
   "dictionary.activate_tooltip": "Aktifkan",
   "dictionary.deactivate_tooltip": "Nonaktifkan",
+  "dictionary.delete_tooltip": "Hapus",
+  "dictionary.delete_word": "Hapus {word}",
+  "dictionary.activate_word": "Aktifkan {word}",
+  "dictionary.deactivate_word": "Nonaktifkan {word}",
 
   // Snippets Panel
   "snippets.title": "Snippet",
@@ -199,6 +205,8 @@ const id: Dict = {
   "snippets.add_btn": "Tambah snippet",
   "snippets.loading": "Memuat...",
   "snippets.empty": "Belum ada snippet",
+  "snippets.delete_tooltip": "Hapus",
+  "snippets.delete_snippet": "Hapus {phrase}",
 
   // Onboarding
   "onboarding.welcome.title": "Selamat datang di VoxiType",
@@ -540,6 +548,8 @@ const en: Dict = {
   "settings.app_rules.active_group": "Active Rules",
   "settings.app_rules.empty": "No app rules configured.",
   "settings.app_rules.applies_mode": "Applies mode: {mode}",
+  "settings.app_rules.delete_tooltip": "Delete",
+  "settings.app_rules.delete_rule": "Delete rule for {app}",
 
   // Shortcuts Tab
   "settings.shortcuts.title": "Shortcuts",
@@ -595,6 +605,10 @@ const en: Dict = {
   "dictionary.empty": "No dictionary entries",
   "dictionary.activate_tooltip": "Activate",
   "dictionary.deactivate_tooltip": "Deactivate",
+  "dictionary.delete_tooltip": "Delete",
+  "dictionary.delete_word": "Delete {word}",
+  "dictionary.activate_word": "Activate {word}",
+  "dictionary.deactivate_word": "Deactivate {word}",
 
   // Snippets Panel
   "snippets.title": "Snippets",
@@ -604,6 +618,8 @@ const en: Dict = {
   "snippets.add_btn": "Add snippet",
   "snippets.loading": "Loading...",
   "snippets.empty": "No snippets yet",
+  "snippets.delete_tooltip": "Delete",
+  "snippets.delete_snippet": "Delete {phrase}",
 
   // Onboarding
   "onboarding.welcome.title": "Welcome to VoxiType",

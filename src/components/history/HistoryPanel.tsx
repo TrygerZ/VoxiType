@@ -216,6 +216,7 @@ export function HistoryPanel() {
                         : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                     }`}
                     title={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
+                    aria-label={item.is_pinned ? t("history.unpin_tooltip") : t("history.pin_tooltip")}
                   >
                     <Pin className="h-4 w-4" />
                   </button>
@@ -228,6 +229,7 @@ export function HistoryPanel() {
                         : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                     }`}
                     title={t("history.copy_tooltip")}
+                    aria-label={t("history.copy_tooltip")}
                   >
                     <Copy className="h-4 w-4" />
                   </button>
@@ -236,6 +238,7 @@ export function HistoryPanel() {
                     onClick={() => void invokeAction(() => reInject(item.id))}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
                     title={t("history.re_inject_tooltip")}
+                    aria-label={t("history.re_inject_tooltip")}
                   >
                     <RefreshCw className="h-4 w-4" />
                   </button>
@@ -244,6 +247,7 @@ export function HistoryPanel() {
                     onClick={() => void invokeAction(() => remove(item.id))}
                     className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
                     title={t("history.delete_tooltip")}
+                    aria-label={t("history.delete_tooltip")}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
