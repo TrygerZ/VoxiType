@@ -32,7 +32,7 @@ export function LLMTab() {
       setTimeout(() => setTestStatus("idle"), 3000);
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
-      if (code === "SttApiKeyInvalid") {
+      if (code === "LlmApiKeyInvalid" || code === "SttApiKeyInvalid") {
         setTestStatus("fail");
         toast(t("settings.llm.invalid_key"), "error");
       } else {
