@@ -190,6 +190,7 @@ mod tests {
 
     #[test]
     fn clipboard_save_restore_preserves_original() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         use crate::injection::clipboard;
 
         // Save whatever is currently on the clipboard.
@@ -239,6 +240,7 @@ mod tests {
 
     #[test]
     fn restore_guard_restores_on_drop() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         use crate::injection::clipboard::{self, ClipboardSnapshot};
 
         let test_prev = "VOXITYPE_TEST_GUARD_PREV";
@@ -256,6 +258,7 @@ mod tests {
 
     #[test]
     fn restore_guard_explicit_restore_disarms() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
         use crate::injection::clipboard::ClipboardSnapshot;
 
         let test_prev = "VOXITYPE_TEST_GUARD_EXPLICIT";
