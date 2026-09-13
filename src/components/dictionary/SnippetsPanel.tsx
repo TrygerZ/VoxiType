@@ -5,13 +5,13 @@ import { useT } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { PanelHeader } from "../common/PanelHeader";
 import type { Snippet } from "../../types/app";
-import { formatTauriError } from "../../lib/tauri";
-import { toast } from "../ui/Toast";
+import { invokeAction } from "../../lib/invokeAction";
 
 export function SnippetsPanel() {
   const t = useT();
   const snippets = useSnippetStore((s) => s.snippets);
   const loading = useSnippetStore((s) => s.loading);
+  const error = useSnippetStore((s) => s.error);
   const load = useSnippetStore((s) => s.load);
   const add = useSnippetStore((s) => s.add);
   const remove = useSnippetStore((s) => s.remove);
@@ -35,12 +35,10 @@ export function SnippetsPanel() {
       usage_count: 0,
       is_active: true,
     };
-    try {
-      await add(snippet);
+    const ok = await invokeAction(() => add(snippet));
+    if (ok) {
       setTrigger("");
       setContent("");
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
     }
   };
 
@@ -78,37 +76,53 @@ export function SnippetsPanel() {
       <div className="flex-1 overflow-y-auto px-10 pb-8">
         {loading && <p className="text-sm text-vx-text-dim">{t("snippets.loading")}</p>}
 
-        {snippets.length === 0 && !loading && (
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="max-w-md space-y-1">
+              <p className="text-sm font-semibold text-vx-text-primary">
+                {t("error.snippets_load_failed")}
+              </p>
+              <p className="text-xs font-mono text-vx-text-dim break-all">{error}</p>
+            </div>
+            <Button size="sm" onClick={() => void load()}>
+              {t("error.retry")}
+            </Button>
+          </div>
+        )}
+
+        {snippets.length === 0 && !loading && !error && (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <Zap className="h-10 w-10 text-vx-text-dim/40" />
             <p className="text-sm text-vx-text-dim">{t("snippets.empty")}</p>
           </div>
         )}
 
-        <div className="flex flex-col divide-y divide-vx-divider">
-          {snippets.map((s) => (
-            <div
-              key={s.id}
-              className="group flex items-start justify-between gap-3 py-3.5 transition-opacity"
-            >
-              <div className="min-w-0">
-                <span className="inline-block rounded-md bg-vx-accent-soft px-2 py-0.5 text-xs font-semibold text-vx-accent">
-                  {s.trigger_phrase}
-                </span>
-                <p className="mt-1.5 line-clamp-2 text-xs text-vx-text-secondary">
-                  {s.content}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void remove(s.id)}
-                className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100"
+        {!error && (
+          <div className="flex flex-col divide-y divide-vx-divider">
+            {snippets.map((s) => (
+              <div
+                key={s.id}
+                className="group flex items-start justify-between gap-3 py-3.5 transition-opacity"
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
+                <div className="min-w-0">
+                  <span className="inline-block rounded-md bg-vx-accent-soft px-2 py-0.5 text-xs font-semibold text-vx-accent">
+                    {s.trigger_phrase}
+                  </span>
+                  <p className="mt-1.5 line-clamp-2 text-xs text-vx-text-secondary">
+                    {s.content}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void invokeAction(() => remove(s.id))}
+                  className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

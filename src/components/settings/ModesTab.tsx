@@ -1,6 +1,7 @@
 import { Select } from "../ui/Select";
 import { Switch } from "../ui/Switch";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { invokeAction } from "../../lib/invokeAction";
 import { useT } from "../../lib/i18n";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -29,7 +30,7 @@ export function ModesTab() {
               { value: "email", label: t("settings.modes.email") },
             ]}
             value={(settings.active_mode as string) ?? "dictation"}
-            onChange={(e) => void update("active_mode", e.target.value)}
+            onChange={(e) => void invokeAction(() => update("active_mode", e.target.value))}
             className="w-44"
           />
         </SettingsRow>
@@ -42,7 +43,7 @@ export function ModesTab() {
         >
           <Switch
             checked={translationOn}
-            onChange={(v) => void update("translation_enabled", v)}
+            onChange={(v) => void invokeAction(() => update("translation_enabled", v))}
           />
         </SettingsRow>
         {translationOn && (
@@ -53,7 +54,7 @@ export function ModesTab() {
                 { value: "id", label: "Bahasa Indonesia" },
               ]}
               value={(settings.translation_target as string) ?? "en"}
-              onChange={(e) => void update("translation_target", e.target.value)}
+              onChange={(e) => void invokeAction(() => update("translation_target", e.target.value))}
               className="w-44"
             />
           </SettingsRow>

@@ -5,6 +5,10 @@ type Dict = Record<string, string>;
 const id: Dict = {
   "app.name": "VoxiType",
   "error.settings_load_failed": "Gagal memuat pengaturan",
+  "error.dictionary_load_failed": "Gagal memuat kamus",
+  "error.history_load_failed": "Gagal memuat riwayat",
+  "error.snippets_load_failed": "Gagal memuat cuplikan",
+  "error.stats_load_failed": "Gagal memuat statistik",
   "error.retry": "Coba lagi",
   "nav.home": "Beranda",
   "nav.settings": "Pengaturan",
@@ -406,6 +410,10 @@ const id: Dict = {
 const en: Dict = {
   "app.name": "VoxiType",
   "error.settings_load_failed": "Failed to load settings",
+  "error.dictionary_load_failed": "Failed to load dictionary",
+  "error.history_load_failed": "Failed to load history",
+  "error.snippets_load_failed": "Failed to load snippets",
+  "error.stats_load_failed": "Failed to load stats",
   "error.retry": "Retry",
   "nav.home": "Home",
   "nav.settings": "Settings",

@@ -15,16 +15,17 @@ import { PanelHeader } from "../common/PanelHeader";
 import type { DictionaryEntry } from "../../types/app";
 import {
   exportDictionary,
-  formatTauriError,
   importDictionary,
   setDictionaryActive,
 } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { toast } from "../ui/Toast";
 
 export function DictionaryPanel() {
   const t = useT();
   const entries = useDictionaryStore((s) => s.entries);
   const loading = useDictionaryStore((s) => s.loading);
+  const error = useDictionaryStore((s) => s.error);
   const load = useDictionaryStore((s) => s.load);
   const add = useDictionaryStore((s) => s.add);
   const remove = useDictionaryStore((s) => s.remove);
@@ -48,22 +49,22 @@ export function DictionaryPanel() {
       usage_count: 0,
       is_active: true,
     };
-    try {
-      await add(entry);
+    const ok = await invokeAction(() => add(entry));
+    if (ok) {
       setWord("");
       setReplacement("");
-    } catch (e: unknown) {
-      toast(formatTauriError(e), "error");
     }
   };
 
-  const handleToggle = async (id: string, current: boolean) => {
-    await setDictionaryActive(id, !current);
-    void load();
+  const handleToggle = (id: string, current: boolean) => {
+    void invokeAction(async () => {
+      await setDictionaryActive(id, !current);
+      await load();
+    });
   };
 
   const handleExport = async () => {
-    try {
+    await invokeAction(async () => {
       const data = await exportDictionary();
       const blob = new Blob([data], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -72,9 +73,7 @@ export function DictionaryPanel() {
       a.download = "voxitype-dictionary.json";
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      /* ignore */
-    }
+    });
   };
 
   const handleImport = () => {
@@ -97,13 +96,11 @@ export function DictionaryPanel() {
         return;
       }
       
-      try {
+      await invokeAction(async () => {
         const text = await file.text();
         await importDictionary(text);
-        void load();
-      } catch (e) {
-        toast(formatTauriError(e), "error");
-      }
+        await load();
+      });
     };
     input.click();
   };
@@ -163,55 +160,71 @@ export function DictionaryPanel() {
       <div className="flex-1 overflow-y-auto px-10 pb-8">
         {loading && <p className="text-sm text-vx-text-dim">{t("dictionary.loading")}</p>}
 
-        {entries.length === 0 && !loading && (
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="max-w-md space-y-1">
+              <p className="text-sm font-semibold text-vx-text-primary">
+                {t("error.dictionary_load_failed")}
+              </p>
+              <p className="text-xs font-mono text-vx-text-dim break-all">{error}</p>
+            </div>
+            <Button size="sm" onClick={() => void load()}>
+              {t("error.retry")}
+            </Button>
+          </div>
+        )}
+
+        {entries.length === 0 && !loading && !error && (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <BookOpen className="h-10 w-10 text-vx-text-dim/40" />
             <p className="text-sm text-vx-text-dim">{t("dictionary.empty")}</p>
           </div>
         )}
 
-        <div className="flex flex-col divide-y divide-vx-divider">
-          {entries.map((e) => (
-            <div
-              key={e.id}
-              className={`group flex items-center justify-between py-3 transition-opacity ${
-                !e.is_active ? "opacity-50" : ""
-              }`}
-            >
-              <div className="min-w-0">
-                <span className="text-sm font-medium text-vx-text-primary">
-                  {e.word}
-                </span>
-                {e.replacement && (
-                  <span className="ml-2 text-xs text-vx-text-dim">
-                    &rarr; {e.replacement}
+        {!error && (
+          <div className="flex flex-col divide-y divide-vx-divider">
+            {entries.map((e) => (
+              <div
+                key={e.id}
+                className={`group flex items-center justify-between py-3 transition-opacity ${
+                  !e.is_active ? "opacity-50" : ""
+                }`}
+              >
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-vx-text-primary">
+                    {e.word}
                   </span>
-                )}
-              </div>
-              <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                <button
-                  type="button"
-                  onClick={() => void handleToggle(e.id, e.is_active)}
-                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary"
-                  title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
-                >
-                  {e.is_active ? (
-                    <ToggleRight className="h-4.5 w-4.5 text-vx-success" />
-                  ) : (
-                    <ToggleLeft className="h-4.5 w-4.5" />
+                  {e.replacement && (
+                    <span className="ml-2 text-xs text-vx-text-dim">
+                      &rarr; {e.replacement}
+                    </span>
                   )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void remove(e.id)}
-                  className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                </div>
+                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => void handleToggle(e.id, e.is_active)}
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary"
+                    title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
+                  >
+                    {e.is_active ? (
+                      <ToggleRight className="h-4.5 w-4.5 text-vx-success" />
+                    ) : (
+                      <ToggleLeft className="h-4.5 w-4.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void invokeAction(() => remove(e.id))}
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

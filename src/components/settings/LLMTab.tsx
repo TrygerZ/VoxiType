@@ -6,6 +6,7 @@ import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import { testGroqApi, formatTauriError } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -60,7 +61,7 @@ export function LLMTab() {
               { value: "off", label: "Off" },
             ]}
             value={engine}
-            onChange={(e) => void update("llm_engine", e.target.value)}
+            onChange={(e) => void invokeAction(() => update("llm_engine", e.target.value))}
             className="w-52"
           />
         </SettingsRow>
@@ -70,7 +71,7 @@ export function LLMTab() {
               label={t("settings.llm.ollama_model")}
               placeholder="qwen2.5:3b"
               value={(settings.llm_model as string) ?? "qwen2.5:3b"}
-              onChange={(e) => void update("llm_model", e.target.value)}
+              onChange={(e) => void invokeAction(() => update("llm_model", e.target.value))}
               hint={t("settings.llm.ollama_hint")}
             />
           </div>

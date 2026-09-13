@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-09-13
+
+### Fixed
+- Expose load errors with a retry action in history, dictionary, snippets, and stats panels instead of rendering empty states
+- Surface mutation failures across settings, history, dictionary, snippets, and per-app actions through a shared invoke wrapper and toast
+- Sequence settings loads so a slow earlier response can no longer overwrite newer state
+- Reload settings after a failed optimistic update to reconcile displayed values
+- Surface recording start and stop failures instead of leaving the button silent
+- Re-check the foreground window before command-mode injection and abort when focus drifted
+
 ## [0.4.7] - 2026-09-13
 
 ### Fixed
@@ -195,7 +205,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.4.7...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.4.8...HEAD
+[0.4.8]: https://github.com/TrygerZ/VoxiType/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/TrygerZ/VoxiType/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/TrygerZ/VoxiType/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/TrygerZ/VoxiType/compare/v0.4.4...v0.4.5

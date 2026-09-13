@@ -24,7 +24,9 @@ import { useHistoryStore } from "../../stores/historyStore";
 import { useStatsStore } from "../../stores/statsStore";
 import { useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { Waveform } from "../floating-widget/Waveform";
+import { Button } from "../ui/Button";
 
 export function HomeView() {
   const t = useT();
@@ -44,10 +46,12 @@ export function HomeView() {
   // History store
   const loadHistory = useHistoryStore((s) => s.load);
   const historyItems = useHistoryStore((s) => s.items);
+  const historyError = useHistoryStore((s) => s.error);
   const togglePin = useHistoryStore((s) => s.togglePin);
 
   // Stats store — lifetime totals aggregated server-side (uncapped)
   const totals = useStatsStore((s) => s.totals);
+  const statsError = useStatsStore((s) => s.error);
   const loadStats = useStatsStore((s) => s.load);
 
   // Local UI states
@@ -58,6 +62,7 @@ export function HomeView() {
   // Timer refs for cleanup
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const injectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingPendingRef = useRef(false);
 
   // Load history, settings, and lifetime stats on mount
   useEffect(() => {
@@ -87,11 +92,17 @@ export function HomeView() {
   }, [t, lang]);
 
   // Toggle record from GUI
-  const handleMicClick = useCallback(() => {
-    if (isRecording) {
-      void stopRecording();
-    } else if (state === "idle" || state === "error") {
-      void startRecording();
+  const handleMicClick = useCallback(async () => {
+    if (recordingPendingRef.current) return;
+    recordingPendingRef.current = true;
+    try {
+      if (isRecording) {
+        await invokeAction(stopRecording);
+      } else if (state === "idle" || state === "error") {
+        await invokeAction(startRecording);
+      }
+    } finally {
+      recordingPendingRef.current = false;
     }
   }, [isRecording, state]);
 
@@ -109,13 +120,11 @@ export function HomeView() {
   }, []);
 
   const handleReInject = useCallback(async (id: string) => {
-    try {
-      if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
-      await reInject(id);
+    if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
+    const ok = await invokeAction(() => reInject(id));
+    if (ok) {
       setInjectedId(id);
       injectTimerRef.current = setTimeout(() => setInjectedId(null), 2000);
-    } catch {
-      // ignore
     }
   }, []);
 
@@ -297,65 +306,81 @@ export function HomeView() {
               </span>
             </div>
 
-            <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,0.9fr)_1px_minmax(0,1.1fr)]">
-              {/* Hero — WPM gauge */}
-              <div className="flex flex-col items-center justify-center">
-                <WpmHalfRing value={avgWpm} />
-                <span className="mt-1 text-[11px] uppercase tracking-[0.18em] text-vx-text-dim">
-                  {t("home.words_per_minute")}
-                </span>
+            {statsError ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <div className="max-w-md space-y-1">
+                  <p className="text-sm font-semibold text-vx-text-primary">
+                    {t("error.stats_load_failed")}
+                  </p>
+                  <p className="text-xs font-mono text-vx-text-dim break-all">{statsError}</p>
+                </div>
+                <Button size="sm" onClick={() => void loadStats()}>
+                  {t("error.retry")}
+                </Button>
               </div>
-
-              {/* Vertical hairline (only on the 3-col layout) */}
-              <div aria-hidden className="hidden bg-vx-divider sm:block" />
-
-              {/* Stat ledger — hairline-separated rows, tabular figures */}
-              <dl className="flex flex-col justify-center divide-y divide-vx-divider">
-                {[
-                  {
-                    key: "time",
-                    Icon: HourglassIcon,
-                    label: t("home.total_time"),
-                    value: recordingTime.value,
-                    unit: recordingTime.unit,
-                  },
-                  {
-                    key: "words",
-                    Icon: ScrollTextIcon,
-                    label: t("home.total_words"),
-                    value: formatCompact(totals.total_words),
-                    unit: t("home.unit_words"),
-                  },
-                  {
-                    key: "sessions",
-                    Icon: SparkleIcon,
-                    label: t("home.sessions"),
-                    value: formatCompact(totals.total_sessions),
-                    unit: t("home.unit_sessions"),
-                  },
-                ].map(({ key, Icon, label, value, unit }) => (
-                  <div key={key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-vx-border/40 bg-vx-bg-tertiary/40 text-vx-accent transition-colors duration-300 group-hover/stats:border-vx-accent/40">
-                      <Icon className="h-[18px] w-[18px]" />
-                    </div>
-                    <dt className="flex-1 text-xs text-vx-text-secondary">{label}</dt>
-                    <dd className="grid w-24 grid-cols-[1fr_auto] items-baseline gap-1">
-                      <span className="text-right text-xl font-semibold tabular-nums tracking-tight text-vx-text-primary">
-                        {value}
-                      </span>
-                      <span className="w-8 text-left text-[11px] font-medium text-vx-text-dim">
-                        {unit}
-                      </span>
-                    </dd>
+            ) : (
+              <>
+                <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,0.9fr)_1px_minmax(0,1.1fr)]">
+                  {/* Hero — WPM gauge */}
+                  <div className="flex flex-col items-center justify-center">
+                    <WpmHalfRing value={avgWpm} />
+                    <span className="mt-1 text-[11px] uppercase tracking-[0.18em] text-vx-text-dim">
+                      {t("home.words_per_minute")}
+                    </span>
                   </div>
-                ))}
-              </dl>
-            </div>
 
-            {!hasStats && (
-              <p className="mt-5 border-t border-vx-divider pt-4 text-center text-xs text-vx-text-dim">
-                {t("home.stats_empty")}
-              </p>
+                  {/* Vertical hairline (only on the 3-col layout) */}
+                  <div aria-hidden className="hidden bg-vx-divider sm:block" />
+
+                  {/* Stat ledger — hairline-separated rows, tabular figures */}
+                  <dl className="flex flex-col justify-center divide-y divide-vx-divider">
+                    {[
+                      {
+                        key: "time",
+                        Icon: HourglassIcon,
+                        label: t("home.total_time"),
+                        value: recordingTime.value,
+                        unit: recordingTime.unit,
+                      },
+                      {
+                        key: "words",
+                        Icon: ScrollTextIcon,
+                        label: t("home.total_words"),
+                        value: formatCompact(totals.total_words),
+                        unit: t("home.unit_words"),
+                      },
+                      {
+                        key: "sessions",
+                        Icon: SparkleIcon,
+                        label: t("home.sessions"),
+                        value: formatCompact(totals.total_sessions),
+                        unit: t("home.unit_sessions"),
+                      },
+                    ].map(({ key, Icon, label, value, unit }) => (
+                      <div key={key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-vx-border/40 bg-vx-bg-tertiary/40 text-vx-accent transition-colors duration-300 group-hover/stats:border-vx-accent/40">
+                          <Icon className="h-[18px] w-[18px]" />
+                        </div>
+                        <dt className="flex-1 text-xs text-vx-text-secondary">{label}</dt>
+                        <dd className="grid w-24 grid-cols-[1fr_auto] items-baseline gap-1">
+                          <span className="text-right text-xl font-semibold tabular-nums tracking-tight text-vx-text-primary">
+                            {value}
+                          </span>
+                          <span className="w-8 text-left text-[11px] font-medium text-vx-text-dim">
+                            {unit}
+                          </span>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+
+                {!hasStats && (
+                  <p className="mt-5 border-t border-vx-divider pt-4 text-center text-xs text-vx-text-dim">
+                    {t("home.stats_empty")}
+                  </p>
+                )}
+              </>
             )}
           </div>
 
@@ -380,7 +405,7 @@ export function HomeView() {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => void updateSetting("active_mode", m.id)}
+                    onClick={() => void invokeAction(() => updateSetting("active_mode", m.id))}
                     className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none ${
                       activeMode === m.id
                         ? "border-vx-accent/50 bg-vx-accent/5 text-vx-text-primary"
@@ -411,7 +436,7 @@ export function HomeView() {
                 {translationEnabled && (
                   <select
                     value={translationTarget}
-                    onChange={(e) => void updateSetting("translation_target", e.target.value)}
+                    onChange={(e) => void invokeAction(() => updateSetting("translation_target", e.target.value))}
                     className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none"
                   >
                     <option value="en">English</option>
@@ -420,7 +445,7 @@ export function HomeView() {
                 )}
                 <button
                   type="button"
-                  onClick={() => void updateSetting("translation_enabled", !translationEnabled)}
+                  onClick={() => void invokeAction(() => updateSetting("translation_enabled", !translationEnabled))}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                     translationEnabled ? "bg-vx-accent" : "bg-vx-border-strong"
                   }`}
@@ -442,7 +467,19 @@ export function HomeView() {
               {t("home.recent_transcriptions")}
             </h3>
 
-            {recentItems.length === 0 ? (
+            {historyError ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-vx-text-primary">
+                    {t("error.history_load_failed")}
+                  </p>
+                  <p className="text-xs font-mono text-vx-text-dim break-all">{historyError}</p>
+                </div>
+                <Button size="sm" onClick={() => void loadHistory()}>
+                  {t("error.retry")}
+                </Button>
+              </div>
+            ) : recentItems.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center p-6 text-center text-vx-text-dim">
                 <Mic className="mb-2 h-8 w-8 opacity-20" />
                 <p className="text-xs">{t("home.no_history")}</p>
@@ -492,7 +529,7 @@ export function HomeView() {
                         {/* Pin */}
                         <button
                           type="button"
-                          onClick={() => void togglePin(item.id, !item.is_pinned)}
+                          onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
                           className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none ${
                             item.is_pinned
                               ? "text-vx-accent"

@@ -1,10 +1,16 @@
 import { create } from "zustand";
 import type { Snippet } from "../types/app";
-import { addSnippet, deleteSnippet, getSnippets } from "../lib/tauri";
+import {
+  addSnippet,
+  deleteSnippet,
+  formatTauriError,
+  getSnippets,
+} from "../lib/tauri";
 
 interface SnippetStore {
   snippets: Snippet[];
   loading: boolean;
+  error: string | null;
   load: () => Promise<void>;
   add: (snippet: Snippet) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -13,14 +19,15 @@ interface SnippetStore {
 export const useSnippetStore = create<SnippetStore>((set) => ({
   snippets: [],
   loading: false,
+  error: null,
 
   load: async () => {
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
       const snippets = await getSnippets();
-      set({ snippets, loading: false });
-    } catch {
-      set({ loading: false });
+      set({ snippets, loading: false, error: null });
+    } catch (err: unknown) {
+      set({ loading: false, error: formatTauriError(err) });
     }
   },
 
