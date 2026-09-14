@@ -25,15 +25,31 @@ const LABEL: &str = "floating-widget";
 #[derive(Debug, Default)]
 pub struct WidgetTimerState {
     pub hidden_by_timeout: AtomicBool,
+    pub is_animating_hide: AtomicBool,
     pub idle_deadline: Mutex<Option<Instant>>,
+    pub hide_generation: AtomicU64,
 }
 
 impl WidgetTimerState {
     pub fn new() -> Self {
         Self {
             hidden_by_timeout: AtomicBool::new(false),
+            is_animating_hide: AtomicBool::new(false),
             idle_deadline: Mutex::new(None),
+            hide_generation: AtomicU64::new(0),
         }
+    }
+
+    pub fn next_hide_generation(&self) -> u64 {
+        self.hide_generation.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn cancel_pending_hide(&self) {
+        self.hide_generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn current_hide_generation(&self) -> u64 {
+        self.hide_generation.load(Ordering::SeqCst)
     }
 }
 
@@ -70,6 +86,11 @@ pub fn apply_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
         .widget_timer
         .hidden_by_timeout
         .store(false, Ordering::SeqCst);
+    state
+        .widget_timer
+        .is_animating_hide
+        .store(false, Ordering::SeqCst);
+    state.widget_timer.cancel_pending_hide();
     if enabled {
         reset_idle_timer(&state);
     }
@@ -84,6 +105,8 @@ pub fn apply_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
         // white-square flash over the animation layer while the page loads.
         if WIDGET_READY.load(Ordering::SeqCst) {
             let _ = win.show();
+            let gen = state.widget_timer.next_hide_generation();
+            crate::events::emit_widget_reveal_requested(app, gen);
         }
     } else {
         let _ = win.hide();
@@ -102,6 +125,11 @@ pub fn reveal_if_enabled<R: Runtime>(app: &AppHandle<R>) {
         .widget_timer
         .hidden_by_timeout
         .store(false, Ordering::SeqCst);
+    state
+        .widget_timer
+        .is_animating_hide
+        .store(false, Ordering::SeqCst);
+    state.widget_timer.cancel_pending_hide();
     reset_idle_timer(&state);
     let Some(win) = app.get_webview_window(LABEL) else {
         return;
@@ -131,10 +159,15 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     let state = app.state::<AppStateInner>();
-    state
+    let was_hidden = state
         .widget_timer
         .hidden_by_timeout
-        .store(false, Ordering::SeqCst);
+        .swap(false, Ordering::SeqCst);
+    let was_animating = state
+        .widget_timer
+        .is_animating_hide
+        .swap(false, Ordering::SeqCst);
+    let gen = state.widget_timer.next_hide_generation();
     reset_idle_timer(&state);
     // Do not force the overlay visible before its transparent content has
     // mounted; that produces a white-square flash in dev. `reveal_if_enabled`
@@ -154,11 +187,16 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
         // flash (known WebView2 limitation on Windows, tauri#14515).
         tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
 
-        if !win.is_visible().unwrap_or(false) {
+        let not_visible = !win.is_visible().unwrap_or(false);
+        if not_visible {
             restore_position(&app, &win);
             let _ = win.show();
         }
         let _ = win.set_always_on_top(true);
+
+        if was_hidden || was_animating || not_visible {
+            crate::events::emit_widget_reveal_requested(&app, gen);
+        }
     });
 }
 
@@ -191,33 +229,91 @@ pub fn compute_idle_deadline(now: Instant, timeout_secs: u64) -> Option<Instant>
     }
 }
 
+/// Pure decision function for determining whether cancelling a hide requires emitting a reveal event.
+pub fn should_emit_cancellation_reveal(
+    was_animating_hide: bool,
+    floating_widget_enabled: bool,
+    is_visible: bool,
+) -> bool {
+    was_animating_hide && floating_widget_enabled && is_visible
+}
+
 /// Reset the idle timeout deadline based on configured timeout seconds.
-pub fn reset_idle_timer(state: &AppStateInner) {
+/// Returns true if an in-flight hide animation was cancelled.
+pub fn reset_idle_timer(state: &AppStateInner) -> bool {
+    let was_animating = state
+        .widget_timer
+        .is_animating_hide
+        .swap(false, Ordering::SeqCst);
+    state.widget_timer.cancel_pending_hide();
     let secs = auto_hide_seconds(&state.db);
     let deadline = compute_idle_deadline(Instant::now(), secs);
     *state.widget_timer.idle_deadline.lock_recover() = deadline;
+    was_animating
+}
+
+/// Reset the idle timer and reconcile frontend state if an in-flight hide was cancelled
+/// while the widget is enabled and visible.
+pub fn reset_idle_timer_and_reconcile<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<AppStateInner>();
+    let was_animating = reset_idle_timer(&state);
+    let enabled = is_enabled(app);
+    let is_visible = app
+        .get_webview_window(LABEL)
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+
+    if should_emit_cancellation_reveal(was_animating, enabled, is_visible) {
+        let gen = state.widget_timer.current_hide_generation();
+        crate::events::emit_widget_reveal_requested(app, gen);
+    }
+}
+
+/// Parameters for determining floating-widget auto-hide eligibility.
+#[derive(Debug, Clone, Copy)]
+pub struct AutoHideParams {
+    pub timeout_secs: u64,
+    pub deadline: Option<Instant>,
+    pub now: Instant,
+    pub pipeline_state: AppStateTag,
+    pub floating_widget_enabled: bool,
+    pub is_visible: bool,
+    pub hidden_by_timeout: bool,
+    pub is_animating_hide: bool,
 }
 
 /// Pure decision function for floating-widget auto-hide.
-pub fn should_auto_hide(
-    timeout_secs: u64,
-    deadline: Option<Instant>,
-    now: Instant,
-    pipeline_state: AppStateTag,
-    floating_widget_enabled: bool,
-    is_visible: bool,
-    hidden_by_timeout: bool,
-) -> bool {
-    if timeout_secs == 0 || hidden_by_timeout || !floating_widget_enabled || !is_visible {
+pub fn should_auto_hide(params: AutoHideParams) -> bool {
+    if params.timeout_secs == 0
+        || params.hidden_by_timeout
+        || params.is_animating_hide
+        || !params.floating_widget_enabled
+        || !params.is_visible
+    {
         return false;
     }
-    let Some(dl) = deadline else {
+    let Some(dl) = params.deadline else {
         return false;
     };
-    if now < dl {
+    if params.now < dl {
         return false;
     }
-    matches!(pipeline_state, AppStateTag::Idle | AppStateTag::Error)
+    matches!(
+        params.pipeline_state,
+        AppStateTag::Idle | AppStateTag::Error
+    )
+}
+
+/// Pure decision function for checking whether a hide ACK or fallback can proceed.
+pub fn is_hide_ack_valid(
+    current_gen: u64,
+    ack_gen: u64,
+    pipeline_state: AppStateTag,
+    is_animating_hide: bool,
+) -> bool {
+    current_gen == ack_gen
+        && is_animating_hide
+        && matches!(pipeline_state, AppStateTag::Idle | AppStateTag::Error)
 }
 
 fn resolve_deadline(state: &AppStateInner, timeout_secs: u64) -> Option<Instant> {
@@ -236,12 +332,20 @@ fn guard_and_hide<R: Runtime>(state: &AppStateInner, win: &WebviewWindow<R>) -> 
         )
     };
     if !is_idle_or_err(state) {
+        state
+            .widget_timer
+            .is_animating_hide
+            .store(false, Ordering::SeqCst);
         return false;
     }
     state
         .widget_timer
         .hidden_by_timeout
         .store(true, Ordering::SeqCst);
+    state
+        .widget_timer
+        .is_animating_hide
+        .store(false, Ordering::SeqCst);
     if !is_idle_or_err(state) {
         state
             .widget_timer
@@ -253,9 +357,74 @@ fn guard_and_hide<R: Runtime>(state: &AppStateInner, win: &WebviewWindow<R>) -> 
     true
 }
 
+/// Request an animated auto-hide from the frontend, with a fallback timeout in case the frontend
+/// fails to acknowledge within 1000ms.
+pub fn request_animated_hide<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppStateInner,
+    win: &WebviewWindow<R>,
+) -> bool {
+    let is_idle_or_err = matches!(
+        state.pipeline.state_tag(),
+        AppStateTag::Idle | AppStateTag::Error
+    );
+    if !is_idle_or_err {
+        return false;
+    }
+    state
+        .widget_timer
+        .is_animating_hide
+        .store(true, Ordering::SeqCst);
+    let gen = state.widget_timer.next_hide_generation();
+
+    crate::events::emit_widget_hide_requested(app, gen);
+
+    let app_clone = app.clone();
+    let win_clone = win.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let state = app_clone.state::<AppStateInner>();
+        if is_hide_ack_valid(
+            state.widget_timer.current_hide_generation(),
+            gen,
+            state.pipeline.state_tag(),
+            state.widget_timer.is_animating_hide.load(Ordering::SeqCst),
+        ) && guard_and_hide(&state, &win_clone)
+        {
+            tracing::debug!("Floating widget auto-hidden via fallback timeout (gen={gen})");
+        }
+    });
+
+    true
+}
+
+/// Acknowledge from the frontend that the hide animation has finished.
+pub fn acknowledge_hide<R: Runtime>(app: &AppHandle<R>, gen: u64) -> bool {
+    let state = app.state::<AppStateInner>();
+    if !is_hide_ack_valid(
+        state.widget_timer.current_hide_generation(),
+        gen,
+        state.pipeline.state_tag(),
+        state.widget_timer.is_animating_hide.load(Ordering::SeqCst),
+    ) {
+        return false;
+    }
+    let Some(win) = app.get_webview_window(LABEL) else {
+        return false;
+    };
+    if guard_and_hide(&state, &win) {
+        tracing::debug!("Floating widget auto-hidden via animation ACK (gen={gen})");
+        true
+    } else {
+        false
+    }
+}
+
 fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
-    if state.widget_timer.hidden_by_timeout.load(Ordering::SeqCst) {
+    if state.widget_timer.hidden_by_timeout.load(Ordering::SeqCst)
+        || state.widget_timer.is_animating_hide.load(Ordering::SeqCst)
+    {
         return;
     }
     let timeout_secs = auto_hide_seconds(&state.db);
@@ -264,17 +433,18 @@ fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
 
-    let eligible = should_auto_hide(
+    let eligible = should_auto_hide(AutoHideParams {
         timeout_secs,
         deadline,
-        Instant::now(),
-        state.pipeline.state_tag(),
-        is_enabled(app),
-        win.is_visible().unwrap_or(false),
-        false,
-    );
-    if eligible && guard_and_hide(&state, &win) {
-        tracing::debug!("Floating widget auto-hidden after {timeout_secs}s idle");
+        now: Instant::now(),
+        pipeline_state: state.pipeline.state_tag(),
+        floating_widget_enabled: is_enabled(app),
+        is_visible: win.is_visible().unwrap_or(false),
+        hidden_by_timeout: false,
+        is_animating_hide: false,
+    });
+    if eligible && request_animated_hide(app, &state, &win) {
+        tracing::debug!("Floating widget auto-hide animation requested after {timeout_secs}s idle");
     }
 }
 
@@ -420,6 +590,19 @@ fn bottom_center_position<R: Runtime>(win: &WebviewWindow<R>) -> Option<Physical
 mod tests {
     use super::*;
 
+    fn test_params(now: Instant, deadline: Option<Instant>, tag: AppStateTag) -> AutoHideParams {
+        AutoHideParams {
+            timeout_secs: 5,
+            deadline,
+            now,
+            pipeline_state: tag,
+            floating_widget_enabled: true,
+            is_visible: true,
+            hidden_by_timeout: false,
+            is_animating_hide: false,
+        }
+    }
+
     #[test]
     fn compute_idle_deadline_calculates_correctly() {
         let now = Instant::now();
@@ -434,129 +617,109 @@ mod tests {
     fn should_auto_hide_requires_positive_timeout() {
         let now = Instant::now();
         let past = now - Duration::from_secs(1);
-        assert!(!should_auto_hide(
-            0,
-            Some(past),
-            now,
-            AppStateTag::Idle,
-            true,
-            true,
-            false
-        ));
+        let mut p = test_params(now, Some(past), AppStateTag::Idle);
+        p.timeout_secs = 0;
+        assert!(!should_auto_hide(p));
     }
 
     #[test]
     fn should_auto_hide_requires_deadline_to_pass() {
         let now = Instant::now();
         let future = now + Duration::from_secs(10);
-        assert!(!should_auto_hide(
-            10,
-            Some(future),
-            now,
-            AppStateTag::Idle,
-            true,
-            true,
-            false
-        ));
-        assert!(!should_auto_hide(
-            10,
-            None,
-            now,
-            AppStateTag::Idle,
-            true,
-            true,
-            false
-        ));
+        let mut p = test_params(now, Some(future), AppStateTag::Idle);
+        p.timeout_secs = 10;
+        assert!(!should_auto_hide(p));
+
+        let p_none = test_params(now, None, AppStateTag::Idle);
+        assert!(!should_auto_hide(p_none));
     }
 
     #[test]
     fn should_auto_hide_only_in_idle_or_error() {
         let now = Instant::now();
         let past = now - Duration::from_secs(1);
-        assert!(should_auto_hide(
-            5,
-            Some(past),
+        assert!(should_auto_hide(test_params(
             now,
-            AppStateTag::Idle,
-            true,
-            true,
-            false
-        ));
-        assert!(should_auto_hide(
-            5,
             Some(past),
+            AppStateTag::Idle
+        )));
+        assert!(should_auto_hide(test_params(
             now,
-            AppStateTag::Error,
-            true,
-            true,
-            false
-        ));
-        assert!(!should_auto_hide(
-            5,
             Some(past),
+            AppStateTag::Error
+        )));
+        assert!(!should_auto_hide(test_params(
             now,
-            AppStateTag::Recording,
-            true,
-            true,
-            false
-        ));
-        assert!(!should_auto_hide(
-            5,
             Some(past),
+            AppStateTag::Recording
+        )));
+        assert!(!should_auto_hide(test_params(
             now,
-            AppStateTag::Processing,
-            true,
-            true,
-            false
-        ));
+            Some(past),
+            AppStateTag::Processing
+        )));
     }
 
     #[test]
     fn should_auto_hide_requires_enabled_and_visible_and_unhidden() {
         let now = Instant::now();
         let past = now - Duration::from_secs(1);
-        assert!(!should_auto_hide(
-            5,
-            Some(past),
-            now,
-            AppStateTag::Idle,
-            false,
-            true,
-            false
-        ));
-        assert!(!should_auto_hide(
-            5,
-            Some(past),
-            now,
-            AppStateTag::Idle,
-            true,
-            false,
-            false
-        ));
-        assert!(!should_auto_hide(
-            5,
-            Some(past),
-            now,
-            AppStateTag::Idle,
-            true,
-            true,
-            true
-        ));
-        assert!(should_auto_hide(
-            5,
-            Some(past),
-            now,
-            AppStateTag::Idle,
-            true,
-            true,
-            false
-        ));
+
+        let mut p = test_params(now, Some(past), AppStateTag::Idle);
+        p.floating_widget_enabled = false;
+        assert!(!should_auto_hide(p));
+
+        let mut p = test_params(now, Some(past), AppStateTag::Idle);
+        p.is_visible = false;
+        assert!(!should_auto_hide(p));
+
+        let mut p = test_params(now, Some(past), AppStateTag::Idle);
+        p.hidden_by_timeout = true;
+        assert!(!should_auto_hide(p));
+
+        let p = test_params(now, Some(past), AppStateTag::Idle);
+        assert!(should_auto_hide(p));
+    }
+
+    #[test]
+    fn should_auto_hide_rejects_when_animating_hide() {
+        let now = Instant::now();
+        let past = now - Duration::from_secs(1);
+        let mut p = test_params(now, Some(past), AppStateTag::Idle);
+        p.is_animating_hide = true;
+        assert!(!should_auto_hide(p));
+    }
+
+    #[test]
+    fn widget_timer_state_generations_and_cancellation() {
+        let state = WidgetTimerState::new();
+        assert_eq!(state.current_hide_generation(), 0);
+        let g1 = state.next_hide_generation();
+        assert_eq!(g1, 1);
+        assert_eq!(state.current_hide_generation(), 1);
+        state.cancel_pending_hide();
+        assert_eq!(state.current_hide_generation(), 2);
+    }
+
+    #[test]
+    fn is_hide_ack_valid_logic() {
+        assert!(is_hide_ack_valid(1, 1, AppStateTag::Idle, true));
+        assert!(is_hide_ack_valid(1, 1, AppStateTag::Error, true));
+        // Stale generation
+        assert!(!is_hide_ack_valid(2, 1, AppStateTag::Idle, true));
+        // Not currently animating
+        assert!(!is_hide_ack_valid(1, 1, AppStateTag::Idle, false));
+        // In recording or processing
+        assert!(!is_hide_ack_valid(1, 1, AppStateTag::Recording, true));
+        assert!(!is_hide_ack_valid(1, 1, AppStateTag::Processing, true));
     }
 
     #[test]
     fn widget_timer_state_initial_values() {
         let state = WidgetTimerState::new();
         assert!(!state.hidden_by_timeout.load(Ordering::SeqCst));
+        assert!(!state.is_animating_hide.load(Ordering::SeqCst));
+        assert_eq!(state.current_hide_generation(), 0);
         assert_eq!(*state.idle_deadline.lock_recover(), None);
     }
 
@@ -577,5 +740,17 @@ mod tests {
         assert!(state.hidden_by_timeout.load(Ordering::SeqCst));
         state.hidden_by_timeout.store(false, Ordering::SeqCst);
         assert!(!state.hidden_by_timeout.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn should_emit_cancellation_reveal_logic() {
+        // Only emit reveal when an in-flight hide animation was cancelled and window is visible + enabled
+        assert!(should_emit_cancellation_reveal(true, true, true));
+        // Normal reset (not animating hide) must NOT emit reveal
+        assert!(!should_emit_cancellation_reveal(false, true, true));
+        // Disabled widget must NOT emit reveal
+        assert!(!should_emit_cancellation_reveal(true, false, true));
+        // Hidden/non-visible window must NOT emit reveal
+        assert!(!should_emit_cancellation_reveal(true, true, false));
     }
 }

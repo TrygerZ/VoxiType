@@ -226,6 +226,7 @@ pub fn run() {
             commands::set_floating_widget_enabled,
             commands::reveal_floating_widget,
             commands::reset_widget_idle_timer,
+            commands::ack_widget_hide,
             commands::get_history,
             commands::search_history,
             commands::delete_history,

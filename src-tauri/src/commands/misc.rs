@@ -123,10 +123,18 @@ pub fn reveal_floating_widget<R: Runtime>(app: AppHandle<R>) -> std::result::Res
 
 /// Reset the floating-widget idle timeout timer upon pointer activity (hover, click, hold).
 #[tauri::command]
-pub fn reset_widget_idle_timer(
-    state: State<'_, AppStateInner>,
+pub fn reset_widget_idle_timer<R: Runtime>(app: AppHandle<R>) -> std::result::Result<(), AppError> {
+    crate::overlay::reset_idle_timer_and_reconcile(&app);
+    Ok(())
+}
+
+/// Acknowledge from the frontend that the floating widget hide animation has completed.
+#[tauri::command]
+pub fn ack_widget_hide<R: Runtime>(
+    app: AppHandle<R>,
+    id: u64,
 ) -> std::result::Result<(), AppError> {
-    crate::overlay::reset_idle_timer(&state);
+    crate::overlay::acknowledge_hide(&app, id);
     Ok(())
 }
 

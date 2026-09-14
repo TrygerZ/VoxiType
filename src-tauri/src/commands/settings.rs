@@ -58,7 +58,8 @@ const SETTABLE_KEYS: &[&str] = &[
 ];
 
 #[tauri::command]
-pub fn update_setting(
+pub fn update_setting<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppStateInner>,
     key: String,
     value: Value,
@@ -72,7 +73,7 @@ pub fn update_setting(
     let encoded = encode_setting_value(&key, &value, &state.master_key)?;
     SettingsManager::new(&state.db).set_raw(&key, &encoded)?;
     if key == "floating_widget_auto_hide_seconds" {
-        crate::overlay::reset_idle_timer(&state);
+        crate::overlay::reset_idle_timer_and_reconcile(&app);
     }
     Ok(())
 }
