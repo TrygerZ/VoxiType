@@ -21,3 +21,11 @@ export interface TranscriptionErrorEvent {
 export interface AudioLevelEvent {
   level: number;
 }
+
+export interface WidgetHideRequestedEvent {
+  id: number;
+}
+
+export interface WidgetRevealRequestedEvent {
+  id: number;
+}

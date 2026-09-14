@@ -29,6 +29,7 @@ vi.mock("../lib/tauri", () => ({
   restartApp: vi.fn().mockResolvedValue(undefined),
   setFloatingWidgetEnabled: vi.fn().mockResolvedValue(undefined),
   resetWidgetIdleTimer: vi.fn().mockResolvedValue(undefined),
+  ackWidgetHide: vi.fn().mockResolvedValue(undefined),
   getDictionary: vi.fn().mockResolvedValue([]),
   addDictionaryWord: vi.fn().mockResolvedValue(undefined),
   deleteDictionaryWord: vi.fn().mockResolvedValue(undefined),
