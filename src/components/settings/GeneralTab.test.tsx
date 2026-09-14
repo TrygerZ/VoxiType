@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GeneralTab } from "./GeneralTab";
@@ -220,5 +220,155 @@ describe("GeneralTab data directory settings", () => {
     await user.click(restartBtn);
 
     expect(tauri.restartApp).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GeneralTab auto-hide floating widget settings", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSettingsStore.setState({
+      settings: {
+        language: "id",
+        floating_widget: true,
+        floating_widget_auto_hide_seconds: 0,
+      },
+      loaded: true,
+      error: null,
+    });
+  });
+
+  it("renders toggle switch and number input with initial disabled state when off", () => {
+    render(<GeneralTab />);
+
+    const toggle = screen.getByTestId("widget-auto-hide-switch");
+    const input = screen.getByTestId("widget-auto-hide-input");
+
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(input).toBeInTheDocument();
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue(3);
+  });
+
+  it("toggling auto-hide ON persists minimum default (3 seconds)", async () => {
+    const user = userEvent.setup();
+    render(<GeneralTab />);
+
+    const toggle = screen.getByTestId("widget-auto-hide-switch");
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(tauri.updateSetting).toHaveBeenCalledWith(
+        "floating_widget_auto_hide_seconds",
+        3,
+      );
+    });
+  });
+
+  it("toggling auto-hide OFF persists 0 (disabled)", async () => {
+    useSettingsStore.setState({
+      settings: {
+        language: "id",
+        floating_widget: true,
+        floating_widget_auto_hide_seconds: 10,
+      },
+      loaded: true,
+      error: null,
+    });
+
+    const user = userEvent.setup();
+    render(<GeneralTab />);
+
+    const toggle = screen.getByTestId("widget-auto-hide-switch");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    const input = screen.getByTestId("widget-auto-hide-input");
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue(10);
+
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(tauri.updateSetting).toHaveBeenCalledWith(
+        "floating_widget_auto_hide_seconds",
+        0,
+      );
+    });
+  });
+
+  it("valid number change within 3-60 persists new value", async () => {
+    useSettingsStore.setState({
+      settings: {
+        language: "id",
+        floating_widget: true,
+        floating_widget_auto_hide_seconds: 5,
+      },
+      loaded: true,
+      error: null,
+    });
+
+    const user = userEvent.setup();
+    render(<GeneralTab />);
+
+    const input = screen.getByTestId("widget-auto-hide-input");
+    await user.clear(input);
+    await user.type(input, "15");
+
+    await waitFor(() => {
+      expect(tauri.updateSetting).toHaveBeenCalledWith(
+        "floating_widget_auto_hide_seconds",
+        15,
+      );
+    });
+  });
+
+  it("invalid number changes outside 3-60 are rejected/ignored by UI", async () => {
+    useSettingsStore.setState({
+      settings: {
+        language: "id",
+        floating_widget: true,
+        floating_widget_auto_hide_seconds: 5,
+      },
+      loaded: true,
+      error: null,
+    });
+
+    const user = userEvent.setup();
+    render(<GeneralTab />);
+
+    const input = screen.getByTestId("widget-auto-hide-input");
+    vi.mocked(tauri.updateSetting).mockClear();
+
+    // Value below minimum (2 < 3)
+    await user.clear(input);
+    await user.type(input, "2");
+    expect(tauri.updateSetting).not.toHaveBeenCalled();
+
+    // Value above maximum (100 > 60)
+    fireEvent.change(input, { target: { value: "100" } });
+    expect(tauri.updateSetting).not.toHaveBeenCalled();
+
+    // Negative value (-1 < 3)
+    fireEvent.change(input, { target: { value: "-1" } });
+    expect(tauri.updateSetting).not.toHaveBeenCalled();
+  });
+
+  it("disables auto-hide controls when floating widget is disabled", () => {
+    useSettingsStore.setState({
+      settings: {
+        language: "id",
+        floating_widget: false,
+        floating_widget_auto_hide_seconds: 5,
+      },
+      loaded: true,
+      error: null,
+    });
+
+    render(<GeneralTab />);
+
+    const toggle = screen.getByTestId("widget-auto-hide-switch");
+    const input = screen.getByTestId("widget-auto-hide-input");
+
+    expect(toggle).toBeDisabled();
+    expect(input).toBeDisabled();
   });
 });

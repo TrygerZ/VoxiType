@@ -54,6 +54,7 @@ pub struct AppStateInner {
     /// back over IPC must canonicalize under these directories, so a
     /// compromised webview cannot invent attacker-controlled paths.
     pub last_picker_dirs: std::sync::Mutex<HashMap<String, PathBuf>>,
+    pub widget_timer: overlay::WidgetTimerState,
 }
 
 impl AppStateInner {
@@ -90,6 +91,7 @@ impl AppStateInner {
             _log_guard: log_guard,
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
+            widget_timer: overlay::WidgetTimerState::new(),
         })
     }
 }
@@ -212,6 +214,7 @@ pub fn run() {
             // saved enabled/disabled state on launch.
             overlay::setup_persistence(handle);
             overlay::apply_enabled(handle, overlay::is_enabled(handle));
+            overlay::start_idle_monitor(handle);
 
             Ok(())
         })
@@ -222,6 +225,8 @@ pub fn run() {
             commands::update_setting,
             commands::set_floating_widget_enabled,
             commands::reveal_floating_widget,
+            commands::reset_widget_idle_timer,
+            commands::ack_widget_hide,
             commands::get_history,
             commands::search_history,
             commands::delete_history,

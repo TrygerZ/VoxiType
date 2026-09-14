@@ -2,17 +2,35 @@ interface SwitchProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: string;
+  ariaLabel?: string;
+  disabled?: boolean;
+  "data-testid"?: string;
 }
 
-export function Switch({ checked, onChange, label }: SwitchProps) {
+export function Switch({
+  checked,
+  onChange,
+  label,
+  ariaLabel,
+  disabled = false,
+  "data-testid": testId,
+}: SwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={label || undefined}
-      onClick={() => onChange(!checked)}
-      className="inline-flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+      aria-label={ariaLabel || label || undefined}
+      disabled={disabled}
+      data-testid={testId}
+      onClick={() => {
+        if (!disabled) {
+          onChange(!checked);
+        }
+      }}
+      className={`inline-flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+        disabled ? "opacity-40 cursor-not-allowed" : ""
+      }`}
     >
       <span
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-in-out ${

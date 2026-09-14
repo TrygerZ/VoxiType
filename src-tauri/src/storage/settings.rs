@@ -114,6 +114,8 @@ mod tests {
         let mgr = SettingsManager::new(&db);
         let theme: Option<String> = mgr.get("theme").unwrap();
         assert_eq!(theme, Some("dark".to_string()));
+        let auto_hide: Option<u64> = mgr.get("floating_widget_auto_hide_seconds").unwrap();
+        assert_eq!(auto_hide, Some(0));
     }
 
     #[test]

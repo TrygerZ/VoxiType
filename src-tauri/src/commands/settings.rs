@@ -54,10 +54,12 @@ const SETTABLE_KEYS: &[&str] = &[
     "active_mode",
     "translation_enabled",
     "translation_target",
+    "floating_widget_auto_hide_seconds",
 ];
 
 #[tauri::command]
-pub fn update_setting(
+pub fn update_setting<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppStateInner>,
     key: String,
     value: Value,
@@ -65,8 +67,33 @@ pub fn update_setting(
     if !SETTABLE_KEYS.contains(&key.as_str()) {
         return Err(AppError::internal(format!("Unknown setting key '{key}'")));
     }
+    if key == "floating_widget_auto_hide_seconds" {
+        validate_auto_hide_seconds(&value)?;
+    }
     let encoded = encode_setting_value(&key, &value, &state.master_key)?;
-    SettingsManager::new(&state.db).set_raw(&key, &encoded)
+    SettingsManager::new(&state.db).set_raw(&key, &encoded)?;
+    if key == "floating_widget_auto_hide_seconds" {
+        crate::overlay::reset_idle_timer_and_reconcile(&app);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_auto_hide_seconds(value: &Value) -> std::result::Result<u64, AppError> {
+    let secs = value
+        .as_i64()
+        .filter(|&v| v >= 0)
+        .map(|v| v as u64)
+        .ok_or_else(|| {
+            AppError::invalid_input(
+                "Setting 'floating_widget_auto_hide_seconds' must be an integer",
+            )
+        })?;
+    if secs != 0 && !(3..=60).contains(&secs) {
+        return Err(AppError::invalid_input(
+            "Setting 'floating_widget_auto_hide_seconds' must be 0 or between 3 and 60",
+        ));
+    }
+    Ok(secs)
 }
 
 fn encode_setting_value(
@@ -110,11 +137,56 @@ mod tests {
             "whisper_cpp_threads",
             "llm_engine",
             "active_mode",
+            "floating_widget_auto_hide_seconds",
         ] {
             assert!(
                 SETTABLE_KEYS.contains(&known),
                 "expected '{known}' in SETTABLE_KEYS"
             );
+        }
+    }
+
+    #[test]
+    fn validate_auto_hide_seconds_accepts_valid_range() {
+        assert_eq!(
+            validate_auto_hide_seconds(&serde_json::json!(0)).unwrap(),
+            0
+        );
+        assert_eq!(
+            validate_auto_hide_seconds(&serde_json::json!(3)).unwrap(),
+            3
+        );
+        assert_eq!(
+            validate_auto_hide_seconds(&serde_json::json!(30)).unwrap(),
+            30
+        );
+        assert_eq!(
+            validate_auto_hide_seconds(&serde_json::json!(60)).unwrap(),
+            60
+        );
+    }
+
+    #[test]
+    fn validate_auto_hide_seconds_rejects_out_of_range() {
+        for bad in [1, 2, 61, 100] {
+            let err = validate_auto_hide_seconds(&serde_json::json!(bad)).unwrap_err();
+            assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+        }
+    }
+
+    #[test]
+    fn validate_auto_hide_seconds_rejects_non_integer() {
+        let bad_values = [
+            serde_json::json!(-1),
+            serde_json::json!(3.5),
+            serde_json::json!("10"),
+            serde_json::json!(true),
+            serde_json::json!(null),
+            serde_json::json!([10]),
+        ];
+        for v in bad_values {
+            let err = validate_auto_hide_seconds(&v).unwrap_err();
+            assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
         }
     }
 
