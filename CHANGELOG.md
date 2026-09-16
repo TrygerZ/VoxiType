@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-16
+
+### Added
+- Floating widget auto-hide after configurable idle period (3-60 seconds or disabled, default off)
+- Animated widget visibility transitions with capsule shrink, fade out, and reverse reveal sequence
+- Auto-hide setting with duration input in General tab Appearance section
+- Idle timer reset on hover, click, or hold interactions with the floating widget
+- Auto-hide suspension during recording and processing states
+- Reduced-motion preference support for widget visibility animations
+
 ## [0.4.10] - 2026-09-13
 
 ### Security
