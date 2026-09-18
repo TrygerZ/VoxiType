@@ -54,20 +54,25 @@ pub fn build_audio_config(db: &Database) -> AudioConfig {
     }
 }
 
-pub fn decrypted_api_key(state: &AppStateInner) -> String {
+pub fn decrypted_api_key(state: &AppStateInner) -> Result<String> {
     let raw = string_setting(&state.db, "groq_api_key", "");
     if raw.is_empty() {
-        return raw;
+        return Ok(String::new());
     }
-    crate::crypto::decrypt_api_key(&raw, &state.master_key).unwrap_or_else(|e| {
+    crate::crypto::decrypt_api_key(&raw, &state.master_key).map_err(|e| {
         tracing::error!("Failed to decrypt API key: {e}");
-        String::new()
+        AppError::api_key_decrypt_failed(
+            "Failed to decrypt stored Groq API key: master key mismatch or corrupted key",
+        )
     })
 }
 
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
-    let api_key = decrypted_api_key(state);
     let kind = stt_engine_kind(&string_setting(&state.db, "stt_engine", "groq"));
+    let api_key = match kind {
+        SttEngineKind::Groq => decrypted_api_key(state)?,
+        SttEngineKind::WhisperCpp => String::new(),
+    };
     let mut model = string_setting(&state.db, "stt_model", "whisper-large-v3-turbo");
     if model == "small" || model.trim().is_empty() {
         model = "whisper-large-v3-turbo".to_string();
@@ -133,7 +138,7 @@ pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
         ..Default::default()
     };
     let groq = GroqLlmConfig {
-        api_key: decrypted_api_key(state),
+        api_key: decrypted_api_key(state).unwrap_or_default(),
         ..Default::default()
     };
     LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
@@ -585,5 +590,110 @@ mod tests {
                 <= crate::stt::groq_stt::GROQ_STT_TIMEOUT,
             "MAX_RECORDING_DURATION_SECS must not exceed GROQ_STT_TIMEOUT"
         );
+    }
+
+    use crate::error::ErrorCode;
+    use crate::overlay::WidgetTimerState;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn test_app_state(master_key: [u8; 32]) -> AppStateInner {
+        AppStateInner {
+            db: Database::open_in_memory().unwrap(),
+            pipeline: PipelineOrchestrator::new(),
+            app_data_dir: PathBuf::from("/test"),
+            default_app_data_dir: PathBuf::from("/test"),
+            master_key,
+            _log_guard: None,
+            stt_engine: std::sync::Mutex::new(None),
+            last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
+            widget_timer: WidgetTimerState::new(),
+        }
+    }
+
+    #[test]
+    fn decrypted_api_key_when_not_set_returns_ok_empty() {
+        let state = test_app_state([1u8; 32]);
+        let res = decrypted_api_key(&state);
+        assert_eq!(res.unwrap(), "");
+    }
+
+    #[test]
+    fn decrypted_api_key_success() {
+        let master_key = [7u8; 32];
+        let state = test_app_state(master_key);
+        let secret = "gsk_valid_secret_key_12345";
+        let encrypted = crate::crypto::encrypt_api_key(secret, &master_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set("groq_api_key", &encrypted)
+            .unwrap();
+
+        let res = decrypted_api_key(&state);
+        assert_eq!(res.unwrap(), secret);
+    }
+
+    #[test]
+    fn decrypted_api_key_fails_when_master_key_mismatched_without_leaking_key() {
+        let original_key = [7u8; 32];
+        let different_key = [9u8; 32];
+        let state = test_app_state(different_key);
+        let secret = "gsk_super_secret_that_must_not_leak_123";
+        let encrypted = crate::crypto::encrypt_api_key(secret, &original_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set("groq_api_key", &encrypted)
+            .unwrap();
+
+        let err = decrypted_api_key(&state).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttApiKeyInvalid);
+        assert_ne!(err.message, "Groq API key is not set");
+        assert!(err.message.contains("decrypt") || err.message.contains("master key"));
+        assert!(
+            !err.message.contains(secret),
+            "error message must not leak key content"
+        );
+    }
+
+    #[test]
+    fn build_stt_fails_on_decryption_error_and_does_not_leak_key() {
+        let original_key = [7u8; 32];
+        let different_key = [9u8; 32];
+        let state = test_app_state(different_key);
+        let secret = "gsk_super_secret_that_must_not_leak_456";
+        let encrypted = crate::crypto::encrypt_api_key(secret, &original_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set("groq_api_key", &encrypted)
+            .unwrap();
+        SettingsManager::new(&state.db)
+            .set("stt_engine", &"groq")
+            .unwrap();
+
+        let Err(err) = build_stt(&state) else {
+            panic!("expected build_stt to fail with decryption error");
+        };
+        assert_eq!(err.code, ErrorCode::SttApiKeyInvalid);
+        assert_ne!(err.message, "Groq API key is not set");
+        assert!(
+            !err.message.contains(secret),
+            "error message must not leak key content"
+        );
+    }
+
+    #[test]
+    fn build_stt_succeeds_when_key_not_set_and_transcribe_fails_with_not_set() {
+        let state = test_app_state([1u8; 32]);
+        SettingsManager::new(&state.db)
+            .set("stt_engine", &"groq")
+            .unwrap();
+
+        let Ok(engine) = build_stt(&state) else {
+            panic!("expected build_stt to succeed when key is not set");
+        };
+        let config = SttConfig::default();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt
+            .block_on(engine.transcribe(&[0.0; 160], &config))
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttApiKeyInvalid);
+        assert_eq!(err.message, "Groq API key is not set");
     }
 }

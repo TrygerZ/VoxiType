@@ -15,6 +15,8 @@ vi.mock("../lib/tauri", () => ({
   getSettings: vi.fn().mockResolvedValue({}),
   updateSetting: vi.fn().mockResolvedValue(undefined),
   setWhisperCppPaths: vi.fn().mockResolvedValue(undefined),
+  testGroqApi: vi.fn().mockResolvedValue(undefined),
+  testWhisperCpp: vi.fn().mockResolvedValue(undefined),
   setHotkey: vi.fn().mockResolvedValue(undefined),
   onEvent: vi.fn().mockResolvedValue(() => undefined),
   invoke: vi.fn().mockResolvedValue(undefined),

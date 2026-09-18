@@ -115,8 +115,8 @@ export const setWhisperCppPaths = (
 ) => invoke<void>("set_whisper_cpp_paths", { binaryPath, modelPath });
 
 // --- Groq API ---
-export const testGroqApi = (key: string) =>
-  invoke<void>("test_groq_api", { apiKey: key });
+export const testGroqApi = (key?: string | null) =>
+  invoke<void>("test_groq_api", { apiKey: key ?? null });
 export const testWhisperCpp = (
   binaryPath: string,
   modelPath: string,

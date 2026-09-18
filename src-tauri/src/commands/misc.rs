@@ -421,19 +421,28 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     }
 }
 
+pub(crate) fn resolve_test_api_key(
+    state: &AppStateInner,
+    api_key: Option<String>,
+) -> std::result::Result<String, AppError> {
+    match api_key.as_deref().map(str::trim) {
+        Some(k) if !k.is_empty() => Ok(k.to_string()),
+        _ => {
+            let key = super::runtime::decrypted_api_key(state)?;
+            if key.trim().is_empty() {
+                return Err(AppError::api_key_missing("Groq API key is not set"));
+            }
+            Ok(key)
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn test_groq_api(
     state: State<'_, AppStateInner>,
-    api_key: String,
+    api_key: Option<String>,
 ) -> std::result::Result<(), AppError> {
-    let api_key = if api_key.trim().is_empty() {
-        super::runtime::decrypted_api_key(&state)
-    } else {
-        api_key
-    };
-    if api_key.trim().is_empty() {
-        return Err(AppError::api_key_missing("Groq API key is not set"));
-    }
+    let api_key = resolve_test_api_key(&state, api_key)?;
 
     let client = crate::util::http_client();
     let resp = client
@@ -597,5 +606,76 @@ mod tests {
             Some(&canonical_file),
             &ghost.to_string_lossy()
         ));
+    }
+
+    fn test_app_state(master_key: [u8; 32]) -> AppStateInner {
+        AppStateInner {
+            db: crate::storage::Database::open_in_memory().unwrap(),
+            pipeline: crate::pipeline::PipelineOrchestrator::new(),
+            app_data_dir: PathBuf::from("/test"),
+            default_app_data_dir: PathBuf::from("/test"),
+            master_key,
+            _log_guard: None,
+            stt_engine: std::sync::Mutex::new(None),
+            last_picker_dirs: std::sync::Mutex::new(std::collections::HashMap::new()),
+            widget_timer: crate::overlay::WidgetTimerState::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_test_api_key_uses_explicit_key() {
+        let state = test_app_state([1u8; 32]);
+        let resolved = resolve_test_api_key(&state, Some("gsk_direct_key".to_string())).unwrap();
+        assert_eq!(resolved, "gsk_direct_key");
+    }
+
+    #[test]
+    fn resolve_test_api_key_falls_back_to_stored_key_when_none_or_empty() {
+        let master_key = [5u8; 32];
+        let state = test_app_state(master_key);
+        let secret = "gsk_stored_secret_key";
+        let encrypted = crate::crypto::encrypt_api_key(secret, &master_key).unwrap();
+        crate::storage::SettingsManager::new(&state.db)
+            .set("groq_api_key", &encrypted)
+            .unwrap();
+
+        assert_eq!(resolve_test_api_key(&state, None).unwrap(), secret);
+        assert_eq!(
+            resolve_test_api_key(&state, Some(String::new())).unwrap(),
+            secret
+        );
+        assert_eq!(
+            resolve_test_api_key(&state, Some("   ".to_string())).unwrap(),
+            secret
+        );
+    }
+
+    #[test]
+    fn resolve_test_api_key_fails_when_stored_key_not_set() {
+        let state = test_app_state([1u8; 32]);
+        let err_none = resolve_test_api_key(&state, None).unwrap_err();
+        assert_eq!(err_none.code, crate::error::ErrorCode::SttApiKeyInvalid);
+        assert_eq!(err_none.message, "Groq API key is not set");
+
+        let err_empty = resolve_test_api_key(&state, Some(String::new())).unwrap_err();
+        assert_eq!(err_empty.code, crate::error::ErrorCode::SttApiKeyInvalid);
+        assert_eq!(err_empty.message, "Groq API key is not set");
+    }
+
+    #[test]
+    fn resolve_test_api_key_fails_when_stored_key_undecryptable_without_leak() {
+        let original_key = [3u8; 32];
+        let state = test_app_state([4u8; 32]);
+        let secret = "gsk_secret_should_never_leak";
+        let encrypted = crate::crypto::encrypt_api_key(secret, &original_key).unwrap();
+        crate::storage::SettingsManager::new(&state.db)
+            .set("groq_api_key", &encrypted)
+            .unwrap();
+
+        let err = resolve_test_api_key(&state, None).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::SttApiKeyInvalid);
+        assert_ne!(err.message, "Groq API key is not set");
+        assert!(err.message.contains("decrypt") || err.message.contains("master key"));
+        assert!(!err.message.contains(secret));
     }
 }

@@ -95,6 +95,9 @@ impl AppError {
     pub fn api_key_missing(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::SttApiKeyInvalid, msg)
     }
+    pub fn api_key_decrypt_failed(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::SttApiKeyInvalid, msg)
+    }
     pub fn llm_api_key_missing(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::LlmApiKeyInvalid, msg)
     }

@@ -55,7 +55,7 @@ export function STTTab() {
   const handleTestApi = async () => {
     if (!localKey.trim() && !groqKeySet) return;
     await runStatus(setGroqStatus, groqTimerRef, async () => {
-      await testGroqApi(localKey.trim());
+      await testGroqApi(localKey.trim() || null);
       toast(t("settings.stt.connected"));
     });
   };
