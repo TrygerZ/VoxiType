@@ -31,6 +31,73 @@ const MIN_RECORDING_DURATION_SECS: f32 = 1.0;
 // Settings-derived config builders
 // ---------------------------------------------------------------
 
+/// Snapshot of all settings loaded in a single database round-trip via `SettingsManager::all()`.
+/// Prevents lock contention and repeated query preparation across the transcription pipeline.
+#[derive(Clone, Default)]
+pub struct SettingsSnapshot {
+    values: serde_json::Map<String, serde_json::Value>,
+}
+
+impl SettingsSnapshot {
+    pub fn new(values: serde_json::Map<String, serde_json::Value>) -> Self {
+        Self { values }
+    }
+
+    pub fn from_value(val: serde_json::Value) -> Self {
+        match val {
+            serde_json::Value::Object(map) => Self { values: map },
+            _ => Self::default(),
+        }
+    }
+
+    pub fn load(db: &Database) -> Result<Self> {
+        let all = SettingsManager::new(db).all()?;
+        Ok(Self::from_value(all))
+    }
+
+    pub fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
+        self.values
+            .get(key)
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+    }
+
+    pub fn string(&self, key: &str, default: &str) -> String {
+        self.get::<String>(key)
+            .unwrap_or_else(|| default.to_string())
+    }
+
+    pub fn u32(&self, key: &str, default: u32) -> u32 {
+        self.get::<u32>(key).unwrap_or(default)
+    }
+
+    pub fn bool(&self, key: &str, default: bool) -> bool {
+        self.get::<bool>(key).unwrap_or(default)
+    }
+}
+
+impl std::fmt::Debug for SettingsSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_map();
+        for (k, v) in &self.values {
+            if is_sensitive_setting_key(k) {
+                d.entry(k, &"[REDACTED]");
+            } else {
+                d.entry(k, v);
+            }
+        }
+        d.finish()
+    }
+}
+
+fn is_sensitive_setting_key(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    lower.contains("api_key")
+        || lower.contains("secret")
+        || lower.contains("token")
+        || lower.contains("password")
+}
+
 pub fn string_setting(db: &Database, key: &str, default: &str) -> String {
     SettingsManager::new(db)
         .get::<String>(key)
@@ -54,12 +121,11 @@ pub fn build_audio_config(db: &Database) -> AudioConfig {
     }
 }
 
-pub fn decrypted_api_key(state: &AppStateInner) -> Result<String> {
-    let raw = string_setting(&state.db, "groq_api_key", "");
+fn decrypt_api_key_str(raw: &str, master_key: &[u8; 32]) -> Result<String> {
     if raw.is_empty() {
         return Ok(String::new());
     }
-    crate::crypto::decrypt_api_key(&raw, &state.master_key).map_err(|e| {
+    crate::crypto::decrypt_api_key(raw, master_key).map_err(|e| {
         tracing::error!("Failed to decrypt API key: {e}");
         AppError::api_key_decrypt_failed(
             "Failed to decrypt stored Groq API key: master key mismatch or corrupted key",
@@ -67,21 +133,51 @@ pub fn decrypted_api_key(state: &AppStateInner) -> Result<String> {
     })
 }
 
+pub fn decrypted_api_key(state: &AppStateInner) -> Result<String> {
+    let raw = string_setting(&state.db, "groq_api_key", "");
+    decrypt_api_key_str(&raw, &state.master_key)
+}
+
+pub fn decrypted_api_key_from_settings(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+) -> Result<String> {
+    let raw = settings.string("groq_api_key", "");
+    decrypt_api_key_str(&raw, &state.master_key)
+}
+
+fn whisper_cpp_config_from_settings(settings: &SettingsSnapshot) -> WhisperCppConfig {
+    WhisperCppConfig {
+        binary_path: settings.string("whisper_cpp_binary_path", "whisper-cli"),
+        model_path: settings.string("whisper_cpp_model_path", ""),
+        threads: settings.u32("whisper_cpp_threads", 4),
+    }
+}
+
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
-    let kind = stt_engine_kind(&string_setting(&state.db, "stt_engine", "groq"));
+    let settings = SettingsSnapshot::load(&state.db)?;
+    build_stt_from_settings(state, &settings)
+}
+
+fn normalize_stt_model(model: String) -> String {
+    if model == "small" || model.trim().is_empty() {
+        "whisper-large-v3-turbo".to_string()
+    } else {
+        model
+    }
+}
+
+pub fn build_stt_from_settings(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+) -> Result<Arc<dyn crate::stt::SttEngine>> {
+    let kind = stt_engine_kind(&settings.string("stt_engine", "groq"));
     let api_key = match kind {
-        SttEngineKind::Groq => decrypted_api_key(state)?,
+        SttEngineKind::Groq => decrypted_api_key_from_settings(state, settings)?,
         SttEngineKind::WhisperCpp => String::new(),
     };
-    let mut model = string_setting(&state.db, "stt_model", "whisper-large-v3-turbo");
-    if model == "small" || model.trim().is_empty() {
-        model = "whisper-large-v3-turbo".to_string();
-    }
-    let whisper_cpp = WhisperCppConfig {
-        binary_path: string_setting(&state.db, "whisper_cpp_binary_path", "whisper-cli"),
-        model_path: string_setting(&state.db, "whisper_cpp_model_path", ""),
-        threads: u32_setting(&state.db, "whisper_cpp_threads", 4),
-    };
+    let model = normalize_stt_model(settings.string("stt_model", "whisper-large-v3-turbo"));
+    let whisper_cpp = whisper_cpp_config_from_settings(settings);
     let cache_key = stt_cache_key(kind, &api_key, &model, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
@@ -92,12 +188,11 @@ pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>
     }
 
     let groq = GroqSttConfig {
-        api_key: api_key.clone(),
-        model: model.clone(),
-        language: string_setting(&state.db, "stt_language", "auto"),
+        api_key,
+        model,
+        language: settings.string("stt_language", "auto"),
         ..Default::default()
     };
-
     let new_engine = SttFactory::create(kind, groq, whisper_cpp);
     *cache = Some((kind, cache_key, new_engine.clone()));
     Ok(new_engine)
@@ -126,7 +221,15 @@ fn stt_cache_key(
 }
 
 pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
-    let engine = string_setting(&state.db, "llm_engine", "ollama");
+    let settings = SettingsSnapshot::load(&state.db).unwrap_or_default();
+    build_llm_from_settings(state, &settings)
+}
+
+pub fn build_llm_from_settings(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+) -> Arc<dyn crate::llm::LlmFormatter> {
+    let engine = settings.string("llm_engine", "ollama");
     let kind = match engine.as_str() {
         "off" => LlmEngineKind::Off,
         "groq" => LlmEngineKind::Groq,
@@ -134,11 +237,11 @@ pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
         _ => LlmEngineKind::Ollama,
     };
     let ollama = OllamaConfig {
-        model: string_setting(&state.db, "llm_model", "qwen2.5:3b"),
+        model: settings.string("llm_model", "qwen2.5:3b"),
         ..Default::default()
     };
     let groq = GroqLlmConfig {
-        api_key: decrypted_api_key(state).unwrap_or_default(),
+        api_key: decrypted_api_key_from_settings(state, settings).unwrap_or_default(),
         ..Default::default()
     };
     LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
@@ -162,7 +265,12 @@ pub fn build_initial_prompt(hotwords: &[String]) -> Option<String> {
 }
 
 pub fn build_stt_config(db: &Database) -> SttConfig {
-    let language = string_setting(db, "stt_language", "auto");
+    let settings = SettingsSnapshot::load(db).unwrap_or_default();
+    build_stt_config_from_settings(db, &settings)
+}
+
+pub fn build_stt_config_from_settings(db: &Database, settings: &SettingsSnapshot) -> SttConfig {
+    let language = settings.string("stt_language", "auto");
     // When auto-detecting, skip hotwords to avoid biasing the STT model
     // toward a specific language.
     let hotwords = if language == "auto" {
@@ -181,11 +289,16 @@ pub fn build_stt_config(db: &Database) -> SttConfig {
 }
 
 pub fn active_mode(db: &Database, active_app: Option<&str>) -> LlmMode {
-    let per_app_on = SettingsManager::new(db)
-        .get::<bool>("per_app_mode")
-        .ok()
-        .flatten()
-        .unwrap_or(false);
+    let settings = SettingsSnapshot::load(db).unwrap_or_default();
+    active_mode_from_settings(db, &settings, active_app)
+}
+
+pub fn active_mode_from_settings(
+    db: &Database,
+    settings: &SettingsSnapshot,
+    active_app: Option<&str>,
+) -> LlmMode {
+    let per_app_on = settings.bool("per_app_mode", false);
     if per_app_on {
         if let Some(proc) = active_app {
             if let Ok(Some(mode_id)) = crate::storage::PerAppModeRepository::new(db).mode_for(proc)
@@ -194,23 +307,17 @@ pub fn active_mode(db: &Database, active_app: Option<&str>) -> LlmMode {
             }
         }
     }
-    LlmMode::from_id(&string_setting(db, "active_mode", "dictation"))
+    LlmMode::from_id(&settings.string("active_mode", "dictation"))
 }
 
 pub fn sound_cues_enabled(db: &Database) -> bool {
-    SettingsManager::new(db)
-        .get::<bool>("sound_cues")
-        .ok()
-        .flatten()
-        .unwrap_or(false)
+    let settings = SettingsSnapshot::load(db).unwrap_or_default();
+    settings.bool("sound_cues", false)
 }
 
 pub fn telemetry_enabled(db: &Database) -> bool {
-    SettingsManager::new(db)
-        .get::<bool>("telemetry")
-        .ok()
-        .flatten()
-        .unwrap_or(false)
+    let settings = SettingsSnapshot::load(db).unwrap_or_default();
+    settings.bool("telemetry", false)
 }
 
 pub fn csv_escape(s: &str) -> String {
@@ -241,18 +348,19 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
         return;
     }
 
-    let stt = match build_stt(&state) {
+    let settings = match SettingsSnapshot::load(&state.db) {
+        Ok(s) => s,
+        Err(e) => return fail(&app, &state.pipeline, &e),
+    };
+
+    let stt = match build_stt_from_settings(&state, &settings) {
         Ok(e) => e,
         Err(e) => return fail(&app, &state.pipeline, &e),
     };
-    let stt_config = build_stt_config(&state.db);
+    let stt_config = build_stt_config_from_settings(&state.db, &settings);
 
     // Command mode: transcribe first so we can intercept editing commands.
-    let command_mode = SettingsManager::new(&state.db)
-        .get::<bool>("command_mode")
-        .ok()
-        .flatten()
-        .unwrap_or(false);
+    let command_mode = settings.bool("command_mode", false);
     let mut precomputed = None;
     if command_mode {
         match stt.transcribe(&audio, &stt_config).await {
@@ -288,9 +396,9 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
         }
     }
 
-    let llm = build_llm(&state);
+    let llm = build_llm_from_settings(&state, &settings);
     let active_app = state.pipeline.active_app();
-    let mode = active_mode(&state.db, active_app.as_deref());
+    let mode = active_mode_from_settings(&state.db, &settings, active_app.as_deref());
     let replacements = DictionaryRepository::new(&state.db)
         .get_replacements()
         .unwrap_or_default();
@@ -303,12 +411,8 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     };
     let injector = std::sync::Arc::new(HybridInjector::new());
 
-    let translate_enabled = SettingsManager::new(&state.db)
-        .get::<bool>("translation_enabled")
-        .ok()
-        .flatten()
-        .unwrap_or(false);
-    let translate_target = string_setting(&state.db, "translation_target", "en");
+    let translate_enabled = settings.bool("translation_enabled", false);
+    let translate_target = settings.string("translation_target", "en");
     let translate_opts = if translate_enabled {
         Some(batch::TranslateOpts {
             target: translate_target.clone(),
@@ -377,7 +481,8 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 tracing::error!("Failed to insert transcription into history: {e}");
             }
 
-            if telemetry_enabled(&state.db) {
+            let telemetry = settings.bool("telemetry", false);
+            if telemetry {
                 let stt_kind = engine_kind(&entry.stt_engine);
                 let llm_kind = engine_kind(entry.llm_engine.as_deref().unwrap_or(""));
                 let _ = crate::storage::StatsRepository::new(&state.db).record_transcription(
@@ -401,7 +506,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
             hide_overlay_soon(app.clone());
         }
         Err(e) => {
-            if telemetry_enabled(&state.db) {
+            if settings.bool("telemetry", false) {
                 let _ = crate::storage::StatsRepository::new(&state.db).record_error();
             }
             fail(&app, &state.pipeline, &e)
@@ -695,5 +800,383 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::SttApiKeyInvalid);
         assert_eq!(err.message, "Groq API key is not set");
+    }
+
+    #[test]
+    fn settings_snapshot_identical_to_per_key_reads_empty_db() {
+        let state = test_app_state([3u8; 32]);
+        let snapshot = SettingsSnapshot::load(&state.db).unwrap();
+
+        assert_eq!(
+            string_setting(&state.db, "stt_engine", "groq"),
+            snapshot.string("stt_engine", "groq")
+        );
+        assert_eq!(
+            string_setting(&state.db, "stt_model", "whisper-large-v3-turbo"),
+            snapshot.string("stt_model", "whisper-large-v3-turbo")
+        );
+        assert_eq!(
+            string_setting(&state.db, "whisper_cpp_binary_path", "whisper-cli"),
+            snapshot.string("whisper_cpp_binary_path", "whisper-cli")
+        );
+        assert_eq!(
+            string_setting(&state.db, "whisper_cpp_model_path", ""),
+            snapshot.string("whisper_cpp_model_path", "")
+        );
+        assert_eq!(
+            u32_setting(&state.db, "whisper_cpp_threads", 4),
+            snapshot.u32("whisper_cpp_threads", 4)
+        );
+        assert_eq!(
+            string_setting(&state.db, "stt_language", "auto"),
+            snapshot.string("stt_language", "auto")
+        );
+        assert_eq!(
+            string_setting(&state.db, "llm_engine", "ollama"),
+            snapshot.string("llm_engine", "ollama")
+        );
+        assert_eq!(
+            string_setting(&state.db, "llm_model", "qwen2.5:3b"),
+            snapshot.string("llm_model", "qwen2.5:3b")
+        );
+        assert_eq!(
+            string_setting(&state.db, "active_mode", "dictation"),
+            snapshot.string("active_mode", "dictation")
+        );
+        assert_eq!(
+            string_setting(&state.db, "translation_target", "en"),
+            snapshot.string("translation_target", "en")
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("command_mode")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("command_mode", false)
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("per_app_mode")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("per_app_mode", false)
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("translation_enabled")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("translation_enabled", false)
+        );
+        assert_eq!(
+            telemetry_enabled(&state.db),
+            snapshot.bool("telemetry", false)
+        );
+        assert_eq!(
+            sound_cues_enabled(&state.db),
+            snapshot.bool("sound_cues", false)
+        );
+
+        let cfg_per_key = build_stt_config(&state.db);
+        let cfg_snapshot = build_stt_config_from_settings(&state.db, &snapshot);
+        assert_eq!(cfg_per_key.language, cfg_snapshot.language);
+        assert_eq!(cfg_per_key.initial_prompt, cfg_snapshot.initial_prompt);
+        assert_eq!(cfg_per_key.temperature, cfg_snapshot.temperature);
+
+        assert_eq!(
+            active_mode(&state.db, None).id(),
+            active_mode_from_settings(&state.db, &snapshot, None).id()
+        );
+        assert_eq!(
+            build_llm(&state).name(),
+            build_llm_from_settings(&state, &snapshot).name()
+        );
+        assert_eq!(
+            decrypted_api_key(&state).unwrap(),
+            decrypted_api_key_from_settings(&state, &snapshot).unwrap()
+        );
+        assert_eq!(
+            build_stt(&state).unwrap().name(),
+            build_stt_from_settings(&state, &snapshot).unwrap().name()
+        );
+    }
+
+    #[test]
+    fn settings_snapshot_identical_to_per_key_reads_partially_populated_db() {
+        let state = test_app_state([4u8; 32]);
+        let mgr = SettingsManager::new(&state.db);
+        mgr.set("stt_language", &"id").unwrap();
+        mgr.set("command_mode", &true).unwrap();
+        mgr.set("whisper_cpp_threads", &8u32).unwrap();
+        mgr.set("translation_enabled", &true).unwrap();
+        mgr.set("translation_target", &"ja").unwrap();
+
+        let snapshot = SettingsSnapshot::load(&state.db).unwrap();
+
+        assert_eq!(
+            string_setting(&state.db, "stt_language", "auto"),
+            snapshot.string("stt_language", "auto")
+        );
+        assert_eq!(
+            u32_setting(&state.db, "whisper_cpp_threads", 4),
+            snapshot.u32("whisper_cpp_threads", 4)
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("command_mode")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("command_mode", false)
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("translation_enabled")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("translation_enabled", false)
+        );
+        assert_eq!(
+            string_setting(&state.db, "translation_target", "en"),
+            snapshot.string("translation_target", "en")
+        );
+
+        let cfg_per_key = build_stt_config(&state.db);
+        let cfg_snapshot = build_stt_config_from_settings(&state.db, &snapshot);
+        assert_eq!(cfg_per_key.language, cfg_snapshot.language);
+        assert_eq!(cfg_per_key.initial_prompt, cfg_snapshot.initial_prompt);
+
+        assert_eq!(
+            active_mode(&state.db, None).id(),
+            active_mode_from_settings(&state.db, &snapshot, None).id()
+        );
+        assert_eq!(
+            build_llm(&state).name(),
+            build_llm_from_settings(&state, &snapshot).name()
+        );
+    }
+
+    #[test]
+    fn settings_snapshot_identical_to_per_key_reads_fully_populated_db() {
+        let master_key = [5u8; 32];
+        let state = test_app_state(master_key);
+        let secret_key = "gsk_full_test_key_xyz123";
+        let encrypted = crate::crypto::encrypt_api_key(secret_key, &master_key).unwrap();
+
+        let mgr = SettingsManager::new(&state.db);
+        mgr.set("stt_engine", &"whisper_cpp").unwrap();
+        mgr.set("stt_model", &"ggml-base.bin").unwrap();
+        mgr.set("whisper_cpp_binary_path", &"/usr/bin/whisper-cli")
+            .unwrap();
+        mgr.set("whisper_cpp_model_path", &"/models/base.bin")
+            .unwrap();
+        mgr.set("whisper_cpp_threads", &6u32).unwrap();
+        mgr.set("stt_language", &"en").unwrap();
+        mgr.set("command_mode", &true).unwrap();
+        mgr.set("llm_engine", &"groq").unwrap();
+        mgr.set("llm_model", &"llama-3.1-8b-instant").unwrap();
+        mgr.set("per_app_mode", &true).unwrap();
+        mgr.set("active_mode", &"email").unwrap();
+        mgr.set("translation_enabled", &true).unwrap();
+        mgr.set("translation_target", &"de").unwrap();
+        mgr.set("telemetry", &true).unwrap();
+        mgr.set("sound_cues", &true).unwrap();
+        mgr.set("groq_api_key", &encrypted).unwrap();
+
+        let snapshot = SettingsSnapshot::load(&state.db).unwrap();
+
+        assert_eq!(
+            string_setting(&state.db, "stt_engine", "groq"),
+            snapshot.string("stt_engine", "groq")
+        );
+        assert_eq!(
+            string_setting(&state.db, "stt_model", "whisper-large-v3-turbo"),
+            snapshot.string("stt_model", "whisper-large-v3-turbo")
+        );
+        assert_eq!(
+            string_setting(&state.db, "whisper_cpp_binary_path", "whisper-cli"),
+            snapshot.string("whisper_cpp_binary_path", "whisper-cli")
+        );
+        assert_eq!(
+            string_setting(&state.db, "whisper_cpp_model_path", ""),
+            snapshot.string("whisper_cpp_model_path", "")
+        );
+        assert_eq!(
+            u32_setting(&state.db, "whisper_cpp_threads", 4),
+            snapshot.u32("whisper_cpp_threads", 4)
+        );
+        assert_eq!(
+            string_setting(&state.db, "stt_language", "auto"),
+            snapshot.string("stt_language", "auto")
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("command_mode")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("command_mode", false)
+        );
+        assert_eq!(
+            string_setting(&state.db, "llm_engine", "ollama"),
+            snapshot.string("llm_engine", "ollama")
+        );
+        assert_eq!(
+            string_setting(&state.db, "llm_model", "qwen2.5:3b"),
+            snapshot.string("llm_model", "qwen2.5:3b")
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("per_app_mode")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("per_app_mode", false)
+        );
+        assert_eq!(
+            string_setting(&state.db, "active_mode", "dictation"),
+            snapshot.string("active_mode", "dictation")
+        );
+        assert_eq!(
+            SettingsManager::new(&state.db)
+                .get::<bool>("translation_enabled")
+                .unwrap()
+                .unwrap_or(false),
+            snapshot.bool("translation_enabled", false)
+        );
+        assert_eq!(
+            string_setting(&state.db, "translation_target", "en"),
+            snapshot.string("translation_target", "en")
+        );
+        assert_eq!(
+            telemetry_enabled(&state.db),
+            snapshot.bool("telemetry", false)
+        );
+        assert_eq!(
+            sound_cues_enabled(&state.db),
+            snapshot.bool("sound_cues", false)
+        );
+
+        let cfg_per_key = build_stt_config(&state.db);
+        let cfg_snapshot = build_stt_config_from_settings(&state.db, &snapshot);
+        assert_eq!(cfg_per_key.language, cfg_snapshot.language);
+        assert_eq!(cfg_per_key.initial_prompt, cfg_snapshot.initial_prompt);
+
+        assert_eq!(snapshot.string("stt_engine", "groq"), "whisper_cpp");
+        assert_eq!(
+            snapshot.string("stt_model", "whisper-large-v3-turbo"),
+            "ggml-base.bin"
+        );
+        assert_eq!(
+            snapshot.string("whisper_cpp_binary_path", "whisper-cli"),
+            "/usr/bin/whisper-cli"
+        );
+        assert_eq!(
+            snapshot.string("whisper_cpp_model_path", ""),
+            "/models/base.bin"
+        );
+        assert_eq!(snapshot.u32("whisper_cpp_threads", 4), 6);
+        assert_eq!(snapshot.string("stt_language", "auto"), "en");
+        assert_eq!(snapshot.bool("command_mode", false), true);
+        assert_eq!(snapshot.string("llm_engine", "ollama"), "groq");
+        assert_eq!(
+            snapshot.string("llm_model", "qwen2.5:3b"),
+            "llama-3.1-8b-instant"
+        );
+        assert_eq!(snapshot.bool("per_app_mode", false), true);
+        assert_eq!(snapshot.string("active_mode", "dictation"), "email");
+        assert_eq!(snapshot.bool("translation_enabled", false), true);
+        assert_eq!(snapshot.string("translation_target", "en"), "de");
+        assert_eq!(snapshot.bool("telemetry", false), true);
+        assert_eq!(snapshot.bool("sound_cues", false), true);
+
+        assert_eq!(
+            active_mode(&state.db, None).id(),
+            active_mode_from_settings(&state.db, &snapshot, None).id()
+        );
+        assert_eq!(
+            build_llm(&state).name(),
+            build_llm_from_settings(&state, &snapshot).name()
+        );
+        assert_eq!(
+            decrypted_api_key(&state).unwrap(),
+            decrypted_api_key_from_settings(&state, &snapshot).unwrap()
+        );
+        assert_eq!(
+            build_stt(&state).unwrap().name(),
+            build_stt_from_settings(&state, &snapshot).unwrap().name()
+        );
+    }
+
+    #[test]
+    fn settings_snapshot_debug_does_not_leak_api_key() {
+        let secret = "gsk_super_secret_groq_key_that_must_never_leak_in_debug_repr";
+        let mut map = serde_json::Map::new();
+        map.insert(
+            "groq_api_key".to_string(),
+            serde_json::Value::String(secret.to_string()),
+        );
+        map.insert(
+            "custom_api_key".to_string(),
+            serde_json::Value::String("another_api_key_val".to_string()),
+        );
+        map.insert(
+            "app_secret".to_string(),
+            serde_json::Value::String("secret_password".to_string()),
+        );
+        map.insert(
+            "stt_engine".to_string(),
+            serde_json::Value::String("groq".to_string()),
+        );
+
+        let snapshot = SettingsSnapshot::new(map);
+        let debug_output = format!("{snapshot:?}");
+
+        assert!(
+            !debug_output.contains(secret),
+            "Debug output must not contain groq_api_key value"
+        );
+        assert!(
+            !debug_output.contains("another_api_key_val"),
+            "Debug output must not contain keys matching *api_key*"
+        );
+        assert!(
+            !debug_output.contains("secret_password"),
+            "Debug output must not contain keys matching *secret*"
+        );
+        assert!(
+            debug_output.contains("[REDACTED]"),
+            "Debug output must contain [REDACTED]"
+        );
+        assert!(
+            debug_output.contains("groq"),
+            "Debug output should retain non-sensitive settings"
+        );
+    }
+
+    #[test]
+    fn settings_snapshot_default_values_when_keys_missing() {
+        let snapshot = SettingsSnapshot::default();
+
+        assert_eq!(snapshot.string("stt_engine", "groq"), "groq");
+        assert_eq!(
+            snapshot.string("stt_model", "whisper-large-v3-turbo"),
+            "whisper-large-v3-turbo"
+        );
+        assert_eq!(
+            snapshot.string("whisper_cpp_binary_path", "whisper-cli"),
+            "whisper-cli"
+        );
+        assert_eq!(snapshot.string("whisper_cpp_model_path", ""), "");
+        assert_eq!(snapshot.u32("whisper_cpp_threads", 4), 4);
+        assert_eq!(snapshot.string("stt_language", "auto"), "auto");
+        assert_eq!(snapshot.bool("command_mode", false), false);
+        assert_eq!(snapshot.string("llm_engine", "ollama"), "ollama");
+        assert_eq!(snapshot.string("llm_model", "qwen2.5:3b"), "qwen2.5:3b");
+        assert_eq!(snapshot.bool("per_app_mode", false), false);
+        assert_eq!(snapshot.string("active_mode", "dictation"), "dictation");
+        assert_eq!(snapshot.bool("translation_enabled", false), false);
+        assert_eq!(snapshot.string("translation_target", "en"), "en");
+        assert_eq!(snapshot.bool("telemetry", false), false);
+        assert_eq!(snapshot.bool("sound_cues", false), false);
+        assert_eq!(snapshot.string("groq_api_key", ""), "");
+        assert_eq!(snapshot.string("mic_device", "default"), "default");
     }
 }
