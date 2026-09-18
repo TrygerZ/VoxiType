@@ -19,7 +19,8 @@
         "resizable": true,
         "fullscreen": false,
         "visible": true,
-        "center": true
+        "center": true,
+        "create": false
       },
       {
         "label": "floating-widget",
@@ -34,7 +35,8 @@
         "skipTaskbar": true,
         "shadow": false,
         "focus": false,
-        "visible": false
+        "visible": false,
+        "create": false
       }
     ],
     "security": {

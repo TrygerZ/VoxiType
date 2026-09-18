@@ -96,6 +96,9 @@ impl AppStateInner {
     }
 }
 
+const MAIN_WINDOW_LABEL: &str = "main";
+const FLOATING_WIDGET_LABEL: &str = "floating-widget";
+
 /// Upgrade-on-startup: re-encrypt a legacy plaintext `groq_api_key` in place.
 ///
 /// Idempotent — no-ops when the key is absent, empty, or already carries the
@@ -198,6 +201,11 @@ pub fn run() {
 
             app.manage(state);
 
+            // Windows have `create: false` in config to prevent webviews loading
+            // before state is managed. Build them now: main first, then floating-widget.
+            create_window_from_config(handle, MAIN_WINDOW_LABEL)?;
+            create_window_from_config(handle, FLOATING_WIDGET_LABEL)?;
+
             apply_window_icon(handle);
 
             // System tray.
@@ -264,7 +272,7 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+                if window.label() == MAIN_WINDOW_LABEL {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -272,6 +280,33 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Create a webview window from its declaration in `tauri.conf.json`.
+fn create_window_from_config<R: Runtime>(
+    handle: &tauri::AppHandle<R>,
+    label: &str,
+) -> Result<tauri::WebviewWindow<R>, crate::error::AppError> {
+    let config = handle
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == label)
+        .ok_or_else(|| {
+            crate::error::AppError::internal(format!("Window config for '{label}' not found"))
+        })?;
+
+    tauri::WebviewWindowBuilder::from_config(handle, config)
+        .map_err(|e| {
+            crate::error::AppError::internal(format!(
+                "Failed to init window builder for '{label}': {e}"
+            ))
+        })?
+        .build()
+        .map_err(|e| {
+            crate::error::AppError::internal(format!("Failed to build window '{label}': {e}"))
+        })
 }
 
 fn apply_window_icon<R: Runtime>(app: &tauri::AppHandle<R>) {
