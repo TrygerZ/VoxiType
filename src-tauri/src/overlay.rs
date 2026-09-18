@@ -8,7 +8,7 @@
 //! its live animation; when the feature is turned off the window is hidden.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,16 @@ use crate::AppStateInner;
 
 const LABEL: &str = "floating-widget";
 
+/// Cached overlay settings to avoid querying SQLite on every idle-monitor tick.
+#[derive(Debug, Clone, Copy)]
+pub struct CachedOverlaySettings {
+    pub auto_hide_seconds: u64,
+    pub is_enabled: bool,
+    pub fetched_at: Instant,
+}
+
+pub const SETTINGS_CACHE_TTL: Duration = Duration::from_secs(5);
+
 /// Runtime state for the floating-widget idle auto-hide timer.
 #[derive(Debug, Default)]
 pub struct WidgetTimerState {
@@ -28,6 +38,8 @@ pub struct WidgetTimerState {
     pub is_animating_hide: AtomicBool,
     pub idle_deadline: Mutex<Option<Instant>>,
     pub hide_generation: AtomicU64,
+    pub is_shutdown: AtomicBool,
+    pub cached_settings: Mutex<Option<CachedOverlaySettings>>,
 }
 
 impl WidgetTimerState {
@@ -37,6 +49,48 @@ impl WidgetTimerState {
             is_animating_hide: AtomicBool::new(false),
             idle_deadline: Mutex::new(None),
             hide_generation: AtomicU64::new(0),
+            is_shutdown: AtomicBool::new(false),
+            cached_settings: Mutex::new(None),
+        }
+    }
+
+    pub fn shutdown(&self) {
+        self.is_shutdown.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_shutdown(&self) -> bool {
+        self.is_shutdown.load(Ordering::SeqCst)
+    }
+
+    /// Read settings from cache if within TTL, otherwise query DB and update cache.
+    pub fn get_or_refresh_settings(&self, db: &crate::storage::Database) -> (u64, bool) {
+        let now = Instant::now();
+        let mut cache_guard = self.cached_settings.lock_recover();
+        if let Some(cached) = *cache_guard {
+            if now.duration_since(cached.fetched_at) < SETTINGS_CACHE_TTL {
+                return (cached.auto_hide_seconds, cached.is_enabled);
+            }
+        }
+        let auto_hide = auto_hide_seconds(db);
+        let enabled = is_enabled_from_db(db);
+        *cache_guard = Some(CachedOverlaySettings {
+            auto_hide_seconds: auto_hide,
+            is_enabled: enabled,
+            fetched_at: now,
+        });
+        (auto_hide, enabled)
+    }
+
+    /// Invalidate the settings cache so the next read queries SQLite.
+    pub fn invalidate_settings_cache(&self) {
+        *self.cached_settings.lock_recover() = None;
+    }
+
+    /// Explicitly update the cached `is_enabled` flag (e.g. when toggled via IPC).
+    pub fn update_cached_enabled(&self, enabled: bool) {
+        let mut cache_guard = self.cached_settings.lock_recover();
+        if let Some(ref mut cached) = *cache_guard {
+            cached.is_enabled = enabled;
         }
     }
 
@@ -53,6 +107,15 @@ impl WidgetTimerState {
     }
 }
 
+/// Query whether the floating widget is enabled directly from SQLite.
+pub fn is_enabled_from_db(db: &crate::storage::Database) -> bool {
+    SettingsManager::new(db)
+        .get::<bool>("floating_widget")
+        .ok()
+        .flatten()
+        .unwrap_or(true)
+}
+
 /// Whether the floating-widget webview has finished its first mount. The
 /// overlay window is created hidden and only `show()` once the page has
 /// painted its transparent content, so a blank white square never flashes over
@@ -62,26 +125,27 @@ impl WidgetTimerState {
 static WIDGET_READY: AtomicBool = AtomicBool::new(false);
 
 /// Persisted top-left position of the overlay window (physical pixels).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct WidgetPos {
-    x: i32,
-    y: i32,
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct WidgetPos {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
 }
 
 /// Whether the floating widget feature is enabled (defaults to true).
 pub fn is_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
-    let state = app.state::<AppStateInner>();
-    SettingsManager::new(&state.db)
-        .get::<bool>("floating_widget")
-        .ok()
-        .flatten()
-        .unwrap_or(true)
+    let Some(state) = app.try_state::<AppStateInner>() else {
+        return true;
+    };
+    state.widget_timer.get_or_refresh_settings(&state.db).1
 }
 
 /// Apply the enabled/disabled state: show the overlay (restoring its saved
 /// position) or hide it. Called on startup and whenever the user toggles it.
 pub fn apply_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
-    let state = app.state::<AppStateInner>();
+    let Some(state) = app.try_state::<AppStateInner>() else {
+        return;
+    };
+    state.widget_timer.update_cached_enabled(enabled);
     state
         .widget_timer
         .hidden_by_timeout
@@ -246,7 +310,7 @@ pub fn reset_idle_timer(state: &AppStateInner) -> bool {
         .is_animating_hide
         .swap(false, Ordering::SeqCst);
     state.widget_timer.cancel_pending_hide();
-    let secs = auto_hide_seconds(&state.db);
+    let (secs, _) = state.widget_timer.get_or_refresh_settings(&state.db);
     let deadline = compute_idle_deadline(Instant::now(), secs);
     *state.widget_timer.idle_deadline.lock_recover() = deadline;
     was_animating
@@ -421,13 +485,15 @@ pub fn acknowledge_hide<R: Runtime>(app: &AppHandle<R>, gen: u64) -> bool {
 }
 
 fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
-    let state = app.state::<AppStateInner>();
+    let Some(state) = app.try_state::<AppStateInner>() else {
+        return;
+    };
     if state.widget_timer.hidden_by_timeout.load(Ordering::SeqCst)
         || state.widget_timer.is_animating_hide.load(Ordering::SeqCst)
     {
         return;
     }
-    let timeout_secs = auto_hide_seconds(&state.db);
+    let (timeout_secs, enabled) = state.widget_timer.get_or_refresh_settings(&state.db);
     let deadline = resolve_deadline(&state, timeout_secs);
     let Some(win) = app.get_webview_window(LABEL) else {
         return;
@@ -438,7 +504,7 @@ fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
         deadline,
         now: Instant::now(),
         pipeline_state: state.pipeline.state_tag(),
-        floating_widget_enabled: is_enabled(app),
+        floating_widget_enabled: enabled,
         is_visible: win.is_visible().unwrap_or(false),
         hidden_by_timeout: false,
         is_animating_hide: false,
@@ -451,7 +517,9 @@ fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
 /// Spawn the background task that checks every second whether the widget should auto-hide.
 pub fn start_idle_monitor<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
-    let state = app.state::<AppStateInner>();
+    let Some(state) = app.try_state::<AppStateInner>() else {
+        return;
+    };
     reset_idle_timer(&state);
 
     tauri::async_runtime::spawn(async move {
@@ -460,6 +528,12 @@ pub fn start_idle_monitor<R: Runtime>(app: &AppHandle<R>) {
 
         loop {
             interval.tick().await;
+            let Some(state) = app.try_state::<AppStateInner>() else {
+                break;
+            };
+            if state.widget_timer.is_shutdown() {
+                break;
+            }
             check_and_auto_hide(&app);
         }
     });
@@ -478,66 +552,97 @@ pub fn persist_position<R: Runtime>(app: &AppHandle<R>) {
         .set("floating_widget_pos", &WidgetPos { x: pos.x, y: pos.y });
 }
 
+fn clamp_and_persist_position<R: Runtime>(app: &AppHandle<R>, mut saved: WidgetPos) {
+    let Some(win) = app.get_webview_window(LABEL) else {
+        return;
+    };
+
+    // Clamp position to monitor bounds to prevent widget from going off-screen
+    let monitor = win.current_monitor().ok().flatten().or_else(|| {
+        win.available_monitors()
+            .ok()
+            .and_then(|ms| ms.into_iter().next())
+    });
+
+    if let Some(m) = monitor {
+        let m_pos = m.position();
+        let m_size = m.size();
+        if let Ok(w_size) = win.outer_size() {
+            let min_x = m_pos.x;
+            let max_x = m_pos.x + m_size.width as i32 - w_size.width as i32;
+            let min_y = m_pos.y;
+            let max_y = m_pos.y + m_size.height as i32 - w_size.height as i32;
+
+            let clamped_x = saved.x.clamp(min_x, max_x);
+            let clamped_y = saved.y.clamp(min_y, max_y);
+
+            if clamped_x != saved.x || clamped_y != saved.y {
+                saved.x = clamped_x;
+                saved.y = clamped_y;
+                let _ = win.set_position(PhysicalPosition::new(clamped_x, clamped_y));
+            }
+        }
+    }
+
+    let Some(state) = app.try_state::<AppStateInner>() else {
+        return;
+    };
+    let _ = SettingsManager::new(&state.db).set("floating_widget_pos", &saved);
+}
+
+/// Single watchdog task that debounces drag events by resetting a deadline timer.
+pub(crate) async fn run_position_watchdog<F>(
+    mut rx: tokio::sync::watch::Receiver<Option<WidgetPos>>,
+    quiet_period: Duration,
+    mut persist_fn: F,
+) where
+    F: FnMut(WidgetPos),
+{
+    let mut pending: Option<WidgetPos> = None;
+    loop {
+        if pending.is_some() {
+            tokio::select! {
+                res = rx.changed() => {
+                    if res.is_err() {
+                        break;
+                    }
+                    pending = *rx.borrow_and_update();
+                }
+                _ = tokio::time::sleep(quiet_period) => {
+                    if let Some(pos) = pending.take() {
+                        persist_fn(pos);
+                    }
+                }
+            }
+        } else {
+            if rx.changed().await.is_err() {
+                break;
+            }
+            pending = *rx.borrow_and_update();
+        }
+    }
+}
+
 /// Register a debounced listener that remembers the overlay position whenever
 /// the user drags it. Only the final resting position of a drag is written
-/// (300 ms quiet period), keeping DB writes minimal during a drag.
+/// (300 ms quiet period) using a single watchdog task rather than spawning per event.
 pub fn setup_persistence<R: Runtime>(app: &AppHandle<R>) {
     let Some(win) = app.get_webview_window(LABEL) else {
         return;
     };
     let app = app.clone();
-    let pending: Arc<Mutex<WidgetPos>> = Arc::new(Mutex::new(WidgetPos { x: 0, y: 0 }));
-    let generation = Arc::new(AtomicU64::new(0));
+    let (tx, rx) = tokio::sync::watch::channel(None::<WidgetPos>);
+
+    tauri::async_runtime::spawn(async move {
+        run_position_watchdog(rx, Duration::from_millis(300), move |pos| {
+            clamp_and_persist_position(&app, pos);
+        })
+        .await;
+    });
 
     win.on_window_event(move |event| {
         if let WindowEvent::Moved(pos) = event {
-            *pending.lock_recover() = WidgetPos { x: pos.x, y: pos.y };
-            let my_gen = generation.fetch_add(1, Ordering::SeqCst) + 1;
-
-            let app = app.clone();
-            let pending = pending.clone();
-            let generation = generation.clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(300)).await;
-                // Only the last move within the quiet window writes.
-                if generation.load(Ordering::SeqCst) != my_gen {
-                    return;
-                }
-                let mut saved = *pending.lock_recover();
-                let Some(win) = app.get_webview_window(LABEL) else {
-                    return;
-                };
-
-                // Clamp position to monitor bounds to prevent widget from going off-screen
-                let monitor = win.current_monitor().ok().flatten().or_else(|| {
-                    win.available_monitors()
-                        .ok()
-                        .and_then(|ms| ms.into_iter().next())
-                });
-
-                if let Some(m) = monitor {
-                    let m_pos = m.position();
-                    let m_size = m.size();
-                    if let Ok(w_size) = win.outer_size() {
-                        let min_x = m_pos.x;
-                        let max_x = m_pos.x + m_size.width as i32 - w_size.width as i32;
-                        let min_y = m_pos.y;
-                        let max_y = m_pos.y + m_size.height as i32 - w_size.height as i32;
-
-                        let clamped_x = saved.x.clamp(min_x, max_x);
-                        let clamped_y = saved.y.clamp(min_y, max_y);
-
-                        if clamped_x != saved.x || clamped_y != saved.y {
-                            saved.x = clamped_x;
-                            saved.y = clamped_y;
-                            let _ = win.set_position(PhysicalPosition::new(clamped_x, clamped_y));
-                        }
-                    }
-                }
-
-                let state = app.state::<AppStateInner>();
-                let _ = SettingsManager::new(&state.db).set("floating_widget_pos", &saved);
-            });
+            let _ = tx.send(Some(WidgetPos { x: pos.x, y: pos.y }));
         }
     });
 }
@@ -589,6 +694,7 @@ fn bottom_center_position<R: Runtime>(win: &WebviewWindow<R>) -> Option<Physical
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn test_params(now: Instant, deadline: Option<Instant>, tag: AppStateTag) -> AutoHideParams {
         AutoHideParams {
@@ -752,5 +858,91 @@ mod tests {
         assert!(!should_emit_cancellation_reveal(true, false, true));
         // Hidden/non-visible window must NOT emit reveal
         assert!(!should_emit_cancellation_reveal(true, true, false));
+    }
+
+    #[test]
+    fn widget_timer_shutdown_flag_works() {
+        let state = WidgetTimerState::new();
+        assert!(!state.is_shutdown());
+        state.shutdown();
+        assert!(state.is_shutdown());
+    }
+
+    #[test]
+    fn settings_cache_reduces_queries_and_respects_updates() {
+        let db = crate::storage::Database::open_in_memory().unwrap();
+        let timer = WidgetTimerState::new();
+
+        // Initial read fetches defaults from DB.
+        let (timeout, enabled) = timer.get_or_refresh_settings(&db);
+        assert_eq!(timeout, 0);
+        assert!(enabled);
+
+        // Update DB directly.
+        SettingsManager::new(&db)
+            .set("floating_widget_auto_hide_seconds", &30u64)
+            .unwrap();
+        SettingsManager::new(&db)
+            .set("floating_widget", &false)
+            .unwrap();
+
+        // Immediate subsequent read uses cache, reducing queries.
+        let (cached_timeout, cached_enabled) = timer.get_or_refresh_settings(&db);
+        assert_eq!(cached_timeout, 0);
+        assert!(cached_enabled);
+
+        // Explicit enable update updates the cache immediately.
+        timer.update_cached_enabled(false);
+        assert!(!timer.get_or_refresh_settings(&db).1);
+
+        // Invalidation forces reload from DB.
+        timer.invalidate_settings_cache();
+        let (reloaded_timeout, reloaded_enabled) = timer.get_or_refresh_settings(&db);
+        assert_eq!(reloaded_timeout, 30);
+        assert!(!reloaded_enabled);
+    }
+
+    #[tokio::test]
+    async fn run_position_watchdog_debounces_burst_into_single_write() {
+        let (tx, rx) = tokio::sync::watch::channel(None::<WidgetPos>);
+        let persisted = Arc::new(Mutex::new(Vec::new()));
+        let persisted_clone = persisted.clone();
+
+        let watchdog = tokio::spawn(async move {
+            run_position_watchdog(rx, Duration::from_millis(50), move |pos| {
+                persisted_clone.lock_recover().push(pos);
+            })
+            .await;
+        });
+
+        // Rapid burst of 10 position updates.
+        for i in 1..=10 {
+            tx.send(Some(WidgetPos {
+                x: i * 10,
+                y: i * 20,
+            }))
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        // Wait for quiet window (50 ms) to expire.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let writes = persisted.lock_recover().clone();
+        assert_eq!(writes.len(), 1, "Burst of moves must yield exactly 1 write");
+        assert_eq!(writes[0].x, 100);
+        assert_eq!(writes[0].y, 200);
+
+        // A second burst after quiet window produces a second single write.
+        tx.send(Some(WidgetPos { x: 500, y: 600 })).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let writes2 = persisted.lock_recover().clone();
+        assert_eq!(writes2.len(), 2);
+        assert_eq!(writes2[1].x, 500);
+        assert_eq!(writes2[1].y, 600);
+
+        drop(tx);
+        let _ = watchdog.await;
     }
 }

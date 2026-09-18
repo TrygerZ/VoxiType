@@ -59,6 +59,7 @@ pub struct AppStateInner {
 
 impl AppStateInner {
     fn new(app_data_dir: PathBuf, default_app_data_dir: PathBuf) -> error::Result<Self> {
+        data_dir::validate_data_dir(&app_data_dir)?;
         let db_path = app_data_dir.join("data").join("voxitype.db");
         tracing::info!("Opening database at '{}'", db_path.display());
         let db = Database::open(&db_path)?;
@@ -284,8 +285,15 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app_handle.try_state::<AppStateInner>() {
+                    state.widget_timer.shutdown();
+                }
+            }
+        });
 }
 
 /// Create a webview window from its declaration in `tauri.conf.json`.
@@ -395,5 +403,29 @@ mod tests {
             found_log,
             "Fallback error message must be written to log file in default logs dir"
         );
+    }
+
+    #[test]
+    fn test_app_state_inner_new_detects_unwritable_directory_before_db_open() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("voxitype_test_toctou_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("failed to create temp dir");
+
+        let invalid_target = temp_dir.join("not_a_dir_file");
+        std::fs::write(&invalid_target, b"dummy content").expect("write dummy file");
+
+        let err = match AppStateInner::new(invalid_target.clone(), temp_dir.clone()) {
+            Err(e) => e,
+            Ok(_) => panic!("must fail validation before Database::open"),
+        };
+
+        assert_eq!(err.code, error::ErrorCode::DataDirectoryError);
+        assert!(
+            err.message.contains("not a directory") || err.message.contains("not writable"),
+            "Error message must clearly identify directory issue: {}",
+            err.message
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
