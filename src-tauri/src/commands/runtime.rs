@@ -341,7 +341,9 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     let state = app.state::<AppStateInner>();
 
     if audio.is_empty() {
-        let _ = state.pipeline.finish_processing();
+        if let Err(e) = state.pipeline.finish_processing() {
+            tracing::error!("Failed to finish processing on empty audio: {e}");
+        }
         events::emit_state(&app, state.pipeline.state_tag());
         crate::overlay::reset_idle_timer(&state);
         crate::overlay::maybe_hide(&app);
@@ -377,7 +379,9 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                     if let Err(e) = crate::injection::command::execute(cmd) {
                         return fail(&app, &state.pipeline, &e);
                     }
-                    let _ = state.pipeline.finish_processing();
+                    if let Err(e) = state.pipeline.finish_processing() {
+                        tracing::error!("Failed to finish processing command: {e}");
+                    }
                     events::emit_transcription_complete(
                         &app,
                         &Uuid::new_v4().to_string(),
@@ -493,7 +497,9 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 );
             }
 
-            let _ = state.pipeline.finish_processing();
+            if let Err(e) = state.pipeline.finish_processing() {
+                tracing::error!("Failed to finish processing transcription: {e}");
+            }
             events::emit_transcription_complete(
                 &app,
                 &id,

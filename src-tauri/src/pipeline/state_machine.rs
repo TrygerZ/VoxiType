@@ -81,15 +81,26 @@ impl AppState {
 
             (AppState::Processing { .. }, StateEvent::ProcessingComplete) => Ok(AppState::Idle),
 
-            (_, StateEvent::Error { message, code }) => Ok(AppState::Error {
-                message: message.clone(),
-                code: *code,
-            }),
+            (AppState::Idle, StateEvent::Error { message, code })
+            | (AppState::Recording { .. }, StateEvent::Error { message, code })
+            | (AppState::Processing { .. }, StateEvent::Error { message, code }) => {
+                Ok(AppState::Error {
+                    message: message.clone(),
+                    code: *code,
+                })
+            }
 
-            _ => Err((
-                self,
-                AppError::invalid_transition("Invalid state transition"),
-            )),
+            _ => {
+                tracing::warn!(
+                    from_state = ?self.tag(),
+                    event = ?event,
+                    "Invalid state transition rejected"
+                );
+                Err((
+                    self,
+                    AppError::invalid_transition("Invalid state transition"),
+                ))
+            }
         }
     }
 }
@@ -138,5 +149,46 @@ mod tests {
     fn invalid_transition_rejected() {
         let s = AppState::Idle;
         assert!(s.transition(StateEvent::StopRecording).is_err());
+    }
+
+    #[test]
+    fn error_from_recording_and_processing_accepted() {
+        let rec = AppState::Recording {
+            start_time: Instant::now(),
+            active_app: None,
+        };
+        let err_rec = rec.transition(StateEvent::Error {
+            message: "rec fail".into(),
+            code: ErrorCode::AudioDeviceError,
+        });
+        assert!(err_rec.is_ok());
+        assert_eq!(err_rec.unwrap().tag(), AppStateTag::Error);
+
+        let proc = AppState::Processing {
+            start_time: Instant::now(),
+            active_app: None,
+        };
+        let err_proc = proc.transition(StateEvent::Error {
+            message: "proc fail".into(),
+            code: ErrorCode::NetworkError,
+        });
+        assert!(err_proc.is_ok());
+        assert_eq!(err_proc.unwrap().tag(), AppStateTag::Error);
+    }
+
+    #[test]
+    fn error_from_error_state_is_rejected() {
+        let err_state = AppState::Error {
+            message: "first error".into(),
+            code: ErrorCode::Internal,
+        };
+        let res = err_state.transition(StateEvent::Error {
+            message: "second error".into(),
+            code: ErrorCode::AudioDeviceError,
+        });
+        assert!(res.is_err());
+        let (orig, err) = res.unwrap_err();
+        assert_eq!(orig.tag(), AppStateTag::Error);
+        assert_eq!(err.code, ErrorCode::InvalidTransition);
     }
 }
