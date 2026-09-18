@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="icon/VoxiType_Icon.png" alt="VoxiType icon" width="120" />
 </p>
 
@@ -85,7 +85,7 @@ npm install
 npm run tauri dev
 ```
 
-Set your Groq API key in Settings ? STT to start using transcription.
+Set your Groq API key in Settings → STT to start using transcription.
 
 For offline dictation without Groq, follow [docs/offline-whisper-cpp.md](docs/offline-whisper-cpp.md).
 
@@ -115,27 +115,27 @@ VoxiType enforces strict separation of concerns:
 ### State Machine
 
 ```
-Idle ? Recording ? Processing ? Idle (success)
- ?                               ?
- '-------- Error ?---------------'
+Idle → Recording → Processing → Idle (success)
+ ↑                               ↓
+ '-------- Error ←---------------'
 ```
 
-Error?Recording retry for transient failures (network, timeout) with exponential backoff (3 retries, 1s base delay). Permanent errors (missing API key, engine unavailable) transition to Error state, requiring user action. All state changes emit Tauri events to frontend.
+Error→Recording retry for transient failures (network, timeout) with exponential backoff (3 retries, 1s base delay). Permanent errors (missing API key, engine unavailable) transition to Error state, requiring user action. All state changes emit Tauri events to frontend.
 
 ### Data Flow
 
 ```
 User presses hotkey
-       �
-[Idle ? Recording]  - Audio capture via cpal, resample 48k ? 16k to ring buffer
-        � (hotkey release / toggle stop)
-[Recording ? Processing]
-       +-- STT: Groq Whisper API or local whisper.cpp (with hotword boosting)
-       +-- LLM: Off/pass-through, rule-based cleanup, Ollama, or Groq with fallback chain
-       +-- Translation: Optional, translate to target language
-       +-- Post-Process: Dictionary replacements ? Snippet expansion
-       �
-[Processing ? Idle]  - Inject text into active application + save to history
+       │
+[Idle → Recording]  - Audio capture via cpal, resample 48k → 16k to ring buffer
+        │ (hotkey release / toggle stop)
+[Recording → Processing]
+       ├── STT: Groq Whisper API or local whisper.cpp (with hotword boosting)
+       ├── LLM: Off/pass-through, rule-based cleanup, Ollama, or Groq with fallback chain
+       ├── Translation: Optional, translate to target language
+       ├── Post-Process: Dictionary replacements → Snippet expansion
+       │
+[Processing → Idle]  - Inject text into active application + save to history
 ```
 
 ### IPC Surface
@@ -153,7 +153,7 @@ VoxiType exposes **42 Tauri commands** organized into 8 modules:
 | `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
 | `stats` | `get_usage_stats` |
 
-### Events (Backend ? Frontend)
+### Events (Backend → Frontend)
 
 | Event | Payload | Description |
 |-------|---------|-------------|
@@ -168,49 +168,49 @@ VoxiType exposes **42 Tauri commands** organized into 8 modules:
 
 ```
 src/                  # React frontend
-+-- components/
-�   +-- common/          # FloatingDock, HomeView, PanelHeader, WpmHalfRing
-�   +-- dictionary/      # DictionaryPanel, SnippetsPanel
-�   +-- floating-widget/ # FloatingWidget + Waveform (overlay window)
-�   +-- history/         # HistoryPanel (search, pin, export, re-inject)
-�   +-- onboarding/      # OnboardingFlow (first-run setup: 8 steps)
-�   +-- settings/        # SettingsLayout, SettingsPanel + 8 tabs (General, Audio, STT, LLM, Modes, App Rules, Shortcuts, About)
-�   +-- ui/              # Button, Input, Select, Switch, Toast
-�   +-- ErrorBoundary.tsx # Top-level React error boundary
-+-- hooks/               # useTauriEvents (backend event subscriptions)
-+-- lib/                 # tauri.ts (typed invoke/listen), i18n.ts (EN/ID)
-+-- stores/              # Zustand: appStore, settingsStore, historyStore, dictionaryStore, snippetStore, statsStore
-+-- styles/              # index.css (Tailwind 4, dark theme, glassmorphism)
-+-- types/               # app.ts, events.ts
+├── components/
+│   ├── common/          # FloatingDock, HomeView, PanelHeader, WpmHalfRing
+│   ├── dictionary/      # DictionaryPanel, SnippetsPanel
+│   ├── floating-widget/ # FloatingWidget + Waveform (overlay window)
+│   ├── history/         # HistoryPanel (search, pin, export, re-inject)
+│   ├── onboarding/      # OnboardingFlow (first-run setup: 8 steps)
+│   ├── settings/        # SettingsLayout, SettingsPanel + 8 tabs (General, Audio, STT, LLM, Modes, App Rules, Shortcuts, About)
+│   ├── ui/              # Button, Input, Select, Switch, Toast
+│   └── ErrorBoundary.tsx # Top-level React error boundary
+├── hooks/               # useTauriEvents (backend event subscriptions)
+├── lib/                 # tauri.ts (typed invoke/listen), i18n.ts (EN/ID)
+├── stores/              # Zustand: appStore, settingsStore, historyStore, dictionaryStore, snippetStore, statsStore
+├── styles/              # index.css (Tailwind 4, dark theme, glassmorphism)
+└── types/               # app.ts, events.ts
 
 src-tauri/src/        # Rust backend
-+-- active_window.rs  # Per-app mode detection via Win32 API
-+-- audio/            # Audio capture (cpal) + resampler (rubato) + VAD
-+-- commands/         # Tauri IPC handlers (42 commands across 8 modules + runtime helpers)
-+-- crypto.rs         # AES-256-GCM API key encryption
-+-- data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
-+-- error.rs          # Unified AppError + typed ErrorCode
-+-- events.rs         # Tauri event emitters (state_changed, audio_level, etc.)
-+-- hotkey/           # Global hotkey registration + rebind
-+-- injection/        # Text injection (keystroke, clipboard, hybrid, command mode)
-+-- llm/              # LLM formatting (Ollama, Groq, rule-based, fallback chain)
-+-- logging.rs        # tracing to stderr + rotating file
-+-- main.rs           # Tauri entry point
-+-- overlay.rs        # Floating widget window control + position persistence
-+-- pipeline/         # State machine orchestrator + batch processing
-+-- sound.rs          # Optional recording sound cues (start/stop tones)
-+-- storage/          # SQLite database
-�   +-- db.rs         # Database open + migrations
-�   +-- settings.rs   # SettingsManager (key-value JSON)
-�   +-- history.rs    # HistoryRepository (CRUD + FTS5 search)
-�   +-- dictionary.rs # DictionaryRepository (word-bounded replacements, hotword boosting)
-�   +-- snippets.rs   # SnippetRepository (trigger expansion)
-�   +-- per_app_modes.rs # PerAppModeRepository
-�   +-- stats.rs      # StatsRepository (local usage totals)
-+-- stt/              # Speech-to-text (Groq Whisper + whisper.cpp)
-+-- tray/             # System tray icon + context menu
-+-- updater.rs        # GitHub Releases version checker
-+-- util.rs           # Shared HTTP client + retry/backoff helpers
+├── active_window.rs  # Per-app mode detection via Win32 API
+├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD
+├── commands/         # Tauri IPC handlers (42 commands across 8 modules + runtime helpers)
+├── crypto.rs         # AES-256-GCM API key encryption
+├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
+├── error.rs          # Unified AppError + typed ErrorCode
+├── events.rs         # Tauri event emitters (state_changed, audio_level, etc.)
+├── hotkey/           # Global hotkey registration + rebind
+├── injection/        # Text injection (keystroke, clipboard, hybrid, command mode)
+├── llm/              # LLM formatting (Ollama, Groq, rule-based, fallback chain)
+├── logging.rs        # tracing to stderr + rotating file
+├── main.rs           # Tauri entry point
+├── overlay.rs        # Floating widget window control + position persistence
+├── pipeline/         # State machine orchestrator + batch processing
+├── sound.rs          # Optional recording sound cues (start/stop tones)
+├── storage/          # SQLite database
+│   ├── db.rs         # Database open + migrations
+│   ├── settings.rs   # SettingsManager (key-value JSON)
+│   ├── history.rs    # HistoryRepository (CRUD + FTS5 search)
+│   ├── dictionary.rs # DictionaryRepository (word-bounded replacements, hotword boosting)
+│   ├── snippets.rs   # SnippetRepository (trigger expansion)
+│   ├── per_app_modes.rs # PerAppModeRepository
+│   └── stats.rs      # StatsRepository (local usage totals)
+├── stt/              # Speech-to-text (Groq Whisper + whisper.cpp)
+├── tray/             # System tray icon + context menu
+├── updater.rs        # GitHub Releases version checker
+└── util.rs           # Shared HTTP client + retry/backoff helpers
 ```
 
 ## Configuration
