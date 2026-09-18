@@ -19,7 +19,6 @@
     "core:window:allow-set-position",
     "core:window:allow-set-always-on-top",
     "core:event:default",
-    "core:event:allow-emit",
     "core:event:allow-listen",
     "core:app:default"
   ]
