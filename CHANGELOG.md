@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-18
+
+### Fixed
+- Fixed the first launch showing "Failed to load settings" because the application window loaded before the backend was ready
+- Fixed the microphone remaining active after recording stopped and stale audio appearing in a later session when stop or cancel overlapped audio device initialization
+- Fixed history and dictionary exports failing to save without showing an error
+- Fixed long recordings failing on slow connections after audio was uploaded up to four times; upload timeouts now match the maximum recording duration and timed-out uploads are not retried
+- Fixed log files not being written when the selected data directory failed validation and the app fell back to the default directory
+- Fixed a stored Groq API key being reported as unset when decryption failed after a data directory migration or backup restore; the error now identifies the decryption problem
+- Fixed the History search keyword being cleared when a transcription completed while the user was typing
+- Fixed failed history searches showing no error while retaining the previous results
+- Fixed a manually selected onboarding microphone being replaced by the default device when device scanning finished late
+- Fixed dictated text remaining in the clipboard when the previous clipboard content was not text
+
+### Changed
+- Reduced Indonesian transcription retries by running second-language verification only when confidence in the first result is low; explicitly selecting Indonesian skips verification
+- Read settings once per transcription instead of approximately fifteen times, reducing repeated database blocking on the interface
+- Stopped the floating widget from loading unused history and statistics data for each transcription
+- Moved audio device initialization off the application runtime so level indicators and the overlay remain responsive when a device responds slowly
+- Debounced floating widget position saves until dragging stops instead of scheduling a database write for every movement
+- Stopped the widget idle monitor cleanly during application shutdown and removed its twice-per-second duplicate database read
+- Versioned database schema migrations and ran them in transactions so failures are surfaced; existing databases remain readable without data loss
+
+### Security
+- Removed the unused permission that allowed the web interface to emit forged internal events
+- Tightened the Content Security Policy with `object-src`, `base-uri`, and `frame-ancestors`
+- Pinned runtime dependency versions exactly so lockfile updates cannot introduce untested versions into release builds
+
 ## [0.5.0] - 2026-09-16
 
 ### Added
