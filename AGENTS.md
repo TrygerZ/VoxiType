@@ -66,7 +66,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (39 total across 8 modules)
+## IPC Commands (42 total across 8 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -77,19 +77,19 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
 | `stats` | `get_usage_stats` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (39 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (42 commands)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
 - `src-tauri/src/storage/db.rs` - SQLite schema + migrations
-- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level)
+- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, floating_widget_hide_requested, floating_widget_reveal_requested)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
 - `src-tauri/src/error.rs` - Unified AppError with typed ErrorCode
@@ -103,12 +103,13 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | Module | Files |
 |--------|-------|
 | `ui/` | Button, Input, Select, Switch, Toast |
-| `common/` | FloatingDock, HomeView, PanelHeader |
+| `common/` | FloatingDock, HomeView, PanelHeader, WpmHalfRing |
 | `floating-widget/` | FloatingWidget, Waveform |
-| `settings/` | SettingsLayout, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
+| `settings/` | SettingsLayout, SettingsPanel, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
 | `history/` | HistoryPanel |
 | `dictionary/` | DictionaryPanel, SnippetsPanel |
 | `onboarding/` | `OnboardingFlow.tsx`, `types.ts`, `shared/` (`StepShell`, `StepProgress`), `steps/` (`WelcomeStep`, `QuickSettingsStep`, `MicrophoneStep`, `SttSetupStep`, `DataDirectoryStep`, `HotkeyStep`, `SmokeTestStep`, `CompleteStep`) |
+| root | ErrorBoundary |
 
 ## Settings (key-value, JSON-encoded)
 | Key | Type | Description |
@@ -131,6 +132,13 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `telemetry` | bool | Opt-in local usage statistics |
 | `per_app_mode` | bool | Enable per-app mode routing |
 | `hotkey` | HotkeyConfig | Global hotkey key + modifiers |
+| `floating_widget_auto_hide_seconds` | number | Idle seconds before the floating widget auto-hides (0 disables) |
+| `floating_widget_pos` | object | Persisted floating widget screen position |
+| `onboarding_completed` | bool | First-run onboarding completion flag |
+| `language` | string | UI language code ("en" or "id") |
+| `stt_model` | string | Model name for the selected STT engine |
+| `auto_start` | bool | Launch VoxiType at Windows sign-in |
+| `auto_update` | bool | Check for updates automatically |
 
 Data-directory selection is not a key-value setting. The marker file `data_dir.txt` lives in the default app-data directory; it stores JSON `current`/`pending` paths, while plain-path markers remain supported for backward compatibility. On first use, migration copies the active previous directory's DB, `master.key`, and logs; DB/key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. A selected directory takes effect after restart.
 
@@ -138,9 +146,11 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | Event | Payload | Description |
 |-------|---------|-------------|
 | `state_changed` | `{ state: "idle"\|"recording"\|"processing"\|"error" }` | Pipeline state transition |
-| `transcription_complete` | `{ id, text, word_count }` | Successful transcription result |
+| `transcription_complete` | `{ id, text, word_count, duration_ms }` | Successful transcription result |
 | `transcription_error` | `{ message, code }` | Transcription failure |
 | `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0–1.0) |
+| `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
+| `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 
 ## Architecture Rules
 1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector
@@ -164,9 +174,11 @@ Transitions: Idle→Recording, Recording→Processing, Recording→Idle (cancel)
 ## Storage Module (`src-tauri/src/storage/`)
 ```
 mod.rs exports:
-  Database, DictionaryRepository, HistoryRepository, SettingsManager,
-  SnippetRepository, StatsRepository, PerAppModeRepository
-  apply_replacements(), expand_snippets(), DictFilter
+  Database, SettingsManager, HistoryRepository, DictionaryRepository,
+  SnippetRepository, PerAppModeRepository, StatsRepository
+  HistoryFilter, HistoryTotals, TranscriptionEntry, DictFilter, DictionaryEntry,
+  Snippet, PerAppMode, DailyStats, EngineKind
+  apply_replacements(), expand_snippets()
 ```
 
 ## Conventions

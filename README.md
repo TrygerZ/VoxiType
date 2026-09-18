@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.4.3** - Open-source voice-to-text for every app.
+**Version 0.5.0** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
 
@@ -140,7 +140,7 @@ User presses hotkey
 
 ### IPC Surface
 
-VoxiType exposes **39 Tauri commands** organized into 8 modules:
+VoxiType exposes **42 Tauri commands** organized into 8 modules:
 
 | Module | Commands |
 |--------|----------|
@@ -150,7 +150,7 @@ VoxiType exposes **39 Tauri commands** organized into 8 modules:
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
 | `stats` | `get_usage_stats` |
 
 ### Events (Backend → Frontend)
@@ -158,22 +158,25 @@ VoxiType exposes **39 Tauri commands** organized into 8 modules:
 | Event | Payload | Description |
 |-------|---------|-------------|
 | `state_changed` | `{ state: "idle"\|"recording"\|"processing"\|"error" }` | Pipeline state transition |
-| `transcription_complete` | `{ id, text, word_count }` | Successful transcription result |
+| `transcription_complete` | `{ id, text, word_count, duration_ms }` | Successful transcription result |
 | `transcription_error` | `{ message, code }` | Transcription failure |
 | `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0 to 1.0) |
+| `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
+| `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 
 ## Project Structure
 
 ```
 src/                  # React frontend
 ├── components/
-│   ├── common/          # FloatingDock, HomeView, PanelHeader
+│   ├── common/          # FloatingDock, HomeView, PanelHeader, WpmHalfRing
 │   ├── dictionary/      # DictionaryPanel, SnippetsPanel
 │   ├── floating-widget/ # FloatingWidget + Waveform (overlay window)
 │   ├── history/         # HistoryPanel (search, pin, export, re-inject)
 │   ├── onboarding/      # OnboardingFlow (first-run setup: 8 steps)
-│   ├── settings/        # SettingsLayout + 8 tabs (General, Audio, STT, LLM, Modes, App Rules, Shortcuts, About)
-│   └── ui/              # Button, Input, Select, Switch, Toast
+│   ├── settings/        # SettingsLayout, SettingsPanel + 8 tabs (General, Audio, STT, LLM, Modes, App Rules, Shortcuts, About)
+│   ├── ui/              # Button, Input, Select, Switch, Toast
+│   └── ErrorBoundary.tsx # Top-level React error boundary
 ├── hooks/               # useTauriEvents (backend event subscriptions)
 ├── lib/                 # tauri.ts (typed invoke/listen), i18n.ts (EN/ID)
 ├── stores/              # Zustand: appStore, settingsStore, historyStore, dictionaryStore, snippetStore, statsStore
@@ -183,7 +186,7 @@ src/                  # React frontend
 src-tauri/src/        # Rust backend
 ├── active_window.rs  # Per-app mode detection via Win32 API
 ├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD
-├── commands/         # Tauri IPC handlers (39 commands across 8 modules + runtime helpers)
+├── commands/         # Tauri IPC handlers (42 commands across 8 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
 ├── error.rs          # Unified AppError + typed ErrorCode
@@ -234,6 +237,13 @@ Settings are stored as key-value pairs in SQLite, JSON-encoded. Key settings:
 | `telemetry` | bool | Opt-in local usage statistics |
 | `per_app_mode` | bool | Enable per-app mode routing |
 | `hotkey` | HotkeyConfig | Global hotkey key + modifiers |
+| `floating_widget_auto_hide_seconds` | number | Idle seconds before the floating widget auto-hides (0 disables) |
+| `floating_widget_pos` | object | Persisted floating widget screen position |
+| `onboarding_completed` | bool | First-run onboarding completion flag |
+| `language` | string | UI language code ("en" or "id") |
+| `stt_model` | string | Model name for the selected STT engine |
+| `auto_start` | bool | Launch VoxiType at Windows sign-in |
+| `auto_update` | bool | Check for updates automatically |
 
 Data directory selection uses a marker file (`data_dir.txt`) in the default app-data directory. On first use, migration copies the active previous directory's DB, `master.key`, and logs. DB and key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. Selected directory takes effect after restart.
 

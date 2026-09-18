@@ -1,6 +1,6 @@
 # Offline Dictation with whisper.cpp
 
-This guide configures VoxiType 0.4.3 to transcribe with a local
+This guide configures VoxiType 0.5.0 to transcribe with a local
 `whisper-cli` binary and a local GGML model file. Groq is not used for
 speech-to-text in this mode.
 
