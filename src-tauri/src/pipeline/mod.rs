@@ -12,7 +12,7 @@ pub use state_machine::{AppState, AppStateTag, StateEvent};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use crate::audio::{AudioCaptureImpl, AudioConfig};
+use crate::audio::{ActiveCapture, AudioCaptureImpl, AudioConfig};
 use crate::error::{AppError, Result};
 use crate::util::MutexExt;
 
@@ -90,22 +90,48 @@ impl PipelineOrchestrator {
             && self.generation.load(Ordering::SeqCst) == target_gen
     }
 
+    fn recording_generation(&self) -> Option<u64> {
+        let guard = self.state.lock_recover();
+        if matches!(*guard, AppState::Recording { .. }) {
+            Some(self.generation.load(Ordering::SeqCst))
+        } else {
+            None
+        }
+    }
+
+    /// Commit an initialized capture if the session is still active and unchanged.
+    ///
+    /// Verifies session generation and state while holding `self.state` to prevent
+    /// racing with `stop_recording` or `cancel_recording`.
+    pub fn commit_capture_if_valid(&self, target_gen: u64, capture: ActiveCapture) -> Result<bool> {
+        let guard = self.state.lock_recover();
+        let valid = matches!(*guard, AppState::Recording { .. })
+            && self.generation.load(Ordering::SeqCst) == target_gen;
+
+        if !valid {
+            // Drop state lock before joining thread to avoid blocking state transitions.
+            drop(guard);
+            capture.cancel();
+            return Ok(false);
+        }
+
+        // Lock hierarchy: state -> audio. Never acquire state while holding audio.
+        self.audio.lock_recover().install(capture);
+        Ok(true)
+    }
+
     /// Start the underlying audio capture stream, but only if the pipeline
     /// is still in the Recording state.
     ///
     /// The state lock is NOT held during blocking device initialization.
     /// A generation token tracks the session identity; after initialization,
-    /// the session is re-verified and cancelled if stop/cancel occurred meanwhile.
+    /// the session is re-verified and committed atomically under the state lock.
     ///
     /// Returns `Ok(false)` when the start was skipped or cancelled because
     /// recording had already ended.
     pub fn start_capture_if_recording(&self, config: &AudioConfig) -> Result<bool> {
-        let target_gen = {
-            let guard = self.state.lock_recover();
-            if !matches!(*guard, AppState::Recording { .. }) {
-                return Ok(false);
-            }
-            self.generation.load(Ordering::SeqCst)
+        let Some(target_gen) = self.recording_generation() else {
+            return Ok(false);
         };
 
         let active_capture = match AudioCaptureImpl::open_stream(config) {
@@ -119,13 +145,12 @@ impl PipelineOrchestrator {
             }
         };
 
-        if !self.verify_session(target_gen) {
-            active_capture.cancel();
-            return Ok(false);
-        }
+        self.commit_capture_if_valid(target_gen, active_capture)
+    }
 
-        self.audio.lock_recover().install(active_capture);
-        Ok(true)
+    #[cfg(test)]
+    pub fn is_audio_active(&self) -> bool {
+        self.audio.lock_recover().is_active()
     }
 
     #[cfg(test)]
@@ -274,5 +299,119 @@ mod tests {
 
         pipeline.cancel_recording().unwrap();
         assert!(!pipeline.verify_session(target_gen));
+    }
+
+    #[test]
+    fn commit_capture_aborted_when_session_cancelled() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        let target_gen = pipeline.current_generation();
+
+        let (capture, finished) = ActiveCapture::dummy();
+        pipeline.cancel_recording().unwrap();
+
+        let committed = pipeline
+            .commit_capture_if_valid(target_gen, capture)
+            .unwrap();
+        assert!(!committed);
+        assert!(finished.load(Ordering::SeqCst));
+        assert!(!pipeline.is_audio_active());
+    }
+
+    #[test]
+    fn commit_capture_aborted_when_session_stopped() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        let target_gen = pipeline.current_generation();
+
+        let (capture, finished) = ActiveCapture::dummy();
+        let _ = pipeline.stop_recording().unwrap();
+
+        let committed = pipeline
+            .commit_capture_if_valid(target_gen, capture)
+            .unwrap();
+        assert!(!committed);
+        assert!(finished.load(Ordering::SeqCst));
+        assert!(!pipeline.is_audio_active());
+    }
+
+    #[test]
+    fn commit_capture_succeeds_when_session_active() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        let target_gen = pipeline.current_generation();
+
+        let (capture, finished) = ActiveCapture::dummy();
+
+        let committed = pipeline
+            .commit_capture_if_valid(target_gen, capture)
+            .unwrap();
+        assert!(committed);
+        assert!(!finished.load(Ordering::SeqCst));
+        assert!(pipeline.is_audio_active());
+
+        let _ = pipeline.stop_recording().unwrap();
+        assert!(finished.load(Ordering::SeqCst));
+        assert!(!pipeline.is_audio_active());
+    }
+
+    #[test]
+    fn race_commit_and_stop_never_leaks_capture_thread() {
+        use std::sync::Arc;
+
+        for _ in 0..50 {
+            let pipeline = Arc::new(PipelineOrchestrator::new());
+            pipeline
+                .apply(StateEvent::StartRecording { active_app: None })
+                .unwrap();
+            let target_gen = pipeline.current_generation();
+
+            let (capture, finished) = ActiveCapture::dummy();
+
+            let p1 = pipeline.clone();
+            let h1 = std::thread::spawn(move || p1.commit_capture_if_valid(target_gen, capture));
+
+            let p2 = pipeline.clone();
+            let h2 = std::thread::spawn(move || p2.stop_recording());
+
+            let _ = h1.join().unwrap();
+            let _ = h2.join().unwrap();
+
+            assert!(finished.load(Ordering::SeqCst));
+            assert!(!pipeline.is_audio_active());
+        }
+    }
+
+    #[test]
+    fn race_commit_and_cancel_never_leaks_capture_thread() {
+        use std::sync::Arc;
+
+        for _ in 0..50 {
+            let pipeline = Arc::new(PipelineOrchestrator::new());
+            pipeline
+                .apply(StateEvent::StartRecording { active_app: None })
+                .unwrap();
+            let target_gen = pipeline.current_generation();
+
+            let (capture, finished) = ActiveCapture::dummy();
+
+            let p1 = pipeline.clone();
+            let h1 = std::thread::spawn(move || p1.commit_capture_if_valid(target_gen, capture));
+
+            let p2 = pipeline.clone();
+            let h2 = std::thread::spawn(move || p2.cancel_recording());
+
+            let _ = h1.join().unwrap();
+            let _ = h2.join().unwrap();
+
+            assert!(finished.load(Ordering::SeqCst));
+            assert!(!pipeline.is_audio_active());
+        }
     }
 }

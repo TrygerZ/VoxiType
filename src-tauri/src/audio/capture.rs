@@ -208,6 +208,35 @@ impl ActiveCapture {
     }
 }
 
+#[cfg(test)]
+impl ActiveCapture {
+    pub(crate) fn dummy() -> (Self, Arc<std::sync::atomic::AtomicBool>) {
+        let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished_clone = finished.clone();
+        let (stop_tx, stop_rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _ = stop_rx.recv();
+            finished_clone.store(true, Ordering::SeqCst);
+        });
+        let resampler = Resampler::new(16_000, TARGET_SAMPLE_RATE, 1).expect("resampler");
+        let shared = Arc::new(Shared {
+            ring: Mutex::new(Vec::new()),
+            resampler: Mutex::new(resampler),
+            level: AtomicU32::new(0),
+            gain: 1.0,
+            noise_gate: 0.0,
+        });
+        (
+            ActiveCapture {
+                shared,
+                stop_tx,
+                handle,
+            },
+            finished,
+        )
+    }
+}
+
 fn spawn_capture_thread(
     device: cpal::Device,
     supported: cpal::SupportedStreamConfig,
@@ -285,6 +314,10 @@ impl AudioCaptureImpl {
 
     /// Install an active capture handle into this instance.
     pub fn install(&mut self, capture: ActiveCapture) {
+        if self.active || self.handle.is_some() {
+            // Cancel and join prior capture to prevent orphaned threads or racing resamplers.
+            let _ = self.cancel();
+        }
         self.shared = Some(capture.shared);
         self.stop_tx = Some(capture.stop_tx);
         self.handle = Some(capture.handle);
@@ -339,6 +372,11 @@ impl AudioCaptureImpl {
         }
         self.shared = None;
         Ok(())
+    }
+
+    /// Check whether a capture session is currently active.
+    pub fn is_active(&self) -> bool {
+        self.active
     }
 
     /// Current normalized input level (0.0 - 1.0) for UI metering.
@@ -413,5 +451,25 @@ mod tests {
         let level2 = shared.get_level();
         assert!(level2 > 0.0);
         assert!(level2 < level1);
+    }
+
+    #[test]
+    fn install_cancels_and_joins_previous_active_capture() {
+        let mut capture_impl = AudioCaptureImpl::new();
+        let (cap1, cap1_finished) = ActiveCapture::dummy();
+        capture_impl.install(cap1);
+        assert!(capture_impl.is_active());
+        assert!(!cap1_finished.load(Ordering::SeqCst));
+
+        let (cap2, cap2_finished) = ActiveCapture::dummy();
+        capture_impl.install(cap2);
+        assert!(capture_impl.is_active());
+        // Previous capture thread must be cancelled and joined immediately
+        assert!(cap1_finished.load(Ordering::SeqCst));
+        assert!(!cap2_finished.load(Ordering::SeqCst));
+
+        capture_impl.cancel().unwrap();
+        assert!(!capture_impl.is_active());
+        assert!(cap2_finished.load(Ordering::SeqCst));
     }
 }
