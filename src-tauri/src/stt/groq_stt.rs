@@ -4,6 +4,8 @@
 //! `https://api.groq.com/openai/v1/audio/transcriptions` and parses the
 //! `verbose_json` response.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -12,6 +14,11 @@ use super::{SttConfig, SttEngine, TranscriptionResult};
 use crate::error::{AppError, Result};
 
 const GROQ_STT_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
+
+/// Maximum duration to wait for Groq STT upload and transcription.
+/// Kept consistent with `MAX_RECORDING_DURATION_SECS` (300s) so full-length
+/// recordings have enough time to upload and transcribe even on slow links.
+pub const GROQ_STT_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct GroqSttEngine {
     client: reqwest::Client,
@@ -39,58 +46,64 @@ impl GroqSttEngine {
             Some(config.language.clone())
         };
 
-        let body = crate::util::retry_with_backoff(3, std::time::Duration::from_secs(1), || {
-            let wav = wav.clone();
-            let language = language.clone();
-            async move {
-                let part = reqwest::multipart::Part::bytes(wav)
-                    .file_name("audio.wav")
-                    .mime_str("audio/wav")
-                    .map_err(|e| AppError::stt(format!("multipart error: {e}")))?;
+        let body = crate::util::retry_with_backoff_in_context(
+            3,
+            std::time::Duration::from_secs(1),
+            crate::util::RetryContext::AudioUpload,
+            || {
+                let wav = wav.clone();
+                let language = language.clone();
+                async move {
+                    let part = reqwest::multipart::Part::bytes(wav)
+                        .file_name("audio.wav")
+                        .mime_str("audio/wav")
+                        .map_err(|e| AppError::stt(format!("multipart error: {e}")))?;
 
-                let mut form = reqwest::multipart::Form::new()
-                    .part("file", part)
-                    .text("model", self.config.model.clone())
-                    .text("temperature", config.temperature.to_string())
-                    .text("response_format", "verbose_json");
+                    let mut form = reqwest::multipart::Form::new()
+                        .part("file", part)
+                        .text("model", self.config.model.clone())
+                        .text("temperature", config.temperature.to_string())
+                        .text("response_format", "verbose_json");
 
-                if let Some(ref prompt) = config.initial_prompt {
-                    form = form.text("prompt", prompt.clone());
+                    if let Some(ref prompt) = config.initial_prompt {
+                        form = form.text("prompt", prompt.clone());
+                    }
+
+                    if let Some(lang) = language {
+                        form = form.text("language", lang);
+                    }
+
+                    let resp = self
+                        .client
+                        .post(GROQ_STT_URL)
+                        .bearer_auth(&self.config.api_key)
+                        .multipart(form)
+                        .timeout(GROQ_STT_TIMEOUT)
+                        .send()
+                        .await?;
+
+                    let status = resp.status();
+                    let body = resp.text().await?;
+
+                    if status == reqwest::StatusCode::UNAUTHORIZED {
+                        return Err(AppError::new(
+                            crate::error::ErrorCode::SttApiKeyInvalid,
+                            "Groq rejected the API key (401)",
+                        ));
+                    }
+                    if !status.is_success() {
+                        // The upstream body is untrusted: sanitize and cap it so
+                        // oversized or hostile payloads cannot flood logs or the UI.
+                        let safe_body = crate::util::sanitize_error_body(&body);
+                        return Err(AppError::stt_api(format!(
+                            "Groq STT error {status}: {safe_body}"
+                        ))
+                        .with_http_status(status.as_u16()));
+                    }
+                    Ok(body)
                 }
-
-                if let Some(lang) = language {
-                    form = form.text("language", lang);
-                }
-
-                let resp = self
-                    .client
-                    .post(GROQ_STT_URL)
-                    .bearer_auth(&self.config.api_key)
-                    .multipart(form)
-                    .send()
-                    .await?;
-
-                let status = resp.status();
-                let body = resp.text().await?;
-
-                if status == reqwest::StatusCode::UNAUTHORIZED {
-                    return Err(AppError::new(
-                        crate::error::ErrorCode::SttApiKeyInvalid,
-                        "Groq rejected the API key (401)",
-                    ));
-                }
-                if !status.is_success() {
-                    // The upstream body is untrusted: sanitize and cap it so
-                    // oversized or hostile payloads cannot flood logs or the UI.
-                    let safe_body = crate::util::sanitize_error_body(&body);
-                    return Err(
-                        AppError::stt_api(format!("Groq STT error {status}: {safe_body}"))
-                            .with_http_status(status.as_u16()),
-                    );
-                }
-                Ok(body)
-            }
-        })
+            },
+        )
         .await?;
 
         let parsed: GroqResponse = serde_json::from_str(&body)?;
@@ -481,5 +494,16 @@ mod tests {
         assert_eq!(normalize_language(None), "unknown");
         assert_eq!(normalize_language(Some("")), "unknown");
         assert_eq!(normalize_language(Some("  ")), "unknown");
+    }
+
+    #[test]
+    fn groq_stt_timeout_covers_max_recording_duration() {
+        assert!(
+            GROQ_STT_TIMEOUT
+                >= Duration::from_secs(crate::commands::runtime::MAX_RECORDING_DURATION_SECS),
+            "GROQ_STT_TIMEOUT ({:?}) must be >= MAX_RECORDING_DURATION_SECS ({}s)",
+            GROQ_STT_TIMEOUT,
+            crate::commands::runtime::MAX_RECORDING_DURATION_SECS
+        );
     }
 }

@@ -19,6 +19,12 @@ impl<T> MutexExt<T> for std::sync::Mutex<T> {
     }
 }
 
+/// Default connect timeout for all outbound HTTP requests.
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default request timeout for short REST requests (LLM completions, checks, updates).
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Process-wide shared `reqwest` client.
 ///
 /// Reusing one client (and its connection pool / TLS state) across requests
@@ -29,8 +35,8 @@ pub fn http_client() -> reqwest::Client {
     CLIENT
         .get_or_init(|| {
             reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(30))
+                .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
+                .timeout(DEFAULT_REQUEST_TIMEOUT)
                 .build()
                 .unwrap_or_default()
         })
@@ -92,31 +98,67 @@ fn has_transient_http_status(err: &AppError) -> bool {
     }
 }
 
-/// Whether an error is worth retrying (transient issues only).
+/// Context for retry decisions distinguishing small requests from large uploads.
 ///
-/// Transport-level failures (network, timeout) are retried. API errors are
-/// retried only when the HTTP status proves the failure is transient
-/// (408/429/5xx). Client errors like 400/401/413/422 are permanent — the
-/// same request will be rejected again, so retrying would just burn seconds
-/// and re-upload large payloads for nothing. Auth failures and missing keys
-/// also fail fast.
-pub fn is_retryable(err: &AppError) -> bool {
+/// Large payloads (such as STT audio uploads) should not retry on timeout,
+/// because re-uploading multi-megabyte audio over an already slow link wastes
+/// minutes and memory. Small requests (LLM completions, checks) can safely retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryContext {
+    /// Small payloads: LLM completions, API tests, metadata checks.
+    Standard,
+    /// Large payloads: audio WAV uploads.
+    AudioUpload,
+}
+
+/// Whether an error is worth retrying given the caller's context.
+///
+/// Transport-level failures (network, timeout) are retried for standard requests.
+/// However, for large audio uploads, timeouts (client timeout or HTTP 408) are not
+/// retried because repeating a multi-megabyte upload over a stalled connection
+/// compounds latency and memory usage. Permanent client errors (4xx) fail fast.
+pub fn is_retryable_in_context(err: &AppError, ctx: RetryContext) -> bool {
     match err.code {
-        ErrorCode::NetworkError | ErrorCode::Timeout | ErrorCode::LlmConnectionRefused => true,
-        ErrorCode::SttApiError | ErrorCode::LlmApiError => has_transient_http_status(err),
+        ErrorCode::NetworkError | ErrorCode::LlmConnectionRefused => true,
+        ErrorCode::Timeout => ctx != RetryContext::AudioUpload,
+        ErrorCode::SttApiError | ErrorCode::LlmApiError => {
+            if ctx == RetryContext::AudioUpload && err.http_status == Some(408) {
+                false
+            } else {
+                has_transient_http_status(err)
+            }
+        }
         _ => false,
     }
 }
 
-/// Run an async operation with exponential backoff.
-///
-/// Retries up to `max_retries` times (so `max_retries + 1` total attempts),
-/// sleeping `base_delay * 2^attempt` between retries, capped at `8 * base_delay`
-/// so a large `max_retries` can't produce an unbounded wait. Only retryable
-/// errors trigger a retry; everything else fails fast.
+/// Whether an error is worth retrying for standard (small payload) requests.
+pub fn is_retryable(err: &AppError) -> bool {
+    is_retryable_in_context(err, RetryContext::Standard)
+}
+
+/// Run an async operation with exponential backoff using standard retry rules.
 pub async fn retry_with_backoff<T, F, Fut>(
     max_retries: u32,
     base_delay: Duration,
+    op: F,
+) -> Result<T, AppError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, AppError>>,
+{
+    retry_with_backoff_in_context(max_retries, base_delay, RetryContext::Standard, op).await
+}
+
+/// Run an async operation with exponential backoff and context-aware retry classification.
+///
+/// Retries up to `max_retries` times (so `max_retries + 1` total attempts),
+/// sleeping `base_delay * 2^attempt` between retries, capped at `8 * base_delay`.
+/// Only retryable errors for `ctx` trigger a retry; everything else fails fast.
+pub async fn retry_with_backoff_in_context<T, F, Fut>(
+    max_retries: u32,
+    base_delay: Duration,
+    ctx: RetryContext,
     mut op: F,
 ) -> Result<T, AppError>
 where
@@ -128,7 +170,7 @@ where
         match op().await {
             Ok(v) => return Ok(v),
             Err(e) => {
-                if attempt >= max_retries || !is_retryable(&e) {
+                if attempt >= max_retries || !is_retryable_in_context(&e, ctx) {
                     return Err(e);
                 }
                 let delay = base_delay * (1u32 << attempt).min(8);
@@ -239,6 +281,63 @@ mod tests {
     fn request_timeout_status_is_retryable() {
         let err = AppError::stt_api("timeout").with_http_status(408);
         assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn timeout_in_audio_upload_context_is_not_retryable() {
+        let err = AppError::timeout("upload timed out");
+        assert!(!is_retryable_in_context(&err, RetryContext::AudioUpload));
+        assert!(is_retryable_in_context(&err, RetryContext::Standard));
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn request_timeout_408_in_audio_upload_context_is_not_retryable() {
+        let err = AppError::stt_api("server timeout").with_http_status(408);
+        assert!(!is_retryable_in_context(&err, RetryContext::AudioUpload));
+        assert!(is_retryable_in_context(&err, RetryContext::Standard));
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn network_error_in_audio_upload_context_remains_retryable() {
+        let err = AppError::network("connection reset");
+        assert!(is_retryable_in_context(&err, RetryContext::AudioUpload));
+        assert!(is_retryable_in_context(&err, RetryContext::Standard));
+    }
+
+    #[tokio::test]
+    async fn retry_with_backoff_in_context_does_not_retry_non_retryable_timeout() {
+        let calls = Cell::new(0u32);
+        let result: Result<(), _> =
+            retry_with_backoff_in_context(3, Duration::ZERO, RetryContext::AudioUpload, || async {
+                calls.set(calls.get() + 1);
+                Err(AppError::timeout("operation timed out"))
+            })
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            calls.get(),
+            1,
+            "timeout in AudioUpload context must fail fast on attempt 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_with_backoff_in_context_retries_transient_server_error() {
+        let calls = Cell::new(0u32);
+        let result =
+            retry_with_backoff_in_context(2, Duration::ZERO, RetryContext::AudioUpload, || async {
+                calls.set(calls.get() + 1);
+                if calls.get() < 2 {
+                    Err(AppError::stt_api("internal error").with_http_status(500))
+                } else {
+                    Ok(100)
+                }
+            })
+            .await;
+        assert_eq!(result.unwrap(), 100);
+        assert_eq!(calls.get(), 2);
     }
 
     #[test]

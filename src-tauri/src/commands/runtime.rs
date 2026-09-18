@@ -23,7 +23,7 @@ use crate::util::MutexExt;
 use crate::{events, AppStateInner};
 
 // Maximum recording duration in seconds to prevent runaway recordings
-const MAX_RECORDING_DURATION_SECS: u64 = 300;
+pub const MAX_RECORDING_DURATION_SECS: u64 = 300;
 // Minimum recording duration in seconds to filter accidental taps
 const MIN_RECORDING_DURATION_SECS: f32 = 1.0;
 
@@ -575,6 +575,15 @@ mod tests {
         assert_eq!(
             words[MAX_INITIAL_PROMPT_WORDS - 1],
             format!("word{}", MAX_INITIAL_PROMPT_WORDS - 1)
+        );
+    }
+
+    #[test]
+    fn max_recording_duration_does_not_exceed_stt_upload_timeout() {
+        assert!(
+            Duration::from_secs(MAX_RECORDING_DURATION_SECS)
+                <= crate::stt::groq_stt::GROQ_STT_TIMEOUT,
+            "MAX_RECORDING_DURATION_SECS must not exceed GROQ_STT_TIMEOUT"
         );
     }
 }
