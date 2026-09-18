@@ -10,11 +10,16 @@ import type {
   TranscriptionErrorEvent,
 } from "../types/events";
 
+export interface UseTauriEventsOptions {
+  reloadData?: boolean;
+}
+
 /**
  * Subscribe to all backend events and reflect them into the app store.
  * Mount once near the app root.
  */
-export function useTauriEvents() {
+export function useTauriEvents(options: UseTauriEventsOptions = {}) {
+  const { reloadData = true } = options;
   const setState = useAppStore((s) => s.setState);
   const setDuration = useAppStore((s) => s.setDuration);
   const setResult = useAppStore((s) => s.setResult);
@@ -52,8 +57,10 @@ export function useTauriEvents() {
     unlisteners.push(
       onEvent<TranscriptionCompleteEvent>("transcription_complete", (p) => {
         setResult(p.word_count);
-        void reloadHistory();
-        void reloadStats();
+        if (reloadData) {
+          void reloadHistory();
+          void reloadStats();
+        }
       }),
     );
     unlisteners.push(
@@ -68,5 +75,13 @@ export function useTauriEvents() {
         .then((fns) => fns.forEach((fn) => fn()))
         .catch(() => {});
     };
-  }, [setState, setDuration, setResult, setError, reloadHistory, reloadStats]);
+  }, [
+    setState,
+    setDuration,
+    setResult,
+    setError,
+    reloadHistory,
+    reloadStats,
+    reloadData,
+  ]);
 }

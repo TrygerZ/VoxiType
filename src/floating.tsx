@@ -24,8 +24,9 @@ function FloatingApp() {
   }, []);
 
   // Reuse the same event subscriptions as the main window so the widget
-  // reflects recording state, audio level, timer, and results live.
-  useTauriEvents();
+  // reflects recording state, audio level, timer, and results live,
+  // without triggering history or stats reloads that the overlay does not use.
+  useTauriEvents({ reloadData: false });
   return (
     // Transparent, click-through wrapper; only the pill itself is interactive.
     <div className="pointer-events-none flex h-screen w-screen items-center justify-center bg-transparent overflow-hidden p-2">
