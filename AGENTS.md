@@ -151,6 +151,7 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0–1.0) |
 | `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
+| `navigate` | `string` | System tray route navigation request for main window |
 
 ## Architecture Rules
 1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector
