@@ -567,21 +567,36 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     crate::overlay::ensure_visible(app);
     events::emit_state(app, tag);
     spawn_level_emitter(app.clone());
+    spawn_capture_task(app.clone());
+}
 
-    let app_clone = app.clone();
+fn spawn_capture_task<R: Runtime>(app: AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
-        let state = app_clone.state::<AppStateInner>();
-        let config = build_audio_config(&state.db);
-        // Device initialization runs without holding the pipeline state lock so
-        // stop/cancel and UI transitions remain responsive during startup.
-        match state.pipeline.start_capture_if_recording(&config) {
-            Ok(true) => {}
-            Ok(false) => {
+        let app_capture = app.clone();
+        let capture_result = tokio::task::spawn_blocking(move || {
+            let state = app_capture.state::<AppStateInner>();
+            let config = build_audio_config(&state.db);
+            // Device initialization runs on a blocking thread pool without holding
+            // the pipeline state lock so stop/cancel and UI transitions remain responsive.
+            state.pipeline.start_capture_if_recording(&config)
+        })
+        .await;
+
+        let state = app.state::<AppStateInner>();
+        match capture_result {
+            Ok(Ok(true)) => {}
+            Ok(Ok(false)) => {
                 tracing::debug!("Capture start skipped: recording already ended");
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 let _ = state.pipeline.cancel_recording();
-                fail(&app_clone, &state.pipeline, &e);
+                fail(&app, &state.pipeline, &e);
+            }
+            Err(join_err) => {
+                let err =
+                    AppError::audio(format!("Capture initialization task failed: {join_err}"));
+                let _ = state.pipeline.cancel_recording();
+                fail(&app, &state.pipeline, &err);
             }
         }
     });
@@ -1178,5 +1193,35 @@ mod tests {
         assert_eq!(snapshot.bool("sound_cues", false), false);
         assert_eq!(snapshot.string("groq_api_key", ""), "");
         assert_eq!(snapshot.string("mic_device", "default"), "default");
+    }
+
+    #[tokio::test]
+    async fn capture_start_offloaded_to_blocking_pool_allows_async_progress() {
+        let state = test_app_state([1u8; 32]);
+        let config = build_audio_config(&state.db);
+
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+
+        // Simulate a blocking audio init that takes some time on the blocking thread pool
+        let blocking_handle = tokio::task::spawn_blocking(move || {
+            let _ = entered_tx.send(());
+            let _ = release_rx.blocking_recv();
+            state.pipeline.start_capture_if_recording(&config)
+        });
+
+        // The async runtime must remain responsive while the blocking task is in-flight
+        entered_rx.await.expect("blocking task should start");
+        let async_ticker_ran = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(10)) => true,
+        };
+        assert!(
+            async_ticker_ran,
+            "async runtime must tick while blocking task runs"
+        );
+
+        release_tx.send(()).expect("release blocking task");
+        let res = blocking_handle.await.expect("spawn_blocking joins cleanly");
+        assert_eq!(res.unwrap(), false);
     }
 }
