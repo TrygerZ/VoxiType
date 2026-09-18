@@ -36,13 +36,20 @@ export function useDebouncedApiKey(
   const [localKey, setLocalKey] = useState(storeValue);
   const savedLabelRef = useRef(savedLabel);
   savedLabelRef.current = savedLabel;
+  const lastPersistedRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (storeValue === lastPersistedRef.current) {
+      return;
+    }
     setLocalKey(storeValue);
   }, [storeValue]);
 
   const persist = useCallback(
-    (value: string) => void persistApiKey(update, value, savedLabelRef.current),
+    (value: string) => {
+      lastPersistedRef.current = value;
+      void persistApiKey(update, value, savedLabelRef.current);
+    },
     [update],
   );
 
