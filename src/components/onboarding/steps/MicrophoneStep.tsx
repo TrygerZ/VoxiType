@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Mic } from "lucide-react";
 
 import { formatTauriError, getMicrophones, onEvent } from "../../../lib/tauri";
@@ -28,12 +28,14 @@ export function MicrophoneStep(props: MicrophoneStepProps) {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState("");
+  const selectedDeviceRef = useRef(props.selectedDevice);
+  selectedDeviceRef.current = props.selectedDevice;
 
   useEffect(() => {
     getMicrophones()
       .then((found) => {
         setDevices(found);
-        if (!props.selectedDevice)
+        if (!selectedDeviceRef.current)
           props.onDeviceChange(
             found.find((device) => device.is_default)?.id ?? found[0]?.id ?? "",
           );
