@@ -58,11 +58,7 @@ pub struct AppStateInner {
 }
 
 impl AppStateInner {
-    fn new(
-        app_data_dir: PathBuf,
-        default_app_data_dir: PathBuf,
-        log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
-    ) -> error::Result<Self> {
+    fn new(app_data_dir: PathBuf, default_app_data_dir: PathBuf) -> error::Result<Self> {
         let db_path = app_data_dir.join("data").join("voxitype.db");
         tracing::info!("Opening database at '{}'", db_path.display());
         let db = Database::open(&db_path)?;
@@ -88,7 +84,7 @@ impl AppStateInner {
             app_data_dir,
             default_app_data_dir,
             master_key,
-            _log_guard: log_guard,
+            _log_guard: None,
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
             widget_timer: overlay::WidgetTimerState::new(),
@@ -121,6 +117,32 @@ fn migrate_legacy_api_key(db: &Database, master_key: &[u8; 32]) -> error::Result
     Ok(())
 }
 
+/// Initialize application state, falling back to `default_app_data_dir` if
+/// opening a custom `app_data_dir` fails.
+///
+/// Returns `(state, fallback_occurred)`. The caller attaches `log_guard`
+/// only after state construction succeeds, ensuring the logging worker
+/// thread is not dropped if custom state initialization fails.
+fn init_app_state(
+    app_data_dir: PathBuf,
+    default_app_data_dir: PathBuf,
+) -> Result<(AppStateInner, bool), String> {
+    match AppStateInner::new(app_data_dir.clone(), default_app_data_dir.clone()) {
+        Ok(state) => Ok((state, false)),
+        Err(error) if app_data_dir != default_app_data_dir => {
+            let message =
+                data_dir::fallback_error_message(&app_data_dir, &default_app_data_dir, &error);
+            tracing::error!("{message}");
+            data_dir::record_error(&default_app_data_dir, &message);
+            let _ = std::fs::remove_file(default_app_data_dir.join(data_dir::DATA_DIR_MARKER_FILE));
+            let state = AppStateInner::new(default_app_data_dir.clone(), default_app_data_dir)
+                .map_err(|fallback| format!("Failed to init default app state: {fallback}"))?;
+            Ok((state, true))
+        }
+        Err(error) => Err(format!("Failed to init app state: {error}")),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -133,7 +155,13 @@ pub fn run() {
                 .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
             // Initialize logging (stderr + rotating file) once the log dir is known.
-            let log_guard = logging::init(&default_app_data_dir.join("logs"));
+            let log_guard = match logging::init(&default_app_data_dir.join("logs")) {
+                Ok(guard) => Some(guard),
+                Err(err) => {
+                    tracing::warn!("Proceeding without file logging: {err}");
+                    None
+                }
+            };
             let mut fallback_occurred = false;
             let (resolved_data_dir, resolve_fallback) =
                 data_dir::resolve_app_data_dir_checked(default_app_data_dir.clone());
@@ -148,35 +176,13 @@ pub fn run() {
                 fallback_occurred = true;
             }
 
-            // Initialize shared state (DB + pipeline).
-            let state = match AppStateInner::new(
-                app_data_dir.clone(),
-                default_app_data_dir.clone(),
-                log_guard,
-            ) {
-                Ok(state) => state,
-                Err(error) if app_data_dir != default_app_data_dir => {
-                    fallback_occurred = true;
-                    let message = data_dir::fallback_error_message(
-                        &app_data_dir,
-                        &default_app_data_dir,
-                        &error,
-                    );
-                    tracing::error!("{message}");
-                    data_dir::record_error(&default_app_data_dir, &message);
-                    let _ = std::fs::remove_file(
-                        default_app_data_dir.join(data_dir::DATA_DIR_MARKER_FILE),
-                    );
-                    let fallback_guard = logging::init(&default_app_data_dir.join("logs"));
-                    AppStateInner::new(
-                        default_app_data_dir.clone(),
-                        default_app_data_dir,
-                        fallback_guard,
-                    )
-                    .map_err(|fallback| format!("Failed to init default app state: {fallback}"))?
-                }
-                Err(error) => return Err(format!("Failed to init app state: {error}").into()),
-            };
+            // Initialize shared state (DB + pipeline) without moving log_guard.
+            let (mut state, state_fallback) =
+                init_app_state(app_data_dir, default_app_data_dir)?;
+            if state_fallback {
+                fallback_occurred = true;
+            }
+            state._log_guard = log_guard;
 
             let db_path = state.app_data_dir.join("data").join("voxitype.db");
             tracing::info!(
@@ -322,5 +328,72 @@ fn apply_window_icon<R: Runtime>(app: &tauri::AppHandle<R>) {
         if let Err(e) = window.set_icon(icon.clone()) {
             tracing::warn!("Window icon apply failed for {}: {e}", window.label());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    #[test]
+    fn test_init_app_state_fallback_preserves_guard() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("voxitype_test_state_{}", uuid::Uuid::new_v4()));
+        let default_dir = temp_dir.join("default");
+        // An invalid directory path (file created where dir expected)
+        let custom_invalid_dir = temp_dir.join("invalid_file");
+        std::fs::create_dir_all(&default_dir).expect("failed to create default dir");
+        std::fs::write(&custom_invalid_dir, b"not a dir").expect("failed to write file");
+
+        let logs_dir = default_dir.join("logs");
+        let (file_writer, guard) =
+            logging::create_file_writer(&logs_dir).expect("create file writer");
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_target(false)
+                .with_writer(file_writer),
+        );
+
+        let mut managed_state = None;
+        tracing::subscriber::with_default(subscriber, || {
+            let (mut state, fallback_occurred) =
+                init_app_state(custom_invalid_dir.clone(), default_dir.clone())
+                    .expect("init_app_state should fall back to default dir");
+
+            assert!(fallback_occurred);
+            assert_eq!(state.app_data_dir, default_dir);
+
+            // Guard was not dropped during fallback and is attached to recovered state.
+            state._log_guard = Some(guard);
+            managed_state = Some(state);
+        });
+
+        // Drop state to flush non-blocking log worker thread.
+        drop(managed_state);
+
+        let error_record = default_dir.join("data_dir_error.txt");
+        assert!(error_record.exists(), "data_dir_error.txt must be recorded");
+
+        // Verify fallback log message was written to the log file in default_dir/logs.
+        let entries = std::fs::read_dir(&logs_dir).expect("read logs dir");
+        let mut found_log = false;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                if content.contains("Data directory failure") && content.contains("falling back to")
+                {
+                    found_log = true;
+                    break;
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        assert!(
+            found_log,
+            "Fallback error message must be written to log file in default logs dir"
+        );
     }
 }
