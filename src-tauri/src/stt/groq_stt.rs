@@ -162,9 +162,10 @@ impl SttEngine for GroqSttEngine {
         // Indonesian and simple heuristics can't catch the error.
         //
         // Strategy: when auto-detect says "id", re-transcribe with an explicit
-        // "en" hint and compare. The correct-language pass produces text with
-        // more function-word markers of its own language.
-        if first.language == "id" {
+        // "en" hint and compare, but only when first-pass confidence is below the
+        // verification threshold. High-confidence Indonesian speech skips this
+        // expensive second pass.
+        if should_verify_id_transcription(&config.language, &first) {
             let en_config = SttConfig {
                 language: "en".to_string(),
                 ..config.clone()
@@ -190,6 +191,23 @@ impl SttEngine for GroqSttEngine {
     fn name(&self) -> &'static str {
         "groq_whisper"
     }
+}
+
+/// Minimum confidence score to accept auto-detected Indonesian without English verification.
+///
+/// In `compute_confidence`, segment `avg_logprob` values in `[-2.0, 0.0]` are mapped
+/// to `[0.0, 1.0]`. Genuine language transcription typically yields `avg_logprob >= -0.5`
+/// (confidence >= 0.75), whereas English audio erroneously forced into Indonesian
+/// yields `avg_logprob < -0.6` (confidence < 0.70). The 0.75 threshold avoids a
+/// redundant second upload for high-confidence Indonesian speech while preserving
+/// fallback verification for doubtful or misdetected clips.
+pub const ID_VERIFICATION_CONFIDENCE_THRESHOLD: f32 = 0.75;
+
+/// Decide whether an auto-detected Indonesian result requires an English verification pass.
+pub fn should_verify_id_transcription(config_language: &str, first: &TranscriptionResult) -> bool {
+    config_language == "auto"
+        && first.language == "id"
+        && first.confidence < ID_VERIFICATION_CONFIDENCE_THRESHOLD
 }
 
 /// Derive a 0.0–1.0 confidence score from segment avg_logprob values.
@@ -494,6 +512,83 @@ mod tests {
         assert_eq!(normalize_language(None), "unknown");
         assert_eq!(normalize_language(Some("")), "unknown");
         assert_eq!(normalize_language(Some("  ")), "unknown");
+    }
+
+    #[test]
+    fn should_verify_id_skips_high_confidence_and_triggers_low_confidence() {
+        let high_conf = TranscriptionResult {
+            text: "saya sedang berbicara bahasa indonesia".to_string(),
+            confidence: 0.85,
+            language: "id".to_string(),
+            duration_ms: 1000,
+            raw_response: None,
+        };
+        // High confidence ID speech must NOT trigger secondary English verification.
+        assert!(!should_verify_id_transcription("auto", &high_conf));
+
+        let low_conf = TranscriptionResult {
+            text: "this is actually english".to_string(),
+            confidence: 0.40,
+            language: "id".to_string(),
+            duration_ms: 1000,
+            raw_response: None,
+        };
+        // Low confidence ID detection MUST trigger secondary English verification.
+        assert!(should_verify_id_transcription("auto", &low_conf));
+
+        // Boundary: exact threshold does not trigger.
+        let boundary = TranscriptionResult {
+            text: "halo".to_string(),
+            confidence: ID_VERIFICATION_CONFIDENCE_THRESHOLD,
+            language: "id".to_string(),
+            duration_ms: 1000,
+            raw_response: None,
+        };
+        assert!(!should_verify_id_transcription("auto", &boundary));
+
+        // Non-auto config must not trigger even with low confidence.
+        assert!(!should_verify_id_transcription("id", &low_conf));
+
+        // Non-id detected language must not trigger.
+        let en_res = TranscriptionResult {
+            text: "hello world".to_string(),
+            confidence: 0.40,
+            language: "en".to_string(),
+            duration_ms: 1000,
+            raw_response: None,
+        };
+        assert!(!should_verify_id_transcription("auto", &en_res));
+    }
+
+    #[test]
+    fn id_verification_threshold_matches_compute_confidence_scale() {
+        assert!(
+            ID_VERIFICATION_CONFIDENCE_THRESHOLD > 0.0
+                && ID_VERIFICATION_CONFIDENCE_THRESHOLD < 1.0
+        );
+
+        // avg_logprob = -0.5 maps directly to threshold 0.75 in compute_confidence.
+        let target_logprob = (ID_VERIFICATION_CONFIDENCE_THRESHOLD - 1.0) * 2.0;
+        let seg = GroqSegment {
+            avg_logprob: Some(target_logprob),
+        };
+        let conf = compute_confidence(&[seg]);
+        assert!(
+            (conf - ID_VERIFICATION_CONFIDENCE_THRESHOLD).abs() < f32::EPSILON,
+            "Threshold {ID_VERIFICATION_CONFIDENCE_THRESHOLD} must equal compute_confidence at avg_logprob {target_logprob}"
+        );
+
+        // Confident segment (-0.3 -> 0.85) is >= threshold.
+        let confident_seg = GroqSegment {
+            avg_logprob: Some(-0.3),
+        };
+        assert!(compute_confidence(&[confident_seg]) >= ID_VERIFICATION_CONFIDENCE_THRESHOLD);
+
+        // Misdetected segment (-1.2 -> 0.40) is < threshold.
+        let doubtful_seg = GroqSegment {
+            avg_logprob: Some(-1.2),
+        };
+        assert!(compute_confidence(&[doubtful_seg]) < ID_VERIFICATION_CONFIDENCE_THRESHOLD);
     }
 
     #[test]
