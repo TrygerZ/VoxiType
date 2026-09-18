@@ -145,11 +145,11 @@ fn restore_clipboard(prev: &clipboard::ClipboardSnapshot) {
         }
         clipboard::ClipboardSnapshot::NonText => {
             // ponytail: non-text clipboard content (images, files) cannot be restored via
-            // text API without multi-format serialization. Leaving dictated text on clipboard
-            // instead of wiping to empty. Upgrade when arboard or platform API supports raw format preservation.
-            tracing::debug!(
-                "Non-text content on clipboard before injection; skipping text restoration"
-            );
+            // text API without multi-format serialization. Wiping clipboard to empty so
+            // dictated text does not linger where clipboard managers can read it.
+            // Upgrade when arboard or platform API supports raw format preservation.
+            tracing::debug!("Non-text content on clipboard before injection; wiping dictated text");
+            wipe_clipboard_fail_safe();
         }
         clipboard::ClipboardSnapshot::Unavailable => {
             tracing::debug!("Clipboard was empty before injection; wiping dictated text");
@@ -265,5 +265,41 @@ mod tests {
         let mut guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
         guard.restore();
         assert!(guard.snapshot.is_none());
+    }
+
+    #[test]
+    fn restore_guard_wipes_dictation_on_non_text_restore() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+        use crate::injection::clipboard::{self, ClipboardSnapshot};
+
+        let sensitive = "VOXITYPE_TEST_SENSITIVE_DICTATION";
+        clipboard::write_text(sensitive).unwrap();
+
+        let mut guard = ClipboardRestoreGuard::new(ClipboardSnapshot::NonText);
+
+        // Invariant: text must NOT be wiped before restore is invoked (paste still in progress).
+        assert_eq!(clipboard::read_text().as_deref(), Some(sensitive));
+
+        // When restore is invoked (after paste delay), sensitive text must be wiped.
+        guard.restore();
+        assert_eq!(clipboard::read_text().as_deref(), Some(""));
+    }
+
+    #[test]
+    fn restore_guard_wipes_dictation_on_non_text_drop() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+        use crate::injection::clipboard::{self, ClipboardSnapshot};
+
+        let sensitive = "VOXITYPE_TEST_DROP_WIPE";
+        clipboard::write_text(sensitive).unwrap();
+
+        {
+            let _guard = ClipboardRestoreGuard::new(ClipboardSnapshot::NonText);
+            // Invariant: text preserved inside scope before drop.
+            assert_eq!(clipboard::read_text().as_deref(), Some(sensitive));
+        }
+
+        // On drop, fail-safe wipes text from clipboard.
+        assert_eq!(clipboard::read_text().as_deref(), Some(""));
     }
 }
