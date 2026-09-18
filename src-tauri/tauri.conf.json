@@ -40,7 +40,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:11434 https://api.groq.com; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:11434 https://api.groq.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"
     }
   },
   "bundle": {
