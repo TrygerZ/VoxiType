@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
+
 import {
-  Search,
-  Pin,
-  Copy,
-  Trash2,
-  RefreshCw,
   Download,
   History as HistoryIcon,
+  Copy,
+  Pin,
+  RefreshCw,
+  Search,
+  Trash2,
 } from "lucide-react";
+
 import { useHistoryStore } from "../../stores/historyStore";
 import { useT } from "../../lib/i18n";
-import { reInject, exportHistory } from "../../lib/tauri";
+import { exportHistory, reInject } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { downloadBlob } from "../../lib/downloadBlob";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { PanelHeader } from "../common/PanelHeader";
@@ -64,13 +67,8 @@ export function HistoryPanel() {
   const handleExport = async (fmt: "json" | "csv") => {
     await invokeAction(async () => {
       const data = await exportHistory(fmt);
-      const blob = new Blob([data], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `voxitype-history.${fmt}`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const mimeType = fmt === "json" ? "application/json" : "text/csv";
+      downloadBlob(data, `voxitype-history.${fmt}`, mimeType);
     });
   };
 

@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
+
 import {
-  Plus,
-  Trash2,
+  BookOpen,
   Download,
-  Upload,
+  Plus,
   ToggleLeft,
   ToggleRight,
-  BookOpen,
+  Trash2,
+  Upload,
 } from "lucide-react";
+
 import { useDictionaryStore } from "../../stores/dictionaryStore";
 import { useT } from "../../lib/i18n";
 import { Button } from "../ui/Button";
@@ -19,6 +21,7 @@ import {
   setDictionaryActive,
 } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { downloadBlob } from "../../lib/downloadBlob";
 import { toast } from "../ui/Toast";
 
 export function DictionaryPanel() {
@@ -77,13 +80,7 @@ export function DictionaryPanel() {
   const handleExport = async () => {
     await invokeAction(async () => {
       const data = await exportDictionary();
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "voxitype-dictionary.json";
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(data, "voxitype-dictionary.json", "application/json");
     });
   };
 
