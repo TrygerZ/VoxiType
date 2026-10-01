@@ -44,6 +44,10 @@ pub struct WidgetTimerState {
     pub hide_generation: AtomicU64,
     pub is_shutdown: AtomicBool,
     pub cached_settings: Mutex<Option<CachedOverlaySettings>>,
+    /// Highest reveal generation acknowledged by the widget frontend. A
+    /// missing ACK for a reveal means the WebView2 renderer did not process
+    /// the event (suspended or discarded while the window was hidden).
+    pub reveal_ack_generation: AtomicU64,
 }
 
 impl WidgetTimerState {
@@ -55,6 +59,7 @@ impl WidgetTimerState {
             hide_generation: AtomicU64::new(0),
             is_shutdown: AtomicBool::new(false),
             cached_settings: Mutex::new(None),
+            reveal_ack_generation: AtomicU64::new(0),
         }
     }
 
@@ -108,6 +113,17 @@ impl WidgetTimerState {
 
     pub fn current_hide_generation(&self) -> u64 {
         self.hide_generation.load(Ordering::SeqCst)
+    }
+
+    /// Record the highest reveal generation acknowledged by the widget
+    /// frontend. Keeping the maximum means an old ACK that arrives after a
+    /// newer one can never lower the recorded generation.
+    pub fn record_reveal_ack(&self, gen: u64) {
+        self.reveal_ack_generation.fetch_max(gen, Ordering::SeqCst);
+    }
+
+    pub fn last_reveal_ack(&self) -> u64 {
+        self.reveal_ack_generation.load(Ordering::SeqCst)
     }
 }
 
@@ -235,8 +251,11 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
         .widget_timer
         .is_animating_hide
         .swap(false, Ordering::SeqCst);
-    let gen = state.widget_timer.next_hide_generation();
+    // Reset before taking the generation so the emitted id is the latest at
+    // emit time; the reveal watchdog relies on strictly ordered generations
+    // to reject stale ACKs.
     reset_idle_timer(&state);
+    let gen = state.widget_timer.next_hide_generation();
     // Do not force the overlay visible before its transparent content has
     // mounted; that produces a white-square flash in dev. `reveal_if_enabled`
     // handles the first show once React signals it is ready.
@@ -405,6 +424,12 @@ pub fn is_hide_ack_valid(
         && matches!(pipeline_state, AppStateTag::Idle | AppStateTag::Error)
 }
 
+/// Pure decision function for accepting a reveal ACK. Only a strictly newer
+/// generation counts so a stale ACK cannot mask a later unacknowledged reveal.
+pub fn is_reveal_ack_valid(last_ack: u64, ack_gen: u64) -> bool {
+    ack_gen > last_ack
+}
+
 fn resolve_deadline(state: &AppStateInner, timeout_secs: u64) -> Option<Instant> {
     if timeout_secs == 0 {
         return None;
@@ -507,6 +532,19 @@ pub fn acknowledge_hide<R: Runtime>(app: &AppHandle<R>, gen: u64) -> bool {
     } else {
         false
     }
+}
+
+/// Record an ACK from the widget frontend that it processed the reveal request
+/// for `gen`. The reveal watchdog treats a missing ACK as an unresponsive
+/// renderer, so stale ACKs are rejected and never mask a newer reveal.
+pub fn acknowledge_reveal<R: Runtime>(app: &AppHandle<R>, gen: u64) -> bool {
+    let state = app.state::<AppStateInner>();
+    if !is_reveal_ack_valid(state.widget_timer.last_reveal_ack(), gen) {
+        return false;
+    }
+    state.widget_timer.record_reveal_ack(gen);
+    tracing::debug!("Floating widget reveal acknowledged (gen={gen})");
+    true
 }
 
 fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
