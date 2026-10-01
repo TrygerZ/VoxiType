@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fixed short utterances of 1 s or less being discarded by the accidental-tap guard. The guard now discards only recordings without at least 250 ms of sustained voice.
 
 ### Changed
-- Changed the start sound cue to play once the microphone stream was ready, signaling when speech would be captured. Hotkey-to-ready latency was logged at debug level.
+- Split the start sound cue into a two-stage woodblock pair: a deep press cue plays the moment the hotkey registers, and a consonant ready cue a perfect fifth higher plays once the microphone stream is live, signaling when speech can begin. Hotkey-to-ready latency was logged at debug level.
 
 ## [0.5.1] - 2026-09-18
 
