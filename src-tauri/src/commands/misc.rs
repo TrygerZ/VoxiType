@@ -138,6 +138,17 @@ pub fn ack_widget_hide<R: Runtime>(
     Ok(())
 }
 
+/// Acknowledge from the frontend that the floating widget processed the reveal
+/// request. The reveal watchdog treats a missing ACK as an unresponsive renderer.
+#[tauri::command]
+pub fn ack_widget_reveal<R: Runtime>(
+    app: AppHandle<R>,
+    id: u64,
+) -> std::result::Result<(), AppError> {
+    crate::overlay::acknowledge_reveal(&app, id);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn pick_setup_file(
     state: State<'_, AppStateInner>,
