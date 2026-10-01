@@ -36,6 +36,8 @@ export const resetWidgetIdleTimer = () =>
   invoke<void>("reset_widget_idle_timer");
 export const ackWidgetHide = (id: number) =>
   invoke<void>("ack_widget_hide", { id });
+export const ackWidgetReveal = (id: number) =>
+  invoke<void>("ack_widget_reveal", { id });
 
 // Reveal the floating widget once its transparent content has mounted; the
 // backend keeps the overlay hidden until this is called to avoid a white

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ackWidgetHide, onEvent, resetWidgetIdleTimer } from "../../lib/tauri";
+import {
+  ackWidgetHide,
+  ackWidgetReveal,
+  onEvent,
+  resetWidgetIdleTimer,
+} from "../../lib/tauri";
 import { useAppStore } from "../../stores/appStore";
 import type {
   WidgetHideRequestedEvent,
@@ -24,6 +29,18 @@ const REDUCED_MOTION_FADE_MS = 120;
 const prefersReducedMotion = (): boolean =>
   typeof window !== "undefined" &&
   Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+
+function isWidgetRevealRequestedEvent(
+  payload: unknown,
+): payload is WidgetRevealRequestedEvent {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "id" in payload &&
+    typeof payload.id === "number" &&
+    Number.isFinite(payload.id)
+  );
+}
 
 export function FloatingWidget({
   alwaysRender = false,
@@ -120,12 +137,15 @@ export function FloatingWidget({
       })
       .catch((_err: unknown) => {});
 
-    onEvent<WidgetRevealRequestedEvent>(
-      "floating_widget_reveal_requested",
-      () => {
-        startReveal();
-      },
-    )
+    onEvent<unknown>("floating_widget_reveal_requested", (payload) => {
+      if (!isWidgetRevealRequestedEvent(payload)) return;
+      // ACK immediately: the backend reloads the webview when no ACK arrives
+      // within 1500 ms, so this must not wait for the reveal animation.
+      void ackWidgetReveal(payload.id).catch((err: unknown) => {
+        console.error("Failed to acknowledge widget reveal:", err);
+      });
+      startReveal();
+    })
       .then((unlisten) => {
         if (disposed) {
           unlisten();
