@@ -20,8 +20,10 @@ const HARDWARE_DRAIN_DELAY_MS: u64 = 150;
 /// Which cue to play.
 #[derive(Debug, Clone, Copy)]
 pub enum Cue {
-    /// Woodblock tock — recording started.
-    Start,
+    /// Woodblock tock — hotkey pressed, capture is starting.
+    Press,
+    /// Woodblock tock, a fifth above Press — microphone is live.
+    Ready,
     /// Woodblock tock — recording stopped / processing.
     Stop,
 }
@@ -119,7 +121,8 @@ pub fn play(cue: Cue) {
 
 fn play_blocking(cue: Cue) -> Result<(), String> {
     let wav_bytes = match cue {
-        Cue::Start => include_bytes!("../assets/sound/start.wav") as &[u8],
+        Cue::Press => include_bytes!("../assets/sound/press.wav") as &[u8],
+        Cue::Ready => include_bytes!("../assets/sound/ready.wav") as &[u8],
         Cue::Stop => include_bytes!("../assets/sound/stop.wav") as &[u8],
     };
 
@@ -229,10 +232,39 @@ mod tests {
 
     #[test]
     fn test_parse_wav_valid() {
-        let start_bytes = include_bytes!("../assets/sound/start.wav");
-        let parsed = parse_wav(start_bytes).unwrap();
+        let press_bytes = include_bytes!("../assets/sound/press.wav");
+        let parsed = parse_wav(press_bytes).unwrap();
         assert_eq!(parsed.sample_rate, 48000);
         assert!(!parsed.samples.is_empty());
+    }
+
+    #[test]
+    fn test_cue_files_meet_playback_contract() {
+        for bytes in [
+            include_bytes!("../assets/sound/press.wav") as &[u8],
+            include_bytes!("../assets/sound/ready.wav") as &[u8],
+        ] {
+            let parsed = parse_wav(bytes).unwrap();
+            assert_eq!(parsed.sample_rate, 48000);
+
+            let duration_ms = parsed.samples.len() as f64 / 48.0;
+            assert!(
+                (100.0..=150.0).contains(&duration_ms),
+                "duration {duration_ms} ms outside 100-150 ms"
+            );
+
+            let peak = parsed
+                .samples
+                .iter()
+                .map(|s| (*s as i32).abs())
+                .max()
+                .unwrap_or(0) as f64
+                / 32768.0;
+            assert!(peak < 0.4, "peak {peak} must stay below 0.4");
+
+            assert_eq!(parsed.samples.first().copied(), Some(0));
+            assert_eq!(parsed.samples.last().copied(), Some(0));
+        }
     }
 
     #[test]
