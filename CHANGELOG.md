@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Fixed the floating widget remaining invisible after a long idle period with auto-hide enabled. The WebView2 renderer could stop responding while hidden. The widget now acknowledges reveal requests, and the backend reloads the widget webview when no acknowledgement arrives within 1.5 s, then resynchronizes pipeline state.
+- Fixed short utterances of 1 s or less being discarded by the accidental-tap guard. The guard now discards only recordings without at least 250 ms of sustained voice.
+
+### Changed
+- Changed the start sound cue to play once the microphone stream was ready, signaling when speech would be captured. Hotkey-to-ready latency was logged at debug level.
+
 ## [0.5.1] - 2026-09-18
 
 ### Fixed
