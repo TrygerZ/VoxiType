@@ -568,6 +568,11 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     crate::overlay::reset_idle_timer(&state);
     crate::overlay::ensure_visible(app);
     events::emit_state(app, tag);
+    // Acknowledge the key press immediately; the ready cue follows once the
+    // microphone stream is actually live.
+    if sound_cues_enabled(&state.db) {
+        crate::sound::play(crate::sound::Cue::Press);
+    }
     spawn_level_emitter(app.clone());
     spawn_capture_task(app.clone(), started_at);
 }
@@ -610,12 +615,14 @@ fn handle_capture_start_result<R: Runtime>(
 }
 
 /// Announce a live microphone stream: log the hotkey-to-ready latency and play
-/// the start cue, so the cue marks when the user can actually begin speaking.
+/// the ready cue, so the cue marks when the user can actually begin speaking.
+/// Only reached when capture started successfully; a recording that already
+/// ended takes the `Ok(Ok(false))` path and stays silent.
 fn announce_capture_ready(state: &AppStateInner, started_at: Instant) {
     let latency_ms = started_at.elapsed().as_millis() as u64;
     tracing::debug!(latency_ms, "Microphone stream ready");
     if sound_cues_enabled(&state.db) {
-        crate::sound::play(crate::sound::Cue::Start);
+        crate::sound::play(crate::sound::Cue::Ready);
     }
 }
 
