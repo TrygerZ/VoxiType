@@ -3,7 +3,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, Runtime};
 use uuid::Uuid;
@@ -545,6 +545,7 @@ pub fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
 // ---------------------------------------------------------------
 
 pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
+    let started_at = Instant::now();
     let state = app.state::<AppStateInner>();
     let tag = state.pipeline.state_tag();
     if tag != crate::pipeline::AppStateTag::Idle && tag != crate::pipeline::AppStateTag::Error {
@@ -560,9 +561,6 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
         Err(e) => return fail(app, &state.pipeline, &e),
     };
 
-    if sound_cues_enabled(&state.db) {
-        crate::sound::play(crate::sound::Cue::Start);
-    }
     state
         .widget_timer
         .hidden_by_timeout
@@ -571,10 +569,10 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     crate::overlay::ensure_visible(app);
     events::emit_state(app, tag);
     spawn_level_emitter(app.clone());
-    spawn_capture_task(app.clone());
+    spawn_capture_task(app.clone(), started_at);
 }
 
-fn spawn_capture_task<R: Runtime>(app: AppHandle<R>) {
+fn spawn_capture_task<R: Runtime>(app: AppHandle<R>, started_at: Instant) {
     tauri::async_runtime::spawn(async move {
         let app_capture = app.clone();
         let capture_result = tokio::task::spawn_blocking(move || {
@@ -586,24 +584,39 @@ fn spawn_capture_task<R: Runtime>(app: AppHandle<R>) {
         })
         .await;
 
-        let state = app.state::<AppStateInner>();
-        match capture_result {
-            Ok(Ok(true)) => {}
-            Ok(Ok(false)) => {
-                tracing::debug!("Capture start skipped: recording already ended");
-            }
-            Ok(Err(e)) => {
-                let _ = state.pipeline.cancel_recording();
-                fail(&app, &state.pipeline, &e);
-            }
-            Err(join_err) => {
-                let err =
-                    AppError::audio(format!("Capture initialization task failed: {join_err}"));
-                let _ = state.pipeline.cancel_recording();
-                fail(&app, &state.pipeline, &err);
-            }
-        }
+        handle_capture_start_result(&app, capture_result, started_at);
     });
+}
+
+fn handle_capture_start_result<R: Runtime>(
+    app: &AppHandle<R>,
+    capture_result: std::result::Result<Result<bool>, tokio::task::JoinError>,
+    started_at: Instant,
+) {
+    let state = app.state::<AppStateInner>();
+    match capture_result {
+        Ok(Ok(true)) => announce_capture_ready(&state, started_at),
+        Ok(Ok(false)) => tracing::debug!("Capture start skipped: recording already ended"),
+        Ok(Err(e)) => {
+            let _ = state.pipeline.cancel_recording();
+            fail(app, &state.pipeline, &e);
+        }
+        Err(join_err) => {
+            let err = AppError::audio(format!("Capture initialization task failed: {join_err}"));
+            let _ = state.pipeline.cancel_recording();
+            fail(app, &state.pipeline, &err);
+        }
+    }
+}
+
+/// Announce a live microphone stream: log the hotkey-to-ready latency and play
+/// the start cue, so the cue marks when the user can actually begin speaking.
+fn announce_capture_ready(state: &AppStateInner, started_at: Instant) {
+    let latency_ms = started_at.elapsed().as_millis() as u64;
+    tracing::debug!(latency_ms, "Microphone stream ready");
+    if sound_cues_enabled(&state.db) {
+        crate::sound::play(crate::sound::Cue::Start);
+    }
 }
 
 fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
