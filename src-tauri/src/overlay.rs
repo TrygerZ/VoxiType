@@ -210,6 +210,11 @@ pub fn reveal_if_enabled<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     let state = app.state::<AppStateInner>();
+    // The widget remounts with a default `idle` store after a watchdog reload,
+    // while the backend only emits `state_changed` on transitions. Re-send the
+    // current tag once the widget signals readiness so it rehydrates. The
+    // frontend store applies this idempotently.
+    crate::events::emit_state(app, state.pipeline.state_tag());
     state
         .widget_timer
         .hidden_by_timeout
