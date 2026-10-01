@@ -21,6 +21,10 @@ use crate::AppStateInner;
 
 const LABEL: &str = "floating-widget";
 
+/// Delay before showing the overlay so WebView2 can finish its transparency
+/// setup (known WebView2 limitation on Windows, tauri#14515).
+const REVEAL_SHOW_DELAY_MS: u64 = 30;
+
 /// Cached overlay settings to avoid querying SQLite on every idle-monitor tick.
 #[derive(Debug, Clone, Copy)]
 pub struct CachedOverlaySettings {
@@ -243,20 +247,41 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
 
-    let win = win.clone();
-    let app = app.clone();
+    spawn_widget_reveal(app.clone(), win, gen, was_hidden, was_animating);
+}
+
+/// Show the widget window and ask its frontend to play the reveal animation.
+/// Runs off the hotkey thread so WebView2 can finish its transparency setup
+/// before the window becomes visible, preventing a white flash (known WebView2
+/// limitation on Windows, tauri#14515).
+fn spawn_widget_reveal<R: Runtime>(
+    app: AppHandle<R>,
+    win: WebviewWindow<R>,
+    gen: u64,
+    was_hidden: bool,
+    was_animating: bool,
+) {
     tauri::async_runtime::spawn(async move {
-        // Small delay so WebView2 can finish setting up its transparency
-        // pipeline before the window becomes visible — prevents a white
-        // flash (known WebView2 limitation on Windows, tauri#14515).
-        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
+        tokio::time::sleep(Duration::from_millis(REVEAL_SHOW_DELAY_MS)).await;
 
         let not_visible = !win.is_visible().unwrap_or(false);
         if not_visible {
             restore_position(&app, &win);
-            let _ = win.show();
+            if let Err(e) = win.show() {
+                tracing::warn!("Floating widget show failed: {e}");
+            }
         }
         let _ = win.set_always_on_top(true);
+        let visible_after_show = win.is_visible().unwrap_or(false);
+        tracing::debug!(
+            not_visible,
+            gen,
+            visible_after_show,
+            "Floating widget reveal visibility checked"
+        );
+        if !visible_after_show {
+            tracing::warn!("Floating widget is not visible after show attempt (gen={gen})");
+        }
 
         if was_hidden || was_animating || not_visible {
             crate::events::emit_widget_reveal_requested(&app, gen);
