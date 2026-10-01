@@ -123,6 +123,45 @@ describe("FloatingWidget", () => {
     expect(pill).toHaveAttribute("data-animation-phase", "normal");
   });
 
+  it("acknowledges reveal requests immediately with the payload id", async () => {
+    vi.useFakeTimers();
+    render(<FloatingWidget alwaysRender />);
+
+    const pill = screen.getByTestId("floating-widget-pill");
+
+    await act(async () => {
+      eventHandlers["floating_widget_reveal_requested"]?.({ id: 7 });
+    });
+
+    // ACK fires on receipt: no animation timer has advanced yet.
+    expect(tauri.ackWidgetReveal).toHaveBeenCalledWith(7);
+    expect(pill).toHaveAttribute("data-animation-phase", "revealing-fade");
+  });
+
+  it("ignores reveal requests whose payload fails validation", async () => {
+    render(<FloatingWidget alwaysRender />);
+
+    const pill = screen.getByTestId("floating-widget-pill");
+    const invalidPayloads: unknown[] = [
+      { id: "7" },
+      { id: Number.NaN },
+      {},
+      [],
+      null,
+      "7",
+      undefined,
+    ];
+
+    for (const payload of invalidPayloads) {
+      await act(async () => {
+        eventHandlers["floating_widget_reveal_requested"]?.(payload);
+      });
+    }
+
+    expect(tauri.ackWidgetReveal).not.toHaveBeenCalled();
+    expect(pill).toHaveAttribute("data-animation-phase", "normal");
+  });
+
   it("cancels and reverses hide animation when pointer activity arrives during hide", async () => {
     vi.useFakeTimers();
     render(<FloatingWidget alwaysRender />);
