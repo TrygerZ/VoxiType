@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Added file transcription for MP3, WAV, M4A, AAC, FLAC, and OGG files up to 60 minutes. Users choose Groq Whisper or whisper.cpp per job, can toggle LLM cleanup with a selectable engine and dictionary replacements, and can cancel a running job. Results are saved to History under the File mode. Dictation keeps working while a file is processed.
+
+### Changed
+- whisper.cpp process timeout now scales with audio length (minimum 300 s) instead of a fixed 300 s.
+- Usage totals and the WPM gauge exclude file transcriptions.
+
 ## [0.5.2] - 2026-10-02
 
 ### Fixed
