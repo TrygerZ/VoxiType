@@ -243,6 +243,7 @@ mod tests {
         for bytes in [
             include_bytes!("../assets/sound/press.wav") as &[u8],
             include_bytes!("../assets/sound/ready.wav") as &[u8],
+            include_bytes!("../assets/sound/stop.wav") as &[u8],
         ] {
             let parsed = parse_wav(bytes).unwrap();
             assert_eq!(parsed.sample_rate, 48000);
