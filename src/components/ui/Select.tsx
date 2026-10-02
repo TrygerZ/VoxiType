@@ -22,11 +22,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             {label}
           </span>
         )}
-        <div className="relative">
+        <div className="relative has-[:disabled]:opacity-50">
           <select
             ref={ref}
             id={selectId}
-            className={`w-full appearance-none rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 pr-9 text-sm text-vx-text-primary transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-vx-accent/40 ${className}`}
+            className={`w-full appearance-none rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 pr-9 text-sm text-vx-text-primary transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-vx-accent/40 disabled:cursor-not-allowed ${className}`}
             {...rest}
           >
             {options.map((o) => (
