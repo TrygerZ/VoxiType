@@ -385,16 +385,22 @@ impl AudioCaptureImpl {
     }
 }
 
+/// Amplitude threshold separating audible voice from background silence.
+const VOICE_THRESHOLD: f32 = 0.01;
+
+/// Minimum span of voiced audio a recording must contain to reach STT.
+/// Shorter bursts are taps or clicks that produce no usable transcription.
+const MIN_VOICED_MS: u64 = 250;
+
 /// Trim leading/trailing near-silence, keeping ~250ms of padding on each side.
 pub fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     if samples.is_empty() {
         return Vec::new();
     }
-    const THRESHOLD: f32 = 0.01;
     let pad = (sample_rate as usize) / 4; // 250 ms
 
-    let first = samples.iter().position(|&s| s.abs() > THRESHOLD);
-    let last = samples.iter().rposition(|&s| s.abs() > THRESHOLD);
+    let first = samples.iter().position(|&s| s.abs() > VOICE_THRESHOLD);
+    let last = samples.iter().rposition(|&s| s.abs() > VOICE_THRESHOLD);
 
     match (first, last) {
         (Some(f), Some(l)) => {
@@ -404,6 +410,24 @@ pub fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
         }
         _ => Vec::new(),
     }
+}
+
+/// Whether `samples` contain at least [`MIN_VOICED_MS`] of voiced audio.
+///
+/// Measures the span between the first and last sample above [`VOICE_THRESHOLD`],
+/// excluding the padding `trim_silence` adds, so a lone click cannot pass.
+pub fn has_enough_voice(samples: &[f32], sample_rate: u32) -> bool {
+    if samples.is_empty() || sample_rate == 0 {
+        return false;
+    }
+    let first = samples.iter().position(|&s| s.abs() > VOICE_THRESHOLD);
+    let last = samples.iter().rposition(|&s| s.abs() > VOICE_THRESHOLD);
+    let (Some(first), Some(last)) = (first, last) else {
+        return false;
+    };
+    let voiced_samples = (last - first + 1) as u64;
+    let min_voiced_samples = sample_rate as u64 * MIN_VOICED_MS / 1000;
+    voiced_samples >= min_voiced_samples
 }
 
 #[cfg(test)]
@@ -426,6 +450,42 @@ mod tests {
         let samples = vec![0.0f32; 100];
         let trimmed = trim_silence(&samples, 16_000);
         assert!(trimmed.is_empty());
+    }
+
+    #[test]
+    fn has_enough_voice_rejects_silence() {
+        let samples = vec![0.0f32; 16_000];
+        assert!(!has_enough_voice(&samples, 16_000));
+    }
+
+    #[test]
+    fn has_enough_voice_rejects_short_burst() {
+        // 100 ms of voice sits below the 250 ms minimum.
+        let mut samples = vec![0.0f32; 16_000];
+        for s in samples.iter_mut().skip(8000).take(1600) {
+            *s = 0.5;
+        }
+        assert!(!has_enough_voice(&samples, 16_000));
+    }
+
+    #[test]
+    fn has_enough_voice_accepts_sustained_voice() {
+        // 250 ms of voice meets the minimum exactly.
+        let mut samples = vec![0.0f32; 16_000];
+        for s in samples.iter_mut().skip(8000).take(4000) {
+            *s = 0.5;
+        }
+        assert!(has_enough_voice(&samples, 16_000));
+    }
+
+    #[test]
+    fn has_enough_voice_ignores_trim_padding() {
+        // Trim pads a lone click with 250 ms per side; the click itself must
+        // still be rejected.
+        let mut samples = vec![0.0f32; 16_000];
+        samples[8000] = 0.5;
+        let trimmed = trim_silence(&samples, 16_000);
+        assert!(!has_enough_voice(&trimmed, 16_000));
     }
 
     #[test]

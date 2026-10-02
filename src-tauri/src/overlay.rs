@@ -21,6 +21,15 @@ use crate::AppStateInner;
 
 const LABEL: &str = "floating-widget";
 
+/// Delay before showing the overlay so WebView2 can finish its transparency
+/// setup (known WebView2 limitation on Windows, tauri#14515).
+const REVEAL_SHOW_DELAY_MS: u64 = 30;
+
+/// Time to wait for the reveal ACK before treating the widget renderer as
+/// unresponsive. WebView2 can suspend a hidden window's renderer entirely, so
+/// a reveal event emitted at `win.hide()` time may never be processed.
+const REVEAL_ACK_TIMEOUT_MS: u64 = 1500;
+
 /// Cached overlay settings to avoid querying SQLite on every idle-monitor tick.
 #[derive(Debug, Clone, Copy)]
 pub struct CachedOverlaySettings {
@@ -40,6 +49,10 @@ pub struct WidgetTimerState {
     pub hide_generation: AtomicU64,
     pub is_shutdown: AtomicBool,
     pub cached_settings: Mutex<Option<CachedOverlaySettings>>,
+    /// Highest reveal generation acknowledged by the widget frontend. A
+    /// missing ACK for a reveal means the WebView2 renderer did not process
+    /// the event (suspended or discarded while the window was hidden).
+    pub reveal_ack_generation: AtomicU64,
 }
 
 impl WidgetTimerState {
@@ -51,6 +64,7 @@ impl WidgetTimerState {
             hide_generation: AtomicU64::new(0),
             is_shutdown: AtomicBool::new(false),
             cached_settings: Mutex::new(None),
+            reveal_ack_generation: AtomicU64::new(0),
         }
     }
 
@@ -104,6 +118,17 @@ impl WidgetTimerState {
 
     pub fn current_hide_generation(&self) -> u64 {
         self.hide_generation.load(Ordering::SeqCst)
+    }
+
+    /// Record the highest reveal generation acknowledged by the widget
+    /// frontend. Keeping the maximum means an old ACK that arrives after a
+    /// newer one can never lower the recorded generation.
+    pub fn record_reveal_ack(&self, gen: u64) {
+        self.reveal_ack_generation.fetch_max(gen, Ordering::SeqCst);
+    }
+
+    pub fn last_reveal_ack(&self) -> u64 {
+        self.reveal_ack_generation.load(Ordering::SeqCst)
     }
 }
 
@@ -185,6 +210,11 @@ pub fn reveal_if_enabled<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     let state = app.state::<AppStateInner>();
+    // The widget remounts with a default `idle` store after a watchdog reload,
+    // while the backend only emits `state_changed` on transitions. Re-send the
+    // current tag once the widget signals readiness so it rehydrates. The
+    // frontend store applies this idempotently.
+    crate::events::emit_state(app, state.pipeline.state_tag());
     state
         .widget_timer
         .hidden_by_timeout
@@ -231,8 +261,11 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
         .widget_timer
         .is_animating_hide
         .swap(false, Ordering::SeqCst);
-    let gen = state.widget_timer.next_hide_generation();
+    // Reset before taking the generation so the emitted id is the latest at
+    // emit time; the reveal watchdog relies on strictly ordered generations
+    // to reject stale ACKs.
     reset_idle_timer(&state);
+    let gen = state.widget_timer.next_hide_generation();
     // Do not force the overlay visible before its transparent content has
     // mounted; that produces a white-square flash in dev. `reveal_if_enabled`
     // handles the first show once React signals it is ready.
@@ -243,25 +276,83 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
 
-    let win = win.clone();
-    let app = app.clone();
+    spawn_widget_reveal(app.clone(), win, gen, was_hidden, was_animating);
+}
+
+/// Show the widget window and ask its frontend to play the reveal animation.
+/// Runs off the hotkey thread so WebView2 can finish its transparency setup
+/// before the window becomes visible, preventing a white flash (known WebView2
+/// limitation on Windows, tauri#14515).
+fn spawn_widget_reveal<R: Runtime>(
+    app: AppHandle<R>,
+    win: WebviewWindow<R>,
+    gen: u64,
+    was_hidden: bool,
+    was_animating: bool,
+) {
     tauri::async_runtime::spawn(async move {
-        // Small delay so WebView2 can finish setting up its transparency
-        // pipeline before the window becomes visible — prevents a white
-        // flash (known WebView2 limitation on Windows, tauri#14515).
-        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
+        tokio::time::sleep(Duration::from_millis(REVEAL_SHOW_DELAY_MS)).await;
 
         let not_visible = !win.is_visible().unwrap_or(false);
         if not_visible {
             restore_position(&app, &win);
-            let _ = win.show();
+            if let Err(e) = win.show() {
+                tracing::warn!("Floating widget show failed: {e}");
+            }
         }
         let _ = win.set_always_on_top(true);
+        let visible_after_show = win.is_visible().unwrap_or(false);
+        tracing::debug!(
+            not_visible,
+            gen,
+            visible_after_show,
+            "Floating widget reveal visibility checked"
+        );
+        if !visible_after_show {
+            tracing::warn!("Floating widget is not visible after show attempt (gen={gen})");
+        }
 
         if was_hidden || was_animating || not_visible {
             crate::events::emit_widget_reveal_requested(&app, gen);
+            spawn_reveal_watchdog(app, win, gen);
         }
     });
+}
+
+/// Watchdog for an emitted reveal: when the frontend never acknowledges it the
+/// renderer is considered unresponsive (WebView2 suspends hidden windows) and
+/// the webview is reloaded so the remount path (`reveal_floating_widget`) can
+/// show the widget again.
+fn spawn_reveal_watchdog<R: Runtime>(app: AppHandle<R>, win: WebviewWindow<R>, gen: u64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(REVEAL_ACK_TIMEOUT_MS)).await;
+        let state = app.state::<AppStateInner>();
+        let current_gen = state.widget_timer.current_hide_generation();
+        if !should_reload_widget(state.widget_timer.last_reveal_ack(), gen, current_gen) {
+            return;
+        }
+        if !is_enabled(&app) {
+            return;
+        }
+        reload_widget_after_missed_ack(&state, &win, gen);
+    });
+}
+
+/// Reload the widget webview after a missed reveal ACK. The generation is
+/// claimed in the ACK register so at most one reload happens per generation;
+/// `WIDGET_READY` is cleared so the remount re-runs the reveal path.
+fn reload_widget_after_missed_ack<R: Runtime>(
+    state: &AppStateInner,
+    win: &WebviewWindow<R>,
+    gen: u64,
+) {
+    tracing::warn!("Floating widget renderer unresponsive; reloading (gen={gen})");
+    state.widget_timer.record_reveal_ack(gen);
+    WIDGET_READY.store(false, Ordering::SeqCst);
+    if let Err(e) = win.reload() {
+        WIDGET_READY.store(true, Ordering::SeqCst);
+        tracing::warn!("Floating widget reload failed: {e}");
+    }
 }
 
 /// Hide the overlay only when the feature is disabled. When enabled the widget
@@ -380,6 +471,20 @@ pub fn is_hide_ack_valid(
         && matches!(pipeline_state, AppStateTag::Idle | AppStateTag::Error)
 }
 
+/// Pure decision function for accepting a reveal ACK. Only a strictly newer
+/// generation counts so a stale ACK cannot mask a later unacknowledged reveal.
+pub fn is_reveal_ack_valid(last_ack: u64, ack_gen: u64) -> bool {
+    ack_gen > last_ack
+}
+
+/// Pure decision function for reloading the widget webview when a reveal went
+/// unacknowledged. A reload is justified only when no ACK arrived for this
+/// generation and no newer reveal has superseded it, so a watchdog can never
+/// reload on top of a reveal that is still being handled.
+pub fn should_reload_widget(last_ack: u64, gen: u64, current_gen: u64) -> bool {
+    last_ack < gen && current_gen == gen
+}
+
 fn resolve_deadline(state: &AppStateInner, timeout_secs: u64) -> Option<Instant> {
     if timeout_secs == 0 {
         return None;
@@ -482,6 +587,19 @@ pub fn acknowledge_hide<R: Runtime>(app: &AppHandle<R>, gen: u64) -> bool {
     } else {
         false
     }
+}
+
+/// Record an ACK from the widget frontend that it processed the reveal request
+/// for `gen`. The reveal watchdog treats a missing ACK as an unresponsive
+/// renderer, so stale ACKs are rejected and never mask a newer reveal.
+pub fn acknowledge_reveal<R: Runtime>(app: &AppHandle<R>, gen: u64) -> bool {
+    let state = app.state::<AppStateInner>();
+    if !is_reveal_ack_valid(state.widget_timer.last_reveal_ack(), gen) {
+        return false;
+    }
+    state.widget_timer.record_reveal_ack(gen);
+    tracing::debug!("Floating widget reveal acknowledged (gen={gen})");
+    true
 }
 
 fn check_and_auto_hide<R: Runtime>(app: &AppHandle<R>) {
@@ -818,6 +936,41 @@ mod tests {
         // In recording or processing
         assert!(!is_hide_ack_valid(1, 1, AppStateTag::Recording, true));
         assert!(!is_hide_ack_valid(1, 1, AppStateTag::Processing, true));
+    }
+
+    #[test]
+    fn is_reveal_ack_valid_requires_strictly_newer_generation() {
+        assert!(is_reveal_ack_valid(0, 1));
+        assert!(is_reveal_ack_valid(4, 5));
+        // A stale or duplicate ACK must never lower or mask the register.
+        assert!(!is_reveal_ack_valid(5, 5));
+        assert!(!is_reveal_ack_valid(5, 4));
+        assert!(!is_reveal_ack_valid(1, 0));
+    }
+
+    #[test]
+    fn should_reload_widget_only_for_latest_unacked_generation() {
+        // Latest generation, no ACK yet: reload.
+        assert!(should_reload_widget(4, 5, 5));
+        // ACK arrived for this generation: no reload.
+        assert!(!should_reload_widget(5, 5, 5));
+        // A newer reveal superseded this generation: never reload for it.
+        assert!(!should_reload_widget(4, 5, 6));
+        // Even with no ACK at all, a superseded generation must not reload.
+        assert!(!should_reload_widget(0, 5, 7));
+    }
+
+    #[test]
+    fn reveal_ack_register_keeps_highest_generation() {
+        let state = WidgetTimerState::new();
+        assert_eq!(state.last_reveal_ack(), 0);
+        state.record_reveal_ack(3);
+        assert_eq!(state.last_reveal_ack(), 3);
+        // An out-of-order older ACK must not lower the register.
+        state.record_reveal_ack(2);
+        assert_eq!(state.last_reveal_ack(), 3);
+        state.record_reveal_ack(7);
+        assert_eq!(state.last_reveal_ack(), 7);
     }
 
     #[test]

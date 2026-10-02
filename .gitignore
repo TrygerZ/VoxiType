@@ -20,6 +20,7 @@ dist-ssr
 .vscode/*
 .claude
 .opencode
+.playwright-mcp
 
 .idea
 .DS_Store
