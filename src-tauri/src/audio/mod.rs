@@ -6,6 +6,7 @@
 
 pub mod capture;
 pub mod device;
+pub mod file_decode;
 pub mod resampler;
 
 pub use capture::{has_enough_voice, ActiveCapture, AudioCaptureImpl, AudioConfig};
