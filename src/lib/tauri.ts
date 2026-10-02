@@ -16,6 +16,8 @@ import type {
   AppInfo,
   DeviceInfo,
   DictionaryEntry,
+  FileTranscriptionRequest,
+  FileTranscriptionResult,
   Snippet,
   TranscriptionEntry,
   UpdateInfo,
@@ -134,6 +136,14 @@ export const testWhisperCpp = (
 
 // --- Stats ---
 export const getUsageStats = () => invoke<UsageStats>("get_usage_stats");
+
+// --- File transcription ---
+// transcribe_file only accepts a path previously returned by pickAudioFile.
+export const pickAudioFile = () => invoke<string | null>("pick_audio_file");
+export const transcribeFile = (request: FileTranscriptionRequest) =>
+  invoke<FileTranscriptionResult>("transcribe_file", { request });
+export const cancelFileTranscription = () =>
+  invoke<void>("cancel_file_transcription");
 
 // --- Events ---
 export function onEvent<T>(

@@ -62,6 +62,24 @@ export interface UsageStats {
   total_sessions: number;
 }
 
+export type SttEngineId = "groq" | "whisper_cpp";
+export type LlmEngineId = "ollama" | "groq" | "rule_based";
+
+export interface FileTranscriptionRequest {
+  path: string;
+  stt_engine: SttEngineId;
+  /** null skips LLM formatting. */
+  llm_engine: LlmEngineId | null;
+  apply_dictionary: boolean;
+}
+
+export interface FileTranscriptionResult {
+  id: string;
+  text: string;
+  word_count: number;
+  duration_ms: number;
+}
+
 export interface UpdateInfo {
   available: boolean;
   current_version: string;
