@@ -5,6 +5,7 @@
 //! runs in [`batch`].
 
 pub mod batch;
+pub mod file_job;
 pub mod state_machine;
 
 pub use state_machine::{AppState, AppStateTag, StateEvent};

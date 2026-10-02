@@ -36,6 +36,7 @@ pub enum ErrorCode {
     // Pipeline
     InvalidTransition,
     Timeout,
+    Cancelled,
     // Misc
     InvalidInput,
     NetworkError,
@@ -127,6 +128,9 @@ impl AppError {
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Timeout, msg)
+    }
+    pub fn cancelled(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::Cancelled, msg)
     }
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidInput, msg)
