@@ -245,22 +245,22 @@ pub fn build_llm_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Arc<dyn crate::llm::LlmFormatter> {
-    build_llm_for_engine(state, settings, &settings.string("llm_engine", "ollama"))
-}
-
-/// Build a formatter for an explicit engine id ("off", "ollama", "groq",
-/// "rule_based"); model and API key still come from settings.
-pub fn build_llm_for_engine(
-    state: &AppStateInner,
-    settings: &SettingsSnapshot,
-    engine: &str,
-) -> Arc<dyn crate::llm::LlmFormatter> {
-    let kind = match engine {
+    let kind = match settings.string("llm_engine", "ollama").as_str() {
         "off" => LlmEngineKind::Off,
         "groq" => LlmEngineKind::Groq,
         "rule_based" => LlmEngineKind::RuleBased,
         _ => LlmEngineKind::Ollama,
     };
+    build_llm_for_kind(state, settings, kind)
+}
+
+/// Build a formatter for an explicit engine; model and API key still come
+/// from settings.
+pub fn build_llm_for_kind(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+    kind: LlmEngineKind,
+) -> Arc<dyn crate::llm::LlmFormatter> {
     let ollama = OllamaConfig {
         model: settings.string("llm_model", "qwen2.5:3b"),
         ..Default::default()

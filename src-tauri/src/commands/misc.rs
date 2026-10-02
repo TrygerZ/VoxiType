@@ -178,6 +178,7 @@ pub async fn pick_setup_file(
 const PICKER_KIND_BINARY: &str = "whisper_binary";
 const PICKER_KIND_MODEL: &str = "whisper_model";
 const PICKER_KIND_DATA_DIRECTORY: &str = "data_directory";
+pub(crate) const PICKER_KIND_AUDIO_FILE: &str = "audio_file";
 
 fn canonical_to_clean_string(path: &Path) -> String {
     let s = path.to_string_lossy();
@@ -213,7 +214,7 @@ fn path_matches_picker_path(expected: Option<&Path>, path: &str) -> bool {
     }
 }
 
-fn ensure_picker_backed_path(
+pub(crate) fn ensure_picker_backed_path(
     state: &AppStateInner,
     kind: &str,
     path: &str,
@@ -383,6 +384,10 @@ fn pick_setup_file_blocking(kind: &str) -> std::result::Result<Option<String>, A
         "whisper_model" => (
             "Select whisper.cpp GGML model",
             "GGML model files (ggml-*.bin)|ggml-*.bin|Binary model files (*.bin)|*.bin|All files (*.*)|*.*",
+        ),
+        PICKER_KIND_AUDIO_FILE => (
+            "Select an audio file to transcribe",
+            "Audio files|*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg;*.oga|All files (*.*)|*.*",
         ),
         _ => return Err(AppError::internal("Unknown setup file picker kind")),
     };

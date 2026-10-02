@@ -207,6 +207,7 @@ pub fn run() {
                 .unwrap_or_default();
 
             app.manage(state);
+            app.manage(commands::FileJobState::default());
 
             // Windows have `create: false` in config to prevent webviews loading
             // before state is managed. Build them now: main first, then floating-widget.
@@ -236,6 +237,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::start_recording,
             commands::stop_recording,
+            commands::pick_audio_file,
+            commands::transcribe_file,
+            commands::cancel_file_transcription,
             commands::get_settings,
             commands::update_setting,
             commands::set_floating_widget_enabled,

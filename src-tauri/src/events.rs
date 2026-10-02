@@ -39,6 +39,15 @@ pub struct WidgetRevealRequested {
     pub id: u64,
 }
 
+pub fn emit_file_transcription_progress<R: Runtime>(
+    app: &AppHandle<R>,
+    progress: crate::pipeline::file_job::Progress,
+) {
+    if let Err(e) = app.emit("file_transcription_progress", progress) {
+        tracing::warn!("Failed to emit file_transcription_progress: {e}");
+    }
+}
+
 /// Emit a state change event.
 pub fn emit_state<R: Runtime>(app: &AppHandle<R>, state: AppStateTag) {
     if let Err(e) = app.emit("state_changed", StateChanged { state }) {
