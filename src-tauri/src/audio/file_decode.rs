@@ -118,7 +118,9 @@ impl AudioFile {
         loop {
             let packet = match self.format.next_packet() {
                 Ok(p) => p,
-                Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                Err(SymphoniaError::IoError(e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
                     return Ok(None)
                 }
                 // ponytail: chained streams (rare, e.g. Ogg radio dumps) stop at the
@@ -205,7 +207,8 @@ mod tests {
     use crate::stt::groq_stt::encode_wav_16k_mono;
 
     fn write_temp_wav(samples: &[f32]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("voxitype-decode-{}.wav", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("voxitype-decode-{}.wav", uuid::Uuid::new_v4()));
         std::fs::write(&path, encode_wav_16k_mono(samples)).unwrap();
         path
     }
@@ -241,7 +244,8 @@ mod tests {
 
     #[test]
     fn rejects_non_audio_file() {
-        let path = std::env::temp_dir().join(format!("voxitype-decode-{}.mp3", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("voxitype-decode-{}.mp3", uuid::Uuid::new_v4()));
         std::fs::write(&path, b"definitely not audio").unwrap();
         let result = AudioFile::open(&path);
         std::fs::remove_file(&path).unwrap();
@@ -267,8 +271,8 @@ mod tests {
         let mut splitter = ChunkSplitter::new(10_000, 4_000);
         let chunks = splitter.push(&vec![0.3; 55_000]);
         assert!(chunks.iter().all(|c| c.len() <= 10_000 && !c.is_empty()));
-        let total: usize = chunks.iter().map(Vec::len).sum::<usize>()
-            + splitter.finish().map_or(0, |c| c.len());
+        let total: usize =
+            chunks.iter().map(Vec::len).sum::<usize>() + splitter.finish().map_or(0, |c| c.len());
         assert_eq!(total, 55_000);
     }
 }
