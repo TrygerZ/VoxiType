@@ -165,18 +165,31 @@ fn normalize_stt_model(model: String) -> String {
     }
 }
 
+fn stt_configs_from_settings(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+    kind: SttEngineKind,
+) -> Result<(GroqSttConfig, WhisperCppConfig)> {
+    let api_key = match kind {
+        SttEngineKind::Groq => decrypted_api_key_from_settings(state, settings)?,
+        SttEngineKind::WhisperCpp => String::new(),
+    };
+    let groq = GroqSttConfig {
+        api_key,
+        model: normalize_stt_model(settings.string("stt_model", "whisper-large-v3-turbo")),
+        language: settings.string("stt_language", "auto"),
+        ..Default::default()
+    };
+    Ok((groq, whisper_cpp_config_from_settings(settings)))
+}
+
 pub fn build_stt_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Result<Arc<dyn crate::stt::SttEngine>> {
     let kind = stt_engine_kind(&settings.string("stt_engine", "groq"));
-    let api_key = match kind {
-        SttEngineKind::Groq => decrypted_api_key_from_settings(state, settings)?,
-        SttEngineKind::WhisperCpp => String::new(),
-    };
-    let model = normalize_stt_model(settings.string("stt_model", "whisper-large-v3-turbo"));
-    let whisper_cpp = whisper_cpp_config_from_settings(settings);
-    let cache_key = stt_cache_key(kind, &api_key, &model, &whisper_cpp);
+    let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
+    let cache_key = stt_cache_key(kind, &groq.api_key, &groq.model, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
     if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
@@ -185,15 +198,20 @@ pub fn build_stt_from_settings(
         }
     }
 
-    let groq = GroqSttConfig {
-        api_key,
-        model,
-        language: settings.string("stt_language", "auto"),
-        ..Default::default()
-    };
     let new_engine = SttFactory::create(kind, groq, whisper_cpp);
     *cache = Some((kind, cache_key, new_engine.clone()));
     Ok(new_engine)
+}
+
+/// Build an engine of an explicit kind, bypassing the dictation cache so a
+/// file job never evicts the engine the hotkey pipeline is using.
+pub fn build_stt_for_kind(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+    kind: SttEngineKind,
+) -> Result<Arc<dyn crate::stt::SttEngine>> {
+    let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
+    Ok(SttFactory::create(kind, groq, whisper_cpp))
 }
 
 fn stt_engine_kind(value: &str) -> SttEngineKind {
@@ -227,8 +245,17 @@ pub fn build_llm_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Arc<dyn crate::llm::LlmFormatter> {
-    let engine = settings.string("llm_engine", "ollama");
-    let kind = match engine.as_str() {
+    build_llm_for_engine(state, settings, &settings.string("llm_engine", "ollama"))
+}
+
+/// Build a formatter for an explicit engine id ("off", "ollama", "groq",
+/// "rule_based"); model and API key still come from settings.
+pub fn build_llm_for_engine(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+    engine: &str,
+) -> Arc<dyn crate::llm::LlmFormatter> {
+    let kind = match engine {
         "off" => LlmEngineKind::Off,
         "groq" => LlmEngineKind::Groq,
         "rule_based" => LlmEngineKind::RuleBased,
