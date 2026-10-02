@@ -6,6 +6,7 @@ import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { HistoryPanel } from "./components/history/HistoryPanel";
 import { DictionaryPanel } from "./components/dictionary/DictionaryPanel";
 import { SnippetsPanel } from "./components/dictionary/SnippetsPanel";
+import { FileTranscriptionPanel } from "./components/file-transcription/FileTranscriptionPanel";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 import { AboutTab } from "./components/settings/AboutTab";
 import { Button } from "./components/ui/Button";
@@ -113,6 +114,7 @@ export default function App() {
           {view === "history" && <HistoryPanel />}
           {view === "dictionary" && <DictionaryPanel />}
           {view === "snippets" && <SnippetsPanel />}
+          {view === "file" && <FileTranscriptionPanel />}
           {view === "about" && <AboutTab />}
         </main>
 

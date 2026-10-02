@@ -166,6 +166,7 @@ export function HistoryPanel() {
             { value: "dictation", label: t("settings.modes.dictation") },
             { value: "message", label: t("settings.modes.message") },
             { value: "email", label: t("settings.modes.email") },
+            { value: "file", label: t("settings.modes.file") },
           ]}
           value={modeFilter}
           onChange={(e) => setModeFilter(e.target.value)}

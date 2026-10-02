@@ -4,6 +4,7 @@ import {
   BookOpen,
   Mic,
   Zap,
+  FileAudio,
 } from "lucide-react";
 import { useT } from "../../lib/i18n";
 
@@ -14,6 +15,7 @@ export type View =
   | "history"
   | "dictionary"
   | "snippets"
+  | "file"
   | "about";
 
 interface FloatingDockProps {
@@ -27,6 +29,7 @@ const items: { id: View; icon: typeof Mic; labelKey: string }[] = [
   { id: "history", icon: History, labelKey: "nav.history" },
   { id: "dictionary", icon: BookOpen, labelKey: "nav.dictionary" },
   { id: "snippets", icon: Zap, labelKey: "nav.snippets" },
+  { id: "file", icon: FileAudio, labelKey: "nav.file" },
 ];
 
 export function FloatingDock({ active, onChange }: FloatingDockProps) {
