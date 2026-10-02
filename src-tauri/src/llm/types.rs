@@ -49,6 +49,9 @@ pub struct OllamaConfig {
     pub model: String,
     pub temperature: f32,
     pub top_p: f32,
+    /// Whole-request timeout. Short dictation keeps the shared-client default
+    /// so a hung server falls back quickly; long file segments raise it.
+    pub request_timeout: std::time::Duration,
 }
 
 impl Default for OllamaConfig {
@@ -58,6 +61,7 @@ impl Default for OllamaConfig {
             model: "qwen2.5:3b".to_string(),
             temperature: 0.1,
             top_p: 0.9,
+            request_timeout: std::time::Duration::from_secs(30),
         }
     }
 }
