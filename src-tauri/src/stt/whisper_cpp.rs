@@ -96,7 +96,7 @@ impl Drop for TempRunDir {
     }
 }
 
-fn validate_config(config: &WhisperCppConfig) -> Result<()> {
+pub(crate) fn validate_config(config: &WhisperCppConfig) -> Result<()> {
     if config.binary_path.trim().is_empty() {
         return Err(AppError::stt("Set the whisper.cpp binary path"));
     }
