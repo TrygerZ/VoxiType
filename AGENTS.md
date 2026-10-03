@@ -28,6 +28,8 @@
 | Util | Shared HTTP client + retry/backoff | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
 | Data Directory | Marker resolution, validation, and copy-on-migrate | src-tauri/src/data_dir.rs |
+| File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
+| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi) | src-tauri/src/export.rs |
 
 ## Global Rules
 
@@ -112,7 +114,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `settings/` | SettingsLayout, SettingsPanel, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
 | `history/` | HistoryPanel |
 | `dictionary/` | DictionaryPanel, SnippetsPanel |
-| `file-transcription/` | FileTranscriptionPanel |
+| `file-transcription/` | FileTranscriptionPanel, FileQueueItem |
 | `onboarding/` | `OnboardingFlow.tsx`, `types.ts`, `shared/` (`StepShell`, `StepProgress`), `steps/` (`WelcomeStep`, `QuickSettingsStep`, `MicrophoneStep`, `SttSetupStep`, `DataDirectoryStep`, `HotkeyStep`, `SmokeTestStep`, `CompleteStep`) |
 | root | ErrorBoundary |
 

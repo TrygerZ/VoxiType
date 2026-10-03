@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-03
+
 ### Added
 - Added file transcription for MP3, WAV, M4A, AAC, FLAC, and OGG files up to 60 minutes. Users choose Groq Whisper or whisper.cpp and the audio language per job, can toggle LLM cleanup with a selectable engine and dictionary replacements, and can cancel a running job. A failure partway through keeps the finished part of the transcript and reports what was skipped. Results are saved to History under the File mode. Dictation keeps working while a file is processed.
 - Added bulk file transcription: up to 20 files per batch, processed one at a time. A failed file is reported and the batch continues; cancel stops the remaining files. Each file shows a live processing timer and its final duration.
@@ -290,7 +292,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.4.8...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/TrygerZ/VoxiType/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/TrygerZ/VoxiType/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/TrygerZ/VoxiType/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/TrygerZ/VoxiType/compare/v0.4.10...v0.5.0
+[0.4.10]: https://github.com/TrygerZ/VoxiType/compare/v0.4.9...v0.4.10
+[0.4.9]: https://github.com/TrygerZ/VoxiType/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/TrygerZ/VoxiType/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/TrygerZ/VoxiType/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/TrygerZ/VoxiType/compare/v0.4.5...v0.4.6
