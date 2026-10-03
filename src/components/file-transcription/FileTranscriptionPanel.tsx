@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Copy, FileAudio, FolderOpen, Play, Square } from "lucide-react";
+import { useEffect } from "react";
+import { Download, FileAudio, FolderOpen, Play, Square } from "lucide-react";
 import { useFileTranscriptionStore } from "../../stores/fileTranscriptionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { getStringSetting } from "../../lib/settingsGuards";
@@ -10,10 +10,8 @@ import { PanelHeader } from "../common/PanelHeader";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { Switch } from "../ui/Switch";
-import type { LlmEngineId, Settings, StageIssue, SttEngineId, SttLanguageId } from "../../types/app";
-import type { FileTranscriptionProgressEvent } from "../../types/events";
-
-const COPY_FEEDBACK_MS = 1200;
+import { FileQueueItem, IssueNote } from "./FileQueueItem";
+import type { LlmEngineId, Settings, SttEngineId, SttLanguageId, TranscriptExportFormat } from "../../types/app";
 
 const STT_OPTIONS: { value: SttEngineId; label: string }[] = [
   { value: "groq", label: "Groq Whisper" },
@@ -26,14 +24,16 @@ const LLM_OPTIONS: { value: LlmEngineId; label: string }[] = [
   { value: "rule_based", label: "Rule-based (No LLM)" },
 ];
 
+const EXPORT_OPTIONS: { value: TranscriptExportFormat; label: string }[] = [
+  { value: "txt", label: "TXT" },
+  { value: "docx", label: "Word (DOCX)" },
+  { value: "pdf", label: "PDF" },
+];
+
 const LANGUAGES: SttLanguageId[] = ["auto", "id", "en"];
 
 const pickOption = <T extends string>(allowed: readonly T[], value: string, fallback: T): T =>
   allowed.find((v) => v === value) ?? fallback;
-
-function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
-}
 
 function defaultsFrom(settings: Settings) {
   return {
@@ -54,61 +54,33 @@ function missingSetupKey(settings: Settings, stt: SttEngineId, llm: LlmEngineId 
   return null;
 }
 
-function progressLabel(t: ReturnType<typeof useT>, progress: FileTranscriptionProgressEvent | null) {
-  if (!progress) return t("file.status_starting");
-  const key = progress.stage === "transcribing" ? "file.status_transcribing" : "file.status_formatting";
-  return t(key, { done: progress.done, total: progress.total > 0 ? progress.total : "?" });
-}
-
-function IssueNote({ text }: { text: string }) {
-  return (
-    <p role="alert" className="flex items-start gap-2 text-xs text-vx-warning">
-      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> <span className="break-words">{text}</span>
-    </p>
-  );
-}
-
-function issueText(t: ReturnType<typeof useT>, key: string, issue: StageIssue) {
-  return t(key, { count: issue.count, total: issue.total, reason: issue.reason });
-}
-
 export function FileTranscriptionPanel() {
   const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const store = useFileTranscriptionStore();
-  const { path, options, picking, status, progress, result, error, cancelled, initOptions } = store;
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { items, options, picking, status, cancelled, exportFormat, exporting, initOptions } = store;
 
   useEffect(() => {
     initOptions(defaultsFrom(settings));
   }, [initOptions, settings]);
 
-  useEffect(() => () => {
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-  }, []);
-
   if (!options) return null;
 
-  const busy = status === "running" || status === "cancelling";
+  const busy = status !== "idle";
   const llmEnabled = options.llm_engine !== null;
   const setupKey = missingSetupKey(settings, options.stt_engine, options.llm_engine);
+  const pendingCount = items.filter((item) => item.status !== "done").length;
+  const finishedPaths = items.filter((item) => item.result).map((item) => item.path);
   const languageOptions = LANGUAGES.map((value) => ({
     value,
     label: value === "auto" ? t("settings.stt.lang_auto") : value === "id" ? "Bahasa Indonesia" : "English",
   }));
 
-  const handleCopy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      toast(t("file.copy_failed"), "error");
-      return;
-    }
-    setCopied(true);
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-  };
+  const handleExport = (paths: string[]) =>
+    void invokeAction(async () => {
+      const written = await store.exportFiles(paths);
+      if (written) toast(t("file.exported", { count: written.length }), "success");
+    });
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col">
@@ -120,8 +92,8 @@ export function FileTranscriptionPanel() {
             <Button onClick={() => void invokeAction(store.pick)} disabled={busy || picking}>
               <FolderOpen className="h-4 w-4" /> {picking ? t("file.picking") : t("file.pick")}
             </Button>
-            <span className="min-w-0 truncate text-sm text-vx-text-secondary" title={path ?? undefined}>
-              {path ? fileName(path) : t("file.none_selected")}
+            <span className="text-sm text-vx-text-secondary">
+              {items.length > 0 ? t("file.selected_count", { count: items.length }) : t("file.none_selected")}
             </span>
           </div>
           <p className="text-xs text-vx-text-dim">{t("file.limits")}</p>
@@ -178,36 +150,43 @@ export function FileTranscriptionPanel() {
               <Square className="h-4 w-4" /> {status === "cancelling" ? t("file.cancelling") : t("file.cancel")}
             </Button>
           ) : (
-            <Button variant="primary" onClick={() => void store.start()} disabled={!path || picking || setupKey !== null}>
+            <Button variant="primary" onClick={() => void store.start()} disabled={pendingCount === 0 || picking || setupKey !== null}>
               <Play className="h-4 w-4" /> {t("file.start")}
             </Button>
           )}
           <span role="status" className="text-sm text-vx-text-secondary">
-            {busy && progressLabel(t, progress)}
             {!busy && cancelled && t("file.cancelled")}
           </span>
         </div>
 
-        {status === "error" && error && (
-          <p role="alert" className="text-sm text-vx-error break-words">{error}</p>
-        )}
-
-        {status === "done" && result && (
-          <div className="flex flex-col gap-2">
-            {result.stt_issue && <IssueNote text={issueText(t, "file.partial_stt", result.stt_issue)} />}
-            {result.llm_issue && <IssueNote text={issueText(t, "file.partial_llm", result.llm_issue)} />}
-            <div className="flex items-center justify-between text-xs text-vx-text-dim">
-              <span>{t("file.result_meta", { count: result.word_count })}</span>
-              <Button variant="ghost" size="sm" onClick={() => void handleCopy(result.text)}>
-                <Copy className="h-3.5 w-3.5" /> {copied ? t("file.copied") : t("file.copy")}
+        {items.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-end justify-between gap-3">
+              <div className="w-48">
+                <Select
+                  label={t("file.export_format")}
+                  options={EXPORT_OPTIONS}
+                  value={exportFormat}
+                  onChange={(e) => store.setExportFormat(pickOption(EXPORT_OPTIONS.map((o) => o.value), e.target.value, "txt"))}
+                />
+              </div>
+              <Button onClick={() => handleExport(finishedPaths)} disabled={exporting || finishedPaths.length === 0}>
+                <Download className="h-4 w-4" /> {t("file.export_all", { count: finishedPaths.length })}
               </Button>
             </div>
-            <textarea
-              readOnly
-              aria-label={t("file.result_label")}
-              value={result.text}
-              className="min-h-64 resize-y rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm leading-relaxed text-vx-text-primary focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
-            />
+            <ul aria-label={t("file.queue_label")} className="flex flex-col gap-2">
+              {items.map((item) => (
+                <FileQueueItem
+                  key={item.path}
+                  item={item}
+                  locked={busy}
+                  exporting={exporting}
+                  defaultOpen={items.length === 1}
+                  onRemove={store.remove}
+                  onExport={(path) => handleExport([path])}
+                />
+              ))}
+            </ul>
           </div>
         )}
       </div>
