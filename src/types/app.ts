@@ -93,6 +93,14 @@ export interface FileTranscriptionResult {
   llm_issue: StageIssue | null;
 }
 
+export type TranscriptExportFormat = "txt" | "docx" | "pdf";
+
+export interface TranscriptExportItem {
+  /** Audio file path; the export is named after its file name. */
+  source_path: string;
+  text: string;
+}
+
 export interface UpdateInfo {
   available: boolean;
   current_version: string;

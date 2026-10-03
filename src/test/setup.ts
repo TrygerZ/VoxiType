@@ -46,9 +46,11 @@ vi.mock("../lib/tauri", () => ({
   getSnippets: vi.fn().mockResolvedValue([]),
   addSnippet: vi.fn().mockResolvedValue(undefined),
   deleteSnippet: vi.fn().mockResolvedValue(undefined),
-  pickAudioFile: vi.fn().mockResolvedValue(null),
+  pickAudioFiles: vi.fn().mockResolvedValue([]),
   transcribeFile: vi.fn().mockResolvedValue(undefined),
   cancelFileTranscription: vi.fn().mockResolvedValue(undefined),
+  pickExportDirectory: vi.fn().mockResolvedValue(null),
+  exportTranscripts: vi.fn().mockResolvedValue([]),
   getUsageStats: vi.fn().mockResolvedValue({
     total_words: 0,
     total_duration_ms: 0,
