@@ -10,6 +10,7 @@ pub mod crypto;
 pub mod data_dir;
 pub mod error;
 pub mod events;
+pub mod export;
 pub mod hotkey;
 pub mod injection;
 pub mod llm;
