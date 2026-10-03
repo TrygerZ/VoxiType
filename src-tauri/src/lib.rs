@@ -241,6 +241,8 @@ pub fn run() {
             commands::pick_audio_files,
             commands::transcribe_file,
             commands::cancel_file_transcription,
+            commands::pick_export_directory,
+            commands::export_transcripts,
             commands::get_settings,
             commands::update_setting,
             commands::set_floating_widget_enabled,

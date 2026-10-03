@@ -11,13 +11,17 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::misc::{ensure_picker_backed_path, pick_gated_files, PICKER_KIND_AUDIO_FILE};
+use super::misc::{
+    canonical_to_clean_string, ensure_picker_backed_path, pick_directory_blocking,
+    pick_gated_files, remember_picker_paths, PICKER_KIND_AUDIO_FILE,
+};
 use super::runtime::{
     build_stt_config_for_language, build_stt_for_kind, llm_configs_from_settings, SettingsSnapshot,
 };
 use crate::audio::file_decode::{too_long_error, AudioFile, ChunkSplitter};
 use crate::audio::TARGET_SAMPLE_RATE;
 use crate::error::{AppError, Result};
+use crate::export::{self, ExportFormat};
 use crate::llm::{LlmEngineKind, LlmFactory, LlmFormatter, RuleBasedConfig};
 use crate::pipeline::file_job::{self, PostOptions, RawTranscript, StageIssue};
 use crate::storage::{DictionaryRepository, HistoryRepository, TranscriptionEntry};
@@ -27,6 +31,7 @@ use crate::AppStateInner;
 pub const MAX_FILE_DURATION_SECS: u64 = 60 * 60;
 /// Files per batch; the frontend queues them through `transcribe_file`.
 pub const MAX_BATCH_FILES: usize = 20;
+const PICKER_KIND_EXPORT_DIRECTORY: &str = "export_directory";
 /// 10 minutes of 16-bit 16 kHz WAV is ~19 MB, under Groq's 25 MB upload cap.
 const CHUNK_SECS: usize = 600;
 const CUT_SEARCH_SECS: usize = 5;
@@ -107,6 +112,58 @@ pub async fn pick_audio_files(
         return Ok(Vec::new());
     };
     pick_gated_files(&state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
+}
+
+const EXPORT_DIRECTORY_TITLE: &str = "Select a folder for the exported transcripts";
+
+#[tauri::command]
+pub async fn pick_export_directory(
+    state: State<'_, AppStateInner>,
+) -> std::result::Result<Option<String>, AppError> {
+    let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(EXPORT_DIRECTORY_TITLE))
+        .await
+        .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let canonical = Path::new(&path)
+        .canonicalize()
+        .map_err(|e| AppError::invalid_input(format!("Invalid export folder: {e}")))?;
+    let clean = canonical_to_clean_string(&canonical);
+    remember_picker_paths(&state, PICKER_KIND_EXPORT_DIRECTORY, vec![canonical]);
+    Ok(Some(clean))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TranscriptExport {
+    /// Audio file path; only its file name is used, to name the output.
+    pub source_path: String,
+    pub text: String,
+}
+
+/// Writes one file per transcript into a folder chosen via
+/// `pick_export_directory`. Returns the written paths.
+#[tauri::command]
+pub fn export_transcripts(
+    state: State<'_, AppStateInner>,
+    directory: String,
+    format: ExportFormat,
+    items: Vec<TranscriptExport>,
+) -> std::result::Result<Vec<String>, AppError> {
+    ensure_picker_backed_path(&state, PICKER_KIND_EXPORT_DIRECTORY, &directory)?;
+    if items.len() > MAX_BATCH_FILES {
+        return Err(AppError::invalid_input(format!(
+            "Export at most {MAX_BATCH_FILES} transcripts at a time"
+        )));
+    }
+    let dir = Path::new(&directory);
+    items
+        .iter()
+        .map(|item| {
+            export::write_transcript(dir, &item.source_path, format, &item.text)
+                .map(|p| canonical_to_clean_string(&p))
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -357,6 +414,15 @@ mod tests {
         assert_eq!(req.stt_engine, SttEngineKind::WhisperCpp);
         assert_eq!(req.llm_engine, Some(LlmEngineKind::RuleBased));
         assert!(SUPPORTED_LANGUAGES.contains(&req.language.as_str()));
+    }
+
+    #[test]
+    fn export_request_deserializes_frontend_payload() {
+        let format: ExportFormat = serde_json::from_str(r#""docx""#).unwrap();
+        let items: Vec<TranscriptExport> =
+            serde_json::from_str(r#"[{"source_path":"C:\\a\\b.mp3","text":"halo"}]"#).unwrap();
+        assert_eq!(format, ExportFormat::Docx);
+        assert_eq!(items[0].text, "halo");
     }
 
     #[test]
