@@ -154,24 +154,48 @@ pub async fn pick_setup_file(
     state: State<'_, AppStateInner>,
     kind: String,
 ) -> std::result::Result<Option<String>, AppError> {
+    let picked = pick_gated_files(&state, &kind, 1).await?;
+    Ok(picked.into_iter().next())
+}
+
+/// Opens the native file dialog and remembers every selected file as an
+/// accepted path for `kind`. A cancelled dialog keeps the previous selection;
+/// selecting more than `max_files` is refused before anything is remembered.
+pub(crate) async fn pick_gated_files(
+    state: &AppStateInner,
+    kind: &str,
+    max_files: usize,
+) -> std::result::Result<Vec<String>, AppError> {
     let picked = {
-        let kind = kind.clone();
-        tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind))
+        let kind = kind.to_string();
+        let multiple = max_files > 1;
+        tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind, multiple))
             .await
             .map_err(|e| AppError::internal(format!("File picker failed: {e}")))??
     };
-    if let Some(path) = &picked {
+    if picked.len() > max_files {
+        return Err(AppError::invalid_input(format!(
+            "Select at most {max_files} files at a time"
+        )));
+    }
+    let mut canonical_paths = Vec::with_capacity(picked.len());
+    for path in &picked {
         let canonical = Path::new(path)
             .canonicalize()
             .map_err(|e| AppError::internal(format!("Failed to canonicalize picked path: {e}")))?;
         if canonical.is_dir() {
             return Err(AppError::internal("Selected path cannot be a directory"));
         }
-        let clean = canonical_to_clean_string(&canonical);
-        remember_picker_path(&state, &kind, canonical);
-        return Ok(Some(clean));
+        canonical_paths.push(canonical);
     }
-    Ok(None)
+    let clean = canonical_paths
+        .iter()
+        .map(|p| canonical_to_clean_string(p))
+        .collect();
+    if !canonical_paths.is_empty() {
+        remember_picker_paths(state, kind, canonical_paths);
+    }
+    Ok(clean)
 }
 
 /// Picker kinds that gate whisper.cpp path settings.
@@ -180,7 +204,7 @@ const PICKER_KIND_MODEL: &str = "whisper_model";
 const PICKER_KIND_DATA_DIRECTORY: &str = "data_directory";
 pub(crate) const PICKER_KIND_AUDIO_FILE: &str = "audio_file";
 
-fn canonical_to_clean_string(path: &Path) -> String {
+pub(super) fn canonical_to_clean_string(path: &Path) -> String {
     let s = path.to_string_lossy();
     if let Some(stripped) = s.strip_prefix(r"\\?\") {
         stripped.to_string()
@@ -189,7 +213,7 @@ fn canonical_to_clean_string(path: &Path) -> String {
     }
 }
 
-fn remember_picker_path(state: &AppStateInner, kind: &str, canonical: PathBuf) {
+pub(super) fn remember_picker_paths(state: &AppStateInner, kind: &str, canonical: Vec<PathBuf>) {
     match state.last_picker_dirs.lock() {
         Ok(mut dirs) => {
             dirs.insert(kind.to_string(), canonical);
@@ -223,7 +247,8 @@ pub(crate) fn ensure_picker_backed_path(
         .last_picker_dirs
         .lock()
         .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
-    if path_matches_picker_path(dirs.get(kind).map(PathBuf::as_path), path) {
+    let mut accepted = dirs.get(kind).into_iter().flatten();
+    if accepted.any(|p| path_matches_picker_path(Some(p), path)) {
         Ok(())
     } else {
         Err(AppError::internal(format!(
@@ -237,7 +262,7 @@ pub(crate) fn ensure_picker_backed_path(
 pub async fn pick_data_directory(
     state: State<'_, AppStateInner>,
 ) -> std::result::Result<Option<String>, AppError> {
-    let picked = tokio::task::spawn_blocking(pick_data_directory_blocking)
+    let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(DATA_DIRECTORY_TITLE))
         .await
         .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
     if let Some(path) = &picked {
@@ -245,15 +270,13 @@ pub async fn pick_data_directory(
             .canonicalize()
             .map_err(|e| AppError::data_directory(format!("Invalid selected directory: {e}")))?;
         let clean = canonical_to_clean_string(&canonical);
-        let mut dirs = state
-            .last_picker_dirs
-            .lock()
-            .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
-        dirs.insert(PICKER_KIND_DATA_DIRECTORY.to_string(), canonical);
+        remember_picker_paths(&state, PICKER_KIND_DATA_DIRECTORY, vec![canonical]);
         return Ok(Some(clean));
     }
     Ok(None)
 }
+
+const DATA_DIRECTORY_TITLE: &str = "Select VoxiType data directory";
 
 #[tauri::command]
 /// Writes the data-directory marker only; the new directory takes effect after
@@ -283,25 +306,29 @@ pub fn restart_app(app: AppHandle) {
     app.restart();
 }
 
-fn pick_data_directory_blocking() -> std::result::Result<Option<String>, AppError> {
+pub(super) fn pick_directory_blocking(
+    title: &str,
+) -> std::result::Result<Option<String>, AppError> {
     let script = r#"
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Select VoxiType data directory'
+$dialog.Description = $env:VX_PICK_TITLE
 $dialog.ShowNewFolderButton = $true
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     [Console]::Out.Write($dialog.SelectedPath)
 }
 "#;
     let mut command = Command::new("powershell.exe");
-    command.args([
-        "-NoProfile",
-        "-STA",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        script,
-    ]);
+    command
+        .args([
+            "-NoProfile",
+            "-STA",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .env("VX_PICK_TITLE", title);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     let output = command
@@ -375,7 +402,11 @@ pub fn set_whisper_cpp_paths(
     Ok(())
 }
 
-fn pick_setup_file_blocking(kind: &str) -> std::result::Result<Option<String>, AppError> {
+/// Returns the selected paths, one per line from the dialog; empty when cancelled.
+fn pick_setup_file_blocking(
+    kind: &str,
+    multiple: bool,
+) -> std::result::Result<Vec<String>, AppError> {
     let (title, filter) = match kind {
         "whisper_binary" => (
             "Select whisper-cli.exe",
@@ -398,9 +429,9 @@ $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Title = $env:VX_PICK_TITLE
 $dialog.Filter = $env:VX_PICK_FILTER
 $dialog.CheckFileExists = $true
-$dialog.Multiselect = $false
+$dialog.Multiselect = $env:VX_PICK_MULTIPLE -eq '1'
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Out.Write($dialog.FileName)
+    [Console]::Out.Write($dialog.FileNames -join "`n")
 }
 "#;
 
@@ -415,7 +446,8 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             script,
         ])
         .env("VX_PICK_TITLE", title)
-        .env("VX_PICK_FILTER", filter);
+        .env("VX_PICK_FILTER", filter)
+        .env("VX_PICK_MULTIPLE", if multiple { "1" } else { "0" });
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
@@ -429,12 +461,12 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         )));
     }
 
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(path))
-    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 pub(crate) fn resolve_test_api_key(
@@ -622,6 +654,20 @@ mod tests {
             Some(&canonical_file),
             &ghost.to_string_lossy()
         ));
+    }
+
+    #[test]
+    fn gated_kind_accepts_every_file_of_a_multi_pick_only() {
+        let state = test_app_state([2u8; 32]);
+        let (first, first_clean) = scratch_dir_with_file("multi-a");
+        let (second, second_clean) = scratch_dir_with_file("multi-b");
+        let (_other, other_clean) = scratch_dir_with_file("multi-c");
+        remember_picker_paths(&state, PICKER_KIND_AUDIO_FILE, vec![first, second]);
+
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &first_clean).is_ok());
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &second_clean).is_ok());
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &other_clean).is_err());
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_MODEL, &first_clean).is_err());
     }
 
     fn test_app_state(master_key: [u8; 32]) -> AppStateInner {

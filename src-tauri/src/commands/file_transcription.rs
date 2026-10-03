@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::misc::{ensure_picker_backed_path, PICKER_KIND_AUDIO_FILE};
+use super::misc::{ensure_picker_backed_path, pick_gated_files, PICKER_KIND_AUDIO_FILE};
 use super::runtime::{
     build_stt_config_for_language, build_stt_for_kind, llm_configs_from_settings, SettingsSnapshot,
 };
@@ -25,6 +25,8 @@ use crate::stt::SttEngineKind;
 use crate::AppStateInner;
 
 pub const MAX_FILE_DURATION_SECS: u64 = 60 * 60;
+/// Files per batch; the frontend queues them through `transcribe_file`.
+pub const MAX_BATCH_FILES: usize = 20;
 /// 10 minutes of 16-bit 16 kHz WAV is ~19 MB, under Groq's 25 MB upload cap.
 const CHUNK_SECS: usize = 600;
 const CUT_SEARCH_SECS: usize = 5;
@@ -93,18 +95,18 @@ pub struct FileTranscriptionResult {
     pub llm_issue: Option<StageIssue>,
 }
 
-/// Opens at most one picker; repeat calls while it is open return `None`.
+/// Opens at most one picker; repeat calls while it is open return no files.
 /// The dialog runs in a separate PowerShell process, so without this guard
 /// every click would spawn another explorer window.
 #[tauri::command]
-pub async fn pick_audio_file(
+pub async fn pick_audio_files(
     state: State<'_, AppStateInner>,
     jobs: State<'_, FileJobState>,
-) -> std::result::Result<Option<String>, AppError> {
+) -> std::result::Result<Vec<String>, AppError> {
     let Some(_picking) = FlagGuard::acquire(&jobs.picking) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
-    super::misc::pick_setup_file(state, PICKER_KIND_AUDIO_FILE.to_string()).await
+    pick_gated_files(&state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
 }
 
 #[tauri::command]
