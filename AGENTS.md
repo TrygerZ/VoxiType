@@ -66,7 +66,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (46 total across 9 modules)
+## IPC Commands (48 total across 9 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -79,12 +79,13 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
 | `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
 | `stats` | `get_usage_stats` |
-| `file_transcription` | `pick_audio_file`, `transcribe_file`, `cancel_file_transcription` |
+| `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (46 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (48 commands)
+- `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
 - `src-tauri/src/pipeline/file_job.rs` - File transcription: chunked STT, segmented LLM formatting, replacements. Runs outside the state machine, parallel to dictation
