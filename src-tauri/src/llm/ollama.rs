@@ -45,6 +45,7 @@ impl OllamaFormatter {
             .client
             .post(&url)
             .json(&body)
+            .timeout(self.config.request_timeout)
             .send()
             .await
             .map_err(|e| {

@@ -141,14 +141,16 @@ impl<'a> HistoryRepository<'a> {
     /// Lifetime totals aggregated over the whole table — independent of the
     /// list `LIMIT` used for the paginated history view. Powers the usage
     /// dashboard so totals never silently cap or shrink as old rows scroll
-    /// past the 100-row list window.
+    /// past the 100-row list window. File transcriptions are excluded: they
+    /// are not the user's own dictation time or words.
     pub fn totals(&self) -> Result<HistoryTotals> {
         self.db.with_conn(|c| {
             let row = c.query_row(
                 "SELECT COUNT(*),
                         COALESCE(SUM(word_count), 0),
                         COALESCE(SUM(duration_ms), 0)
-                 FROM transcriptions",
+                 FROM transcriptions
+                 WHERE mode != 'file'",
                 [],
                 |r| {
                     Ok(HistoryTotals {
@@ -376,6 +378,11 @@ mod tests {
         assert_eq!(t.total_sessions, 2);
         assert_eq!(t.total_words, 5);
         assert_eq!(t.total_duration_ms, 2000);
+
+        let mut file = sample("c", "rekaman rapat panjang");
+        file.mode = "file".to_string();
+        repo.insert(&file).unwrap();
+        assert_eq!(repo.totals().unwrap().total_sessions, 2);
     }
 
     #[test]

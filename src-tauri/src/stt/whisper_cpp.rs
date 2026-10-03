@@ -17,7 +17,10 @@ use crate::error::{AppError, Result};
 use std::os::windows::process::CommandExt;
 
 const SAMPLE_RATE: u64 = 16_000;
-const WHISPER_PROCESS_TIMEOUT: Duration = Duration::from_secs(300);
+const MIN_PROCESS_TIMEOUT_SECS: u64 = 300;
+/// Large models on weak CPUs can run slower than real time; allow twice the
+/// audio length so long file-transcription chunks are not killed mid-run.
+const PROCESS_TIMEOUT_PER_AUDIO_SEC: u64 = 2;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -93,7 +96,7 @@ impl Drop for TempRunDir {
     }
 }
 
-fn validate_config(config: &WhisperCppConfig) -> Result<()> {
+pub(crate) fn validate_config(config: &WhisperCppConfig) -> Result<()> {
     if config.binary_path.trim().is_empty() {
         return Err(AppError::stt("Set the whisper.cpp binary path"));
     }
@@ -121,6 +124,11 @@ fn is_path_like(value: &str) -> bool {
     value.contains('/') || value.contains('\\') || Path::new(value).is_absolute()
 }
 
+fn process_timeout(sample_count: usize) -> Duration {
+    let audio_secs = sample_count as u64 / SAMPLE_RATE;
+    Duration::from_secs((audio_secs * PROCESS_TIMEOUT_PER_AUDIO_SEC).max(MIN_PROCESS_TIMEOUT_SECS))
+}
+
 fn run_whisper(run: WhisperRun) -> Result<String> {
     let dir = TempRunDir::new()?;
     let wav_path = dir.path.join("audio.wav");
@@ -131,7 +139,7 @@ fn run_whisper(run: WhisperRun) -> Result<String> {
     let stderr_path = dir.path.join("stderr.log");
     let child = spawn_whisper_child(&run, &wav_path, &output_prefix, &stdout_path, &stderr_path)?;
 
-    let status = wait_child_bounded(child, WHISPER_PROCESS_TIMEOUT)?;
+    let status = wait_child_bounded(child, process_timeout(run.audio.len()))?;
     if !status.success() {
         let err_msg = read_command_error(&stderr_path, &stdout_path);
         return Err(AppError::stt(format!("whisper.cpp failed: {err_msg}")));
@@ -443,6 +451,12 @@ goto loop
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).unwrap();
         path
+    }
+
+    #[test]
+    fn process_timeout_scales_with_audio_length() {
+        assert_eq!(process_timeout(16_000 * 5), Duration::from_secs(300));
+        assert_eq!(process_timeout(16_000 * 600), Duration::from_secs(1200));
     }
 
     #[test]

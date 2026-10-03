@@ -28,6 +28,8 @@
 | Util | Shared HTTP client + retry/backoff | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
 | Data Directory | Marker resolution, validation, and copy-on-migrate | src-tauri/src/data_dir.rs |
+| File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
+| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi) | src-tauri/src/export.rs |
 
 ## Global Rules
 
@@ -66,7 +68,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (43 total across 8 modules)
+## IPC Commands (48 total across 9 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -79,13 +81,17 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
 | `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
 | `stats` | `get_usage_stats` |
+| `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (43 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (48 commands)
+- `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
+- `src-tauri/src/pipeline/file_job.rs` - File transcription: chunked STT, segmented LLM formatting, replacements. Runs outside the state machine, parallel to dictation
+- `src-tauri/src/audio/file_decode.rs` - symphonia decode to 16 kHz mono, silence-aware chunk splitting, 60-minute cap
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
 - `src-tauri/src/storage/db.rs` - SQLite schema + migrations
@@ -108,6 +114,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `settings/` | SettingsLayout, SettingsPanel, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
 | `history/` | HistoryPanel |
 | `dictionary/` | DictionaryPanel, SnippetsPanel |
+| `file-transcription/` | FileTranscriptionPanel, FileQueueItem |
 | `onboarding/` | `OnboardingFlow.tsx`, `types.ts`, `shared/` (`StepShell`, `StepProgress`), `steps/` (`WelcomeStep`, `QuickSettingsStep`, `MicrophoneStep`, `SttSetupStep`, `DataDirectoryStep`, `HotkeyStep`, `SmokeTestStep`, `CompleteStep`) |
 | root | ErrorBoundary |
 
@@ -152,6 +159,7 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 | `navigate` | `string` | System tray route navigation request for main window |
+| `file_transcription_progress` | `{ stage: "transcribing"\|"formatting", done, total }` | File job progress; `total` is 0 when the file reports no duration |
 
 ## Architecture Rules
 1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector

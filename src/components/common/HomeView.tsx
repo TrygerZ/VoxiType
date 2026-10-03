@@ -153,6 +153,8 @@ export function HomeView() {
   const avgWpm = useMemo(() => {
     const rates: number[] = [];
     for (const i of historyItems) {
+      // File transcripts measure someone else's speaking rate, not the user's.
+      if (i.mode === "file") continue;
       const dur = i.duration_ms ?? 0;
       if (!i.word_count || i.word_count <= 0) continue;
       if (dur <= 0) continue;

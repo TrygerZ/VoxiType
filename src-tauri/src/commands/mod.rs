@@ -5,6 +5,7 @@
 //! the global hotkey callbacks).
 
 mod dictionary;
+mod file_transcription;
 mod history;
 mod misc;
 mod per_app;
@@ -15,6 +16,7 @@ mod snippets;
 mod stats;
 
 pub use dictionary::*;
+pub use file_transcription::*;
 pub use history::*;
 pub use misc::*;
 pub use per_app::*;

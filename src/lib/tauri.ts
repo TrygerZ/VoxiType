@@ -16,7 +16,11 @@ import type {
   AppInfo,
   DeviceInfo,
   DictionaryEntry,
+  FileTranscriptionRequest,
+  FileTranscriptionResult,
   Snippet,
+  TranscriptExportFormat,
+  TranscriptExportItem,
   TranscriptionEntry,
   UpdateInfo,
   UsageStats,
@@ -134,6 +138,22 @@ export const testWhisperCpp = (
 
 // --- Stats ---
 export const getUsageStats = () => invoke<UsageStats>("get_usage_stats");
+
+// --- File transcription ---
+// transcribe_file only accepts paths from the latest pickAudioFiles result.
+export const pickAudioFiles = () => invoke<string[]>("pick_audio_files");
+export const transcribeFile = (request: FileTranscriptionRequest) =>
+  invoke<FileTranscriptionResult>("transcribe_file", { request });
+export const cancelFileTranscription = () =>
+  invoke<void>("cancel_file_transcription");
+// export_transcripts only writes into the latest pickExportDirectory result.
+export const pickExportDirectory = () =>
+  invoke<string | null>("pick_export_directory");
+export const exportTranscripts = (
+  directory: string,
+  format: TranscriptExportFormat,
+  items: TranscriptExportItem[],
+) => invoke<string[]>("export_transcripts", { directory, format, items });
 
 // --- Events ---
 export function onEvent<T>(

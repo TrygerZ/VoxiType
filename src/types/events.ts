@@ -22,6 +22,13 @@ export interface AudioLevelEvent {
   level: number;
 }
 
+export interface FileTranscriptionProgressEvent {
+  stage: "transcribing" | "formatting";
+  done: number;
+  /** 0 when the file does not report its duration. */
+  total: number;
+}
+
 export interface WidgetHideRequestedEvent {
   id: number;
 }

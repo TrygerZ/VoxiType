@@ -1,6 +1,6 @@
 [package]
 name = "voxitype"
-version = "0.5.2"
+version = "0.6.0"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
@@ -32,6 +32,10 @@ async-trait = "0.1"
 # --- Audio pipeline ---
 cpal = "0.15"
 rubato = "0.16"
+symphonia = { version = "0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+
+# --- Transcript export (DOCX container; entries are stored, not compressed) ---
+zip = { version = "=7.2.0", default-features = false }
 
 # --- HTTP client (Ollama, Groq) ---
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }

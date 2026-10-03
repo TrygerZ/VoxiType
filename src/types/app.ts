@@ -62,6 +62,45 @@ export interface UsageStats {
   total_sessions: number;
 }
 
+export type SttEngineId = "groq" | "whisper_cpp";
+export type LlmEngineId = "ollama" | "groq" | "rule_based";
+
+export type SttLanguageId = "auto" | "id" | "en";
+
+export interface FileTranscriptionRequest {
+  path: string;
+  stt_engine: SttEngineId;
+  language: SttLanguageId;
+  /** null skips LLM formatting. */
+  llm_engine: LlmEngineId | null;
+  apply_dictionary: boolean;
+}
+
+/** A stage that finished only partially. For STT, `count` is chunks done
+ *  before the failure; for LLM cleanup, `count` is segments left raw. */
+export interface StageIssue {
+  count: number;
+  total: number;
+  reason: string;
+}
+
+export interface FileTranscriptionResult {
+  id: string;
+  text: string;
+  word_count: number;
+  duration_ms: number;
+  stt_issue: StageIssue | null;
+  llm_issue: StageIssue | null;
+}
+
+export type TranscriptExportFormat = "txt" | "docx" | "pdf";
+
+export interface TranscriptExportItem {
+  /** Audio file path; the export is named after its file name. */
+  source_path: string;
+  text: string;
+}
+
 export interface UpdateInfo {
   available: boolean;
   current_version: string;

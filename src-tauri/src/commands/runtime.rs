@@ -165,18 +165,31 @@ fn normalize_stt_model(model: String) -> String {
     }
 }
 
+fn stt_configs_from_settings(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+    kind: SttEngineKind,
+) -> Result<(GroqSttConfig, WhisperCppConfig)> {
+    let api_key = match kind {
+        SttEngineKind::Groq => decrypted_api_key_from_settings(state, settings)?,
+        SttEngineKind::WhisperCpp => String::new(),
+    };
+    let groq = GroqSttConfig {
+        api_key,
+        model: normalize_stt_model(settings.string("stt_model", "whisper-large-v3-turbo")),
+        language: settings.string("stt_language", "auto"),
+        ..Default::default()
+    };
+    Ok((groq, whisper_cpp_config_from_settings(settings)))
+}
+
 pub fn build_stt_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Result<Arc<dyn crate::stt::SttEngine>> {
     let kind = stt_engine_kind(&settings.string("stt_engine", "groq"));
-    let api_key = match kind {
-        SttEngineKind::Groq => decrypted_api_key_from_settings(state, settings)?,
-        SttEngineKind::WhisperCpp => String::new(),
-    };
-    let model = normalize_stt_model(settings.string("stt_model", "whisper-large-v3-turbo"));
-    let whisper_cpp = whisper_cpp_config_from_settings(settings);
-    let cache_key = stt_cache_key(kind, &api_key, &model, &whisper_cpp);
+    let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
+    let cache_key = stt_cache_key(kind, &groq.api_key, &groq.model, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
     if let Some((cached_kind, cached_key, cached_engine)) = &*cache {
@@ -185,15 +198,30 @@ pub fn build_stt_from_settings(
         }
     }
 
-    let groq = GroqSttConfig {
-        api_key,
-        model,
-        language: settings.string("stt_language", "auto"),
-        ..Default::default()
-    };
     let new_engine = SttFactory::create(kind, groq, whisper_cpp);
     *cache = Some((kind, cache_key, new_engine.clone()));
     Ok(new_engine)
+}
+
+/// Build an engine of an explicit kind, bypassing the dictation cache so a
+/// file job never evicts the engine the hotkey pipeline is using.
+///
+/// Fails fast on missing setup so a long file is not decoded only to hit
+/// the same error on the first chunk.
+pub fn build_stt_for_kind(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+    kind: SttEngineKind,
+) -> Result<Arc<dyn crate::stt::SttEngine>> {
+    let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
+    match kind {
+        SttEngineKind::Groq if groq.api_key.trim().is_empty() => {
+            return Err(AppError::api_key_missing("Groq API key is not set"))
+        }
+        SttEngineKind::WhisperCpp => crate::stt::whisper_cpp::validate_config(&whisper_cpp)?,
+        SttEngineKind::Groq => {}
+    }
+    Ok(SttFactory::create(kind, groq, whisper_cpp))
 }
 
 fn stt_engine_kind(value: &str) -> SttEngineKind {
@@ -227,13 +255,21 @@ pub fn build_llm_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Arc<dyn crate::llm::LlmFormatter> {
-    let engine = settings.string("llm_engine", "ollama");
-    let kind = match engine.as_str() {
+    let kind = match settings.string("llm_engine", "ollama").as_str() {
         "off" => LlmEngineKind::Off,
         "groq" => LlmEngineKind::Groq,
         "rule_based" => LlmEngineKind::RuleBased,
         _ => LlmEngineKind::Ollama,
     };
+    let (ollama, groq) = llm_configs_from_settings(state, settings);
+    LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
+}
+
+/// Ollama and Groq LLM configs with the user's model and API key.
+pub fn llm_configs_from_settings(
+    state: &AppStateInner,
+    settings: &SettingsSnapshot,
+) -> (OllamaConfig, GroqLlmConfig) {
     let ollama = OllamaConfig {
         model: settings.string("llm_model", "qwen2.5:3b"),
         ..Default::default()
@@ -242,7 +278,7 @@ pub fn build_llm_from_settings(
         api_key: decrypted_api_key_from_settings(state, settings).unwrap_or_default(),
         ..Default::default()
     };
-    LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
+    (ollama, groq)
 }
 
 /// Maximum number of hotwords included in Whisper initial prompt.
@@ -268,7 +304,10 @@ pub fn build_stt_config(db: &Database) -> SttConfig {
 }
 
 pub fn build_stt_config_from_settings(db: &Database, settings: &SettingsSnapshot) -> SttConfig {
-    let language = settings.string("stt_language", "auto");
+    build_stt_config_for_language(db, settings.string("stt_language", "auto"))
+}
+
+pub fn build_stt_config_for_language(db: &Database, language: String) -> SttConfig {
     // When auto-detecting, skip hotwords to avoid biasing the STT model
     // toward a specific language.
     let hotwords = if language == "auto" {

@@ -10,6 +10,7 @@ pub mod crypto;
 pub mod data_dir;
 pub mod error;
 pub mod events;
+pub mod export;
 pub mod hotkey;
 pub mod injection;
 pub mod llm;
@@ -49,11 +50,11 @@ pub struct AppStateInner {
     /// Keeps the file-log writer thread alive; flushed on drop.
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
     pub stt_engine: std::sync::Mutex<SttEngineCache>,
-    /// Parent directory of the most recent native file-picker result, per
-    /// picker kind (e.g. "whisper_binary"). Paths for those settings written
-    /// back over IPC must canonicalize under these directories, so a
-    /// compromised webview cannot invent attacker-controlled paths.
-    pub last_picker_dirs: std::sync::Mutex<HashMap<String, PathBuf>>,
+    /// Canonical paths from the most recent native picker result, per picker
+    /// kind (e.g. "whisper_binary"). Paths written back over IPC must match
+    /// one of these exactly, so a compromised webview cannot invent
+    /// attacker-controlled paths.
+    pub last_picker_dirs: std::sync::Mutex<HashMap<String, Vec<PathBuf>>>,
     pub widget_timer: overlay::WidgetTimerState,
 }
 
@@ -207,6 +208,7 @@ pub fn run() {
                 .unwrap_or_default();
 
             app.manage(state);
+            app.manage(commands::FileJobState::default());
 
             // Windows have `create: false` in config to prevent webviews loading
             // before state is managed. Build them now: main first, then floating-widget.
@@ -236,6 +238,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::start_recording,
             commands::stop_recording,
+            commands::pick_audio_files,
+            commands::transcribe_file,
+            commands::cancel_file_transcription,
+            commands::pick_export_directory,
+            commands::export_transcripts,
             commands::get_settings,
             commands::update_setting,
             commands::set_floating_widget_enabled,

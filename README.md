@@ -4,9 +4,9 @@
 
 # VoxiType
 
-**Version 0.5.1** - Open-source voice-to-text for every app.
+**Version 0.6.0** - Open-source voice-to-text for every app.
 
-VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application.
+VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
 <img width="1292" height="1087" alt="VoxiType screenshot" src="https://github.com/user-attachments/assets/6af16b9e-0b5f-47aa-8c3a-5c3fd91cea09" />
 
@@ -23,6 +23,8 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 ## Features
 
 - **Speech-to-Text Anywhere** - Dictate into any active desktop application
+- **File Transcription** - Transcribe up to 20 audio files per batch (MP3, WAV, M4A, AAC, FLAC, OGG; 60 minutes each) with a per-file timer, while dictation keeps working
+- **Transcript Export** - Save one TXT, Word (DOCX), or PDF file per audio file; existing files are never overwritten
 - **Cloud Transcription** - Groq Whisper API (whisper-large-v3-turbo)
 - **Offline Transcription** - Local whisper.cpp with GGML models (see [docs/offline-whisper-cpp.md](docs/offline-whisper-cpp.md))
 - **AI-Powered Formatting** - Off/pass-through, rule-based cleanup, local Ollama (Qwen2.5 3B), or Groq cloud (Llama 3.1 8B)
@@ -51,8 +53,9 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 | State | Zustand 5.x |
 | Backend | Rust 1.85+ |
 | Storage | SQLite (rusqlite) |
-| Audio | cpal + rubato + ringbuf |
+| Audio | cpal + rubato + ringbuf; symphonia for file decode |
 | VAD | Energy-based (default) |
+| Export | TXT, DOCX (zip), PDF (built-in Helvetica) |
 | STT | Groq Whisper API + whisper.cpp (selectable via `stt_engine` setting) |
 | LLM | Ollama (Qwen2.5 3B), Groq (Llama 3.1 8B), rule-based, off |
 | Text Injection | enigo (keystroke) + arboard (clipboard) |
@@ -140,7 +143,7 @@ User presses hotkey
 
 ### IPC Surface
 
-VoxiType exposes **42 Tauri commands** organized into 8 modules:
+VoxiType exposes **48 Tauri commands** organized into 9 modules:
 
 | Module | Commands |
 |--------|----------|
@@ -150,8 +153,9 @@ VoxiType exposes **42 Tauri commands** organized into 8 modules:
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
 | `stats` | `get_usage_stats` |
+| `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
 ### Events (Backend → Frontend)
 
@@ -163,6 +167,8 @@ VoxiType exposes **42 Tauri commands** organized into 8 modules:
 | `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0 to 1.0) |
 | `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
+| `navigate` | `string` | System tray route navigation request for main window |
+| `file_transcription_progress` | `{ stage: "transcribing"\|"formatting", done, total }` | File job progress; `total` is 0 when the file reports no duration |
 
 ## Project Structure
 
@@ -171,6 +177,7 @@ src/                  # React frontend
 ├── components/
 │   ├── common/          # FloatingDock, HomeView, PanelHeader, WpmHalfRing
 │   ├── dictionary/      # DictionaryPanel, SnippetsPanel
+│   ├── file-transcription/ # FileTranscriptionPanel + FileQueueItem (batch queue, timer, export)
 │   ├── floating-widget/ # FloatingWidget + Waveform (overlay window)
 │   ├── history/         # HistoryPanel (search, pin, export, re-inject)
 │   ├── onboarding/      # OnboardingFlow (first-run setup: 8 steps)
@@ -179,25 +186,26 @@ src/                  # React frontend
 │   └── ErrorBoundary.tsx # Top-level React error boundary
 ├── hooks/               # useTauriEvents (backend event subscriptions)
 ├── lib/                 # tauri.ts (typed invoke/listen), i18n.ts (EN/ID)
-├── stores/              # Zustand: appStore, settingsStore, historyStore, dictionaryStore, snippetStore, statsStore
+├── stores/              # Zustand: appStore, settingsStore, historyStore, dictionaryStore, snippetStore, statsStore, fileTranscriptionStore, toastStore
 ├── styles/              # index.css (Tailwind 4, dark theme, glassmorphism)
 └── types/               # app.ts, events.ts
 
 src-tauri/src/        # Rust backend
 ├── active_window.rs  # Per-app mode detection via Win32 API
-├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD
-├── commands/         # Tauri IPC handlers (42 commands across 8 modules + runtime helpers)
+├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD + file decode (symphonia)
+├── commands/         # Tauri IPC handlers (48 commands across 9 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
 ├── error.rs          # Unified AppError + typed ErrorCode
 ├── events.rs         # Tauri event emitters (state_changed, audio_level, etc.)
+├── export.rs         # Transcript export writers (TXT, DOCX, PDF)
 ├── hotkey/           # Global hotkey registration + rebind
 ├── injection/        # Text injection (keystroke, clipboard, hybrid, command mode)
 ├── llm/              # LLM formatting (Ollama, Groq, rule-based, fallback chain)
 ├── logging.rs        # tracing to stderr + rotating file
 ├── main.rs           # Tauri entry point
 ├── overlay.rs        # Floating widget window control + position persistence
-├── pipeline/         # State machine orchestrator + batch processing
+├── pipeline/         # State machine orchestrator + batch processing + file transcription job
 ├── sound.rs          # Optional recording sound cues (start/stop tones)
 ├── storage/          # SQLite database
 │   ├── db.rs         # Database open + migrations
