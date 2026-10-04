@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-04
+
+### Fixed
+- Fixed dictated text going to the floating widget instead of the target app after the widget reappeared. The widget window no longer takes keyboard focus.
+- Fixed duplicate start or stop requests causing an "Invalid state transition" error. The losing request is now ignored.
+- Fixed a late result from an earlier dictation forcing a newer recording into the error state. Results from older sessions are now ignored.
+- Fixed the keystroke fallback cutting text at the first line break. Multi-line text is now typed in full, and the recorded character count matches the injected text.
+- Fixed paste and voice command shortcuts failing on non-Latin keyboard layouts. Shortcuts now use layout-independent keys.
+
+### Security
+- Restricted the Content Security Policy `connect-src` directive to the app's own origin. The UI makes no direct network calls, so the Groq and Ollama endpoints were removed.
+
 ## [0.6.0] - 2026-10-03
 
 ### Added
@@ -292,7 +304,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/TrygerZ/VoxiType/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/TrygerZ/VoxiType/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TrygerZ/VoxiType/compare/v0.5.0...v0.5.1
