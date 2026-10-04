@@ -46,7 +46,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "app"],
+    "targets": ["nsis"],
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",
