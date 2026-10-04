@@ -1,6 +1,7 @@
 //! Small shared helpers used across modules.
 
 use std::future::Future;
+use std::path::Path;
 use std::sync::{MutexGuard, OnceLock};
 use std::time::Duration;
 
@@ -17,6 +18,43 @@ impl<T> MutexExt<T> for std::sync::Mutex<T> {
     fn lock_recover(&self) -> MutexGuard<'_, T> {
         self.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// Write `content` to `destination` atomically: a temp file in the same
+/// directory is written, synced, and renamed over the target, so a crash
+/// mid-write never leaves a truncated or half-written file behind.
+pub fn write_atomic(destination: &Path, content: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let file_stem = destination
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    let temporary = parent.join(format!(".{file_stem}.tmp-{}-{}", std::process::id(), nonce));
+    let result = (|| {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(content)?;
+        file.sync_all()?;
+        // Close before rename (Windows refuses to rename an open file).
+        drop(file);
+        // Carry the destination's mode across the replace so an atomic rewrite
+        // never loosens an existing file's permissions (for example a 0600
+        // master.key on Unix).
+        if let Ok(metadata) = std::fs::metadata(destination) {
+            let _ = std::fs::set_permissions(&temporary, metadata.permissions());
+        }
+        std::fs::rename(&temporary, destination)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
 }
 
 /// Default connect timeout for all outbound HTTP requests.

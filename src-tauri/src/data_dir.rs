@@ -44,7 +44,7 @@ pub fn read_error(default_dir: &Path) -> Option<String> {
 /// Records a data directory failure diagnostic message.
 pub fn record_error(default_dir: &Path, message: &str) {
     let error_path = default_dir.join(DATA_DIR_ERROR_FILE);
-    let _ = write_atomic(&error_path, message.as_bytes());
+    let _ = crate::util::write_atomic(&error_path, message.as_bytes());
 }
 
 /// Clears any recorded data directory failure diagnostic.
@@ -187,7 +187,7 @@ pub(crate) fn graduate_marker(default_dir: &Path, target_dir: &Path) -> Result<(
         current: target_dir.to_path_buf(),
         pending: None,
     };
-    write_atomic(&marker_path, &serde_json::to_vec(&marker)?).map_err(|error| {
+    crate::util::write_atomic(&marker_path, &serde_json::to_vec(&marker)?).map_err(|error| {
         AppError::data_directory(format!("failed to graduate data directory marker: {error}"))
     })?;
     Ok(())
@@ -373,28 +373,6 @@ fn copy_logs_best_effort(source_dir: &Path, target_dir: &Path) {
     }
 }
 
-fn write_atomic(destination: &Path, content: &[u8]) -> std::io::Result<()> {
-    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    let file_stem = destination
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
-    let temporary = parent.join(format!(".{file_stem}.tmp-{}-{}", std::process::id(), nonce));
-    let result = (|| {
-        std::fs::write(&temporary, content)?;
-        std::fs::rename(&temporary, destination)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
-}
-
 fn resolve_custom_dir(default_dir: &Path) -> Result<Option<PathBuf>> {
     let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
     let marker = match std::fs::read_to_string(&marker_path) {
@@ -445,7 +423,7 @@ pub(crate) fn write_marker(default_dir: &Path, current: &Path, pending: &Path) -
     };
     let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
     let bytes = serde_json::to_vec(&marker)?;
-    write_atomic(&marker_path, &bytes).map_err(|error| {
+    crate::util::write_atomic(&marker_path, &bytes).map_err(|error| {
         AppError::data_directory(format!("failed to write data directory marker: {error}"))
     })
 }

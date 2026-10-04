@@ -282,26 +282,25 @@ fn load_protected_key(blob: &[u8]) -> Result<[u8; MASTER_KEY_LEN]> {
     }
 }
 
-#[cfg(unix)]
+/// Rewrite `master.key` atomically so a crash mid-write cannot truncate it and
+/// orphan every encrypted API key. Uses the shared temp-file + rename helper.
 fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let payload = serialize_master_key(key)?;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(&payload)?;
-    file.sync_all()?;
+    crate::util::write_atomic(path, &payload)?;
+    restrict_key_file_permissions(path)
+}
+
+/// Keep `master.key` readable only by its owner on Unix. On Windows the payload
+/// is DPAPI-wrapped, so file permissions add nothing.
+#[cfg(unix)]
+fn restrict_key_file_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
-    let payload = serialize_master_key(key)?;
-    std::fs::write(path, payload)?;
+fn restrict_key_file_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -737,5 +736,34 @@ mod tests {
             decode_raw_key(&[5u8; MASTER_KEY_LEN]).unwrap(),
             [5u8; MASTER_KEY_LEN]
         );
+    }
+
+    #[test]
+    fn write_key_file_writes_content_without_leaving_temp_files() {
+        let dir = std::env::temp_dir().join(format!("voxitype_key_atomic_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = key_path(&dir);
+        // Seed an existing key so the rewrite must replace it atomically.
+        write_key_file(&path, &[1u8; MASTER_KEY_LEN]).unwrap();
+        write_key_file(&path, &[2u8; MASTER_KEY_LEN]).unwrap();
+
+        // The DPAPI blob is non-deterministic, so compare the unwrapped key.
+        match parse_stored_key_file(&std::fs::read(&path).unwrap()).unwrap() {
+            StoredKeyFile::LegacyRaw(key) => assert_eq!(key, [2u8; MASTER_KEY_LEN]),
+            StoredKeyFile::DpapiWrapped(blob) => {
+                assert_eq!(load_protected_key(&blob).unwrap(), [2u8; MASTER_KEY_LEN])
+            }
+        }
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "atomic write must not leave temp files"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
