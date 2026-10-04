@@ -70,19 +70,60 @@ impl PipelineOrchestrator {
     /// Apply a state event, mutating the stored state in place.
     pub fn apply(&self, event: StateEvent) -> Result<AppStateTag> {
         let mut guard = self.state.lock_recover();
-        let current = std::mem::replace(&mut *guard, AppState::Idle);
+        self.transition_locked(&mut guard, event)
+    }
+
+    /// Transition `state` in place and advance the generation on success.
+    ///
+    /// Callers must already hold the state lock so the read-check-write of a
+    /// transition is atomic with respect to other transitions.
+    fn transition_locked(&self, state: &mut AppState, event: StateEvent) -> Result<AppStateTag> {
+        let current = std::mem::replace(state, AppState::Idle);
         match current.transition(event) {
             Ok(next) => {
                 let tag = next.tag();
-                *guard = next;
+                *state = next;
                 self.generation.fetch_add(1, Ordering::SeqCst);
                 Ok(tag)
             }
             Err((original, e)) => {
-                *guard = original;
+                *state = original;
                 Err(e)
             }
         }
+    }
+
+    /// Start recording only when the current state allows it, as one atomic
+    /// check-and-transition.
+    ///
+    /// Returns the new tag on success, or `None` when a concurrent transition
+    /// already moved the pipeline out of a startable state (Idle or Error).
+    /// This closes the check-then-act race where two starts both pass a
+    /// separate `state_tag()` check.
+    pub fn try_start_recording(&self, active_app: Option<String>) -> Option<AppStateTag> {
+        let mut guard = self.state.lock_recover();
+        if !matches!(*guard, AppState::Idle | AppState::Error { .. }) {
+            return None;
+        }
+        self.transition_locked(&mut guard, StateEvent::StartRecording { active_app })
+            .ok()
+    }
+
+    /// Stop capturing only when the pipeline is Recording, as one atomic
+    /// check-and-transition.
+    ///
+    /// Returns `Ok(None)` when a concurrent transition already ended the
+    /// recording, so only the winning caller touches the microphone stream.
+    pub fn try_stop_recording(&self) -> Result<Option<Vec<f32>>> {
+        {
+            let mut guard = self.state.lock_recover();
+            if !matches!(*guard, AppState::Recording { .. }) {
+                return Ok(None);
+            }
+            self.transition_locked(&mut guard, StateEvent::StopRecording)?;
+        }
+        let samples = self.audio.lock_recover().stop()?;
+        Ok(Some(samples))
     }
 
     fn verify_session(&self, target_gen: u64) -> bool {
@@ -287,6 +328,62 @@ mod tests {
 
         pipeline.finish_processing().unwrap();
         assert_eq!(pipeline.current_generation(), 3);
+    }
+
+    #[test]
+    fn try_start_recording_rejects_when_already_recording() {
+        let pipeline = PipelineOrchestrator::new();
+        assert_eq!(
+            pipeline.try_start_recording(None),
+            Some(AppStateTag::Recording)
+        );
+
+        // A second start must not turn the healthy recording into an error.
+        assert_eq!(pipeline.try_start_recording(None), None);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn try_start_recording_allows_retry_from_error() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline.set_error(&AppError::internal("boom"));
+
+        assert_eq!(
+            pipeline.try_start_recording(None),
+            Some(AppStateTag::Recording)
+        );
+    }
+
+    #[test]
+    fn try_stop_recording_skips_when_not_recording() {
+        let pipeline = PipelineOrchestrator::new();
+        assert!(pipeline.try_stop_recording().unwrap().is_none());
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
+    }
+
+    #[test]
+    fn race_double_stop_produces_one_winner_and_no_error() {
+        use std::sync::Arc;
+
+        for _ in 0..50 {
+            let pipeline = Arc::new(PipelineOrchestrator::new());
+            pipeline
+                .apply(StateEvent::StartRecording { active_app: None })
+                .unwrap();
+
+            let p1 = pipeline.clone();
+            let h1 = std::thread::spawn(move || p1.try_stop_recording().unwrap().is_some());
+            let p2 = pipeline.clone();
+            let h2 = std::thread::spawn(move || p2.try_stop_recording().unwrap().is_some());
+
+            let winners = [h1.join().unwrap(), h2.join().unwrap()]
+                .into_iter()
+                .filter(|won| *won)
+                .count();
+
+            assert_eq!(winners, 1, "exactly one stop must win");
+            assert_eq!(pipeline.state_tag(), AppStateTag::Processing);
+        }
     }
 
     #[test]

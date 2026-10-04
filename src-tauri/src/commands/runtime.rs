@@ -586,18 +586,13 @@ pub fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
 pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let started_at = Instant::now();
     let state = app.state::<AppStateInner>();
-    let tag = state.pipeline.state_tag();
-    if tag != crate::pipeline::AppStateTag::Idle && tag != crate::pipeline::AppStateTag::Error {
-        return;
-    }
 
     let active_app = crate::active_window::foreground_process_name();
-    let tag = match state
-        .pipeline
-        .apply(crate::pipeline::StateEvent::StartRecording { active_app })
-    {
-        Ok(t) => t,
-        Err(e) => return fail(app, &state.pipeline, &e),
+    // Atomic check-and-start: a concurrent start (hotkey plus IPC) that loses
+    // the race is benign, not a user-facing error.
+    let Some(tag) = state.pipeline.try_start_recording(active_app) else {
+        tracing::debug!("Ignoring duplicate start: pipeline is not startable");
+        return;
     };
 
     state
@@ -693,15 +688,18 @@ fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
 
 pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
-    if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Recording {
-        return;
-    }
 
-    crate::overlay::reset_idle_timer(&state);
-    let audio = match state.pipeline.stop_recording() {
-        Ok(audio) => audio,
+    // Atomic check-and-stop: a concurrent stop (hotkey plus IPC plus auto-stop)
+    // that loses the race is benign, not a user-facing error.
+    let audio = match state.pipeline.try_stop_recording() {
+        Ok(Some(audio)) => audio,
+        Ok(None) => {
+            tracing::debug!("Ignoring duplicate stop: pipeline is not recording");
+            return;
+        }
         Err(e) => return fail(app, &state.pipeline, &e),
     };
+    crate::overlay::reset_idle_timer(&state);
 
     // Recordings without sustained voice are taps or clicks, not speech.
     if !has_enough_voice(&audio, TARGET_SAMPLE_RATE) {
