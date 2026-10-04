@@ -124,20 +124,34 @@ fn read_marker_target(marker_path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Resolve the directory to copy existing data from when switching to `target_dir`.
+///
+/// The source is the directory that was active before the switch, recorded as
+/// `current` in the marker. For a pending marker `current` is the previous
+/// active directory; for a graduated marker (the steady state after a
+/// successful switch) `current` is the custom directory itself, so a
+/// re-migration is a no-op rather than copying from a bogus path.
 pub fn migration_source(default_dir: &Path, target_dir: &Path) -> PathBuf {
     if target_dir == default_dir {
         return default_dir.to_path_buf();
     }
-    std::fs::read_to_string(default_dir.join(DATA_DIR_MARKER_FILE))
-        .ok()
-        .and_then(|contents| serde_json::from_str::<DataDirMarker>(&contents).ok())
-        .and_then(|marker| marker.pending.map(|_| marker.current))
-        .or_else(|| {
-            std::fs::read_to_string(default_dir.join(DATA_DIR_MARKER_FILE))
-                .ok()
-                .map(|contents| PathBuf::from(contents.trim()))
-        })
-        .unwrap_or_else(|| default_dir.to_path_buf())
+    match std::fs::read_to_string(default_dir.join(DATA_DIR_MARKER_FILE)) {
+        Ok(contents) => parse_marker_source(&contents).unwrap_or_else(|| default_dir.to_path_buf()),
+        Err(_) => default_dir.to_path_buf(),
+    }
+}
+
+/// Extract the source directory from marker contents.
+///
+/// A JSON marker (pending or graduated) yields its `current` path. A plain-text
+/// legacy marker yields the trimmed path. Only when JSON parsing fails is the
+/// raw text treated as a path, so a JSON marker is never mistaken for one.
+fn parse_marker_source(contents: &str) -> Option<PathBuf> {
+    if let Ok(marker) = serde_json::from_str::<DataDirMarker>(contents) {
+        return Some(marker.current);
+    }
+    let trimmed = contents.trim();
+    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
 }
 
 /// Completes the first-use copy into a marker-selected directory.
@@ -725,6 +739,50 @@ mod tests {
         assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
         assert!(!target.0.join("data/voxitype.db").exists());
         assert!(source.0.join(DATA_DIR_MARKER_FILE).exists());
+    }
+
+    #[test]
+    fn migration_source_returns_custom_path_for_graduated_marker() {
+        let default_dir = TempDir::new();
+        let custom_dir = TempDir::new();
+        // Graduated marker: the steady state after a successful switch.
+        let marker = serde_json::json!({ "current": custom_dir.0, "pending": null });
+        std::fs::write(
+            default_dir.0.join(DATA_DIR_MARKER_FILE),
+            serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            migration_source(&default_dir.0, &custom_dir.0),
+            custom_dir.0
+        );
+    }
+
+    #[test]
+    fn migration_source_falls_back_to_plain_path_for_legacy_marker() {
+        let default_dir = TempDir::new();
+        let custom_dir = TempDir::new();
+        std::fs::write(
+            default_dir.0.join(DATA_DIR_MARKER_FILE),
+            custom_dir.0.to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            migration_source(&default_dir.0, &custom_dir.0),
+            custom_dir.0
+        );
+    }
+
+    #[test]
+    fn migration_source_returns_current_for_pending_marker() {
+        let default_dir = TempDir::new();
+        let first = TempDir::new();
+        let second = TempDir::new();
+        write_marker(&default_dir.0, &first.0, &second.0).unwrap();
+
+        assert_eq!(migration_source(&default_dir.0, &second.0), first.0);
     }
 
     #[test]
