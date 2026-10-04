@@ -374,13 +374,19 @@ pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
 // ---------------------------------------------------------------
 
 /// Process the captured audio through STT → LLM → injection → persist → emit.
-pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
+///
+/// `session_generation` identifies the recording this audio belongs to.
+/// Completion and failure transitions are ignored when a newer session has
+/// started, so a delayed batch cannot destroy a live recording.
+pub async fn process_audio<R: Runtime>(
+    app: AppHandle<R>,
+    audio: Vec<f32>,
+    session_generation: u64,
+) {
     let state = app.state::<AppStateInner>();
 
     if audio.is_empty() {
-        if let Err(e) = state.pipeline.finish_processing() {
-            tracing::error!("Failed to finish processing on empty audio: {e}");
-        }
+        finish_session(&state.pipeline, session_generation, "empty audio");
         events::emit_state(&app, state.pipeline.state_tag());
         crate::overlay::reset_idle_timer(&state);
         crate::overlay::maybe_hide(&app);
@@ -389,12 +395,12 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
 
     let settings = match SettingsSnapshot::load(&state.db) {
         Ok(s) => s,
-        Err(e) => return fail(&app, &state.pipeline, &e),
+        Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
     };
 
     let stt = match build_stt_from_settings(&state, &settings) {
         Ok(e) => e,
-        Err(e) => return fail(&app, &state.pipeline, &e),
+        Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
     };
     let stt_config = build_stt_config_from_settings(&state.db, &settings);
 
@@ -411,14 +417,12 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                         initial_app.as_deref(),
                         current_app.as_deref(),
                     ) {
-                        return fail(&app, &state.pipeline, &e);
+                        return fail_session(&app, &state.pipeline, session_generation, &e);
                     }
                     if let Err(e) = crate::injection::command::execute(cmd) {
-                        return fail(&app, &state.pipeline, &e);
+                        return fail_session(&app, &state.pipeline, session_generation, &e);
                     }
-                    if let Err(e) = state.pipeline.finish_processing() {
-                        tracing::error!("Failed to finish processing command: {e}");
-                    }
+                    finish_session(&state.pipeline, session_generation, "command");
                     events::emit_transcription_complete(
                         &app,
                         &Uuid::new_v4().to_string(),
@@ -433,7 +437,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 }
                 precomputed = Some(tr);
             }
-            Err(e) => return fail(&app, &state.pipeline, &e),
+            Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
         }
     }
 
@@ -534,7 +538,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 );
             }
 
-            if let Err(e) = state.pipeline.finish_processing() {
+            if let Err(e) = state.pipeline.finish_processing(session_generation) {
                 tracing::error!("Failed to finish processing transcription: {e}");
             }
             events::emit_transcription_complete(
@@ -552,7 +556,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
             if settings.bool("telemetry", false) {
                 let _ = crate::storage::StatsRepository::new(&state.db).record_error();
             }
-            fail(&app, &state.pipeline, &e)
+            fail_session(&app, &state.pipeline, session_generation, &e)
         }
     }
 }
@@ -565,6 +569,38 @@ pub fn fail<R: Runtime>(app: &AppHandle<R>, pipeline: &PipelineOrchestrator, e: 
     let state = app.state::<AppStateInner>();
     crate::overlay::reset_idle_timer(&state);
     hide_overlay_soon(app.clone());
+}
+
+/// Fail the batch only when it still belongs to the current session.
+///
+/// A stale batch (its session was superseded by a new recording) logs and
+/// returns without emitting an error or changing state, so a late failure
+/// cannot clobber a live recording.
+fn fail_session<R: Runtime>(
+    app: &AppHandle<R>,
+    pipeline: &PipelineOrchestrator,
+    session_generation: u64,
+    e: &AppError,
+) {
+    if pipeline.set_error_if_generation(session_generation, e) {
+        tracing::error!("Pipeline error: {e}");
+        events::emit_transcription_error(app, &e.message, &format!("{:?}", e.code));
+        events::emit_state(app, pipeline.state_tag());
+        let state = app.state::<AppStateInner>();
+        crate::overlay::reset_idle_timer(&state);
+        hide_overlay_soon(app.clone());
+    } else {
+        tracing::debug!("Ignoring stale pipeline error from superseded session: {e}");
+    }
+}
+
+/// Complete processing for the current session, ignoring a stale completion.
+fn finish_session(pipeline: &PipelineOrchestrator, session_generation: u64, context: &str) {
+    match pipeline.finish_processing(session_generation) {
+        Ok(true) => {}
+        Ok(false) => tracing::debug!("Ignoring stale completion for {context}"),
+        Err(e) => tracing::error!("Failed to finish processing ({context}): {e}"),
+    }
 }
 
 pub fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
@@ -691,8 +727,8 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
 
     // Atomic check-and-stop: a concurrent stop (hotkey plus IPC plus auto-stop)
     // that loses the race is benign, not a user-facing error.
-    let audio = match state.pipeline.try_stop_recording() {
-        Ok(Some(audio)) => audio,
+    let (audio, session_generation) = match state.pipeline.try_stop_recording() {
+        Ok(Some(session)) => session,
         Ok(None) => {
             tracing::debug!("Ignoring duplicate stop: pipeline is not recording");
             return;
@@ -703,7 +739,7 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
 
     // Recordings without sustained voice are taps or clicks, not speech.
     if !has_enough_voice(&audio, TARGET_SAMPLE_RATE) {
-        return discard_silent_recording(app, &state);
+        return discard_silent_recording(app, &state, session_generation);
     }
 
     if sound_cues_enabled(&state.db) {
@@ -712,17 +748,19 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
     events::emit_state(app, state.pipeline.state_tag());
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        process_audio(app2, audio).await;
+        process_audio(app2, audio, session_generation).await;
     });
 }
 
 /// Return to idle after discarding audio that holds no usable speech.
 /// Mirrors the cancel path: no STT, no stop cue.
-fn discard_silent_recording<R: Runtime>(app: &AppHandle<R>, state: &AppStateInner) {
+fn discard_silent_recording<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppStateInner,
+    session_generation: u64,
+) {
     tracing::debug!("Discarding recording without sustained voice");
-    if let Err(e) = state.pipeline.finish_processing() {
-        tracing::error!("Failed to finish processing on discarded audio: {e}");
-    }
+    finish_session(&state.pipeline, session_generation, "discarded audio");
     events::emit_state(app, state.pipeline.state_tag());
     crate::overlay::maybe_hide(app);
 }

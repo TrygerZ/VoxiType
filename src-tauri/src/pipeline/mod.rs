@@ -110,20 +110,37 @@ impl PipelineOrchestrator {
     }
 
     /// Stop capturing only when the pipeline is Recording, as one atomic
-    /// check-and-transition.
+    /// check-and-transition, then return the captured samples plus the
+    /// generation that identifies this processing session.
     ///
     /// Returns `Ok(None)` when a concurrent transition already ended the
     /// recording, so only the winning caller touches the microphone stream.
-    pub fn try_stop_recording(&self) -> Result<Option<Vec<f32>>> {
-        {
+    pub fn try_stop_recording(&self) -> Result<Option<(Vec<f32>, u64)>> {
+        let session_generation = {
             let mut guard = self.state.lock_recover();
             if !matches!(*guard, AppState::Recording { .. }) {
                 return Ok(None);
             }
             self.transition_locked(&mut guard, StateEvent::StopRecording)?;
-        }
+            self.generation.load(Ordering::SeqCst)
+        };
         let samples = self.audio.lock_recover().stop()?;
-        Ok(Some(samples))
+        Ok(Some((samples, session_generation)))
+    }
+
+    /// Apply an event only when the session generation still matches.
+    ///
+    /// Returns `true` when the transition was applied, `false` when a newer
+    /// session has since started so the completion is stale and must be
+    /// ignored. Prevents a delayed batch result from destroying a live
+    /// recording.
+    fn apply_if_generation(&self, session_generation: u64, event: StateEvent) -> Result<bool> {
+        let mut guard = self.state.lock_recover();
+        if self.generation.load(Ordering::SeqCst) != session_generation {
+            return Ok(false);
+        }
+        self.transition_locked(&mut guard, event)?;
+        Ok(true)
     }
 
     fn verify_session(&self, target_gen: u64) -> bool {
@@ -214,18 +231,38 @@ impl PipelineOrchestrator {
         Ok(())
     }
 
-    /// Mark processing as finished.
-    pub fn finish_processing(&self) -> Result<()> {
-        self.apply(StateEvent::ProcessingComplete)?;
-        Ok(())
+    /// Mark processing as finished for the given session.
+    ///
+    /// No-op returning `Ok(false)` when a newer session has started, so a
+    /// delayed batch cannot end a live recording.
+    pub fn finish_processing(&self, session_generation: u64) -> Result<bool> {
+        self.apply_if_generation(session_generation, StateEvent::ProcessingComplete)
     }
 
-    /// Move to error state.
+    /// Move to error state unconditionally.
+    ///
+    /// Used for failures that belong to no tracked batch, such as a capture
+    /// that never started.
     pub fn set_error(&self, err: &AppError) {
         let _ = self.apply(StateEvent::Error {
             message: err.message.clone(),
             code: err.code,
         });
+    }
+
+    /// Move to error state only for the given session.
+    ///
+    /// Returns `false` when a newer session has started, so a stale batch
+    /// failure is ignored instead of clobbering a live recording.
+    pub fn set_error_if_generation(&self, session_generation: u64, err: &AppError) -> bool {
+        self.apply_if_generation(
+            session_generation,
+            StateEvent::Error {
+                message: err.message.clone(),
+                code: err.code,
+            },
+        )
+        .unwrap_or(false)
     }
 }
 
@@ -326,7 +363,8 @@ mod tests {
         pipeline.apply(StateEvent::StopRecording).unwrap();
         assert_eq!(pipeline.current_generation(), 2);
 
-        pipeline.finish_processing().unwrap();
+        let session_gen = pipeline.current_generation();
+        pipeline.finish_processing(session_gen).unwrap();
         assert_eq!(pipeline.current_generation(), 3);
     }
 
@@ -384,6 +422,61 @@ mod tests {
             assert_eq!(winners, 1, "exactly one stop must win");
             assert_eq!(pipeline.state_tag(), AppStateTag::Processing);
         }
+    }
+
+    #[test]
+    fn stale_finish_processing_is_ignored_after_new_session() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        let stale_generation = pipeline.current_generation();
+
+        // A concurrent failure moved Processing -> Error and the user retried,
+        // starting a new recording before the old batch finished.
+        pipeline.set_error(&AppError::internal("concurrent failure"));
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+
+        let applied = pipeline.finish_processing(stale_generation).unwrap();
+        assert!(!applied);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn stale_set_error_is_ignored_after_new_session() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        let stale_generation = pipeline.current_generation();
+
+        pipeline.set_error(&AppError::internal("concurrent failure"));
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+
+        let applied =
+            pipeline.set_error_if_generation(stale_generation, &AppError::internal("late"));
+        assert!(!applied);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn matching_generation_still_applies_completion() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        let session_generation = pipeline.current_generation();
+
+        assert!(pipeline.finish_processing(session_generation).unwrap());
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
     }
 
     #[test]
