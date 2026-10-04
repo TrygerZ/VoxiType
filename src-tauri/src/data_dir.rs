@@ -260,6 +260,10 @@ fn copy_database_files(
             copy_verified(&source_shm, &sidecar_path(target_db, "-shm"))?;
         }
         copy_verified(source_key, target_key)?;
+        // A legitimate pre-DPAPI install may still hold a raw key. Re-wrap it at
+        // the custom destination so migration keeps working; the load-time gate
+        // rejects a raw key left in a custom directory (M-4).
+        crate::crypto::rewrap_legacy_key_if_raw(target_key)?;
         Ok(())
     };
     if let Err(error) = copy_sidecars_and_key() {
@@ -853,9 +857,14 @@ mod tests {
         std::fs::write(target.0.join("data/voxitype.db"), b"SQLite format 3\0stale").unwrap();
 
         assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        // Migration preserves the key value. A distinct "default" dir is passed
+        // so the load path treats `target` as a custom dir: on Windows the raw
+        // source key must have been re-wrapped during migration (M-4), else this
+        // load would fail closed.
+        let default_dir = TempDir::new();
         assert_eq!(
-            std::fs::read(target.0.join("master.key")).unwrap(),
-            vec![7u8; 32]
+            crate::crypto::get_master_key(&target.0, &default_dir.0).unwrap(),
+            [7u8; 32]
         );
     }
 
@@ -873,9 +882,11 @@ mod tests {
             std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
             std::fs::read(source.0.join("data/voxitype.db")).unwrap()
         );
+        // Value preserved; re-wrapped at the custom destination on Windows (M-4).
+        let default_dir = TempDir::new();
         assert_eq!(
-            std::fs::read(target.0.join("master.key")).unwrap(),
-            vec![7u8; 32]
+            crate::crypto::get_master_key(&target.0, &default_dir.0).unwrap(),
+            [7u8; 32]
         );
     }
 

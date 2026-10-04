@@ -65,7 +65,7 @@ impl AppStateInner {
         let db_path = app_data_dir.join("data").join("voxitype.db");
         tracing::info!("Opening database at '{}'", db_path.display());
         let db = Database::open(&db_path)?;
-        let master_key = crypto::get_master_key(&app_data_dir)?;
+        let master_key = crypto::get_master_key(&app_data_dir, &default_app_data_dir)?;
 
         // Prune old history based on retention days setting
         let settings = SettingsManager::new(&db);
