@@ -1,6 +1,7 @@
 //! Shared runtime helpers for STT/LLM config building and the core
 //! recording → process → inject → persist pipeline.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -152,6 +153,51 @@ fn whisper_cpp_config_from_settings(settings: &SettingsSnapshot) -> WhisperCppCo
     }
 }
 
+/// Setting key holding the picker-issued token that vouches for the binary path.
+pub const WHISPER_BINARY_TOKEN_KEY: &str = "whisper_cpp_binary_token";
+
+/// User-facing instruction shown when the whisper.cpp binary cannot be trusted.
+const WHISPER_BINARY_RE_SELECT: &str =
+    "Re-select the whisper.cpp binary in Settings to use local transcription";
+
+/// Reject a stored whisper.cpp binary that the picker-issued token does not vouch for.
+///
+/// `set_whisper_cpp_paths` seals the canonical path under the master key; the
+/// engine builder opens that token and requires it to match the stored binary's
+/// canonical path. A missing token (an install configured before this gate) or
+/// any mismatch fails closed with a re-select message. There is no silent
+/// fallback to another engine: falling back would hide a tampered or stale path.
+fn verify_whisper_binary(state: &AppStateInner, config: &WhisperCppConfig) -> Result<()> {
+    let token = SettingsManager::new(&state.db)
+        .get::<String>(WHISPER_BINARY_TOKEN_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if token.trim().is_empty() {
+        return Err(AppError::stt(format!(
+            "whisper.cpp binary was not selected through Settings. {WHISPER_BINARY_RE_SELECT}"
+        )));
+    }
+    let sealed_path = crate::crypto::open_token(&token, &state.master_key).map_err(|_| {
+        AppError::stt(format!(
+            "the stored whisper.cpp binary token is invalid. {WHISPER_BINARY_RE_SELECT}"
+        ))
+    })?;
+    let canonical = Path::new(&config.binary_path)
+        .canonicalize()
+        .map_err(|error| {
+            AppError::stt(format!(
+                "whisper.cpp binary not found: {error}. {WHISPER_BINARY_RE_SELECT}"
+            ))
+        })?;
+    if super::misc::canonical_to_clean_string(&canonical) != sealed_path {
+        return Err(AppError::stt(format!(
+            "the stored whisper.cpp binary path does not match its token. {WHISPER_BINARY_RE_SELECT}"
+        )));
+    }
+    Ok(())
+}
+
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
     let settings = SettingsSnapshot::load(&state.db)?;
     build_stt_from_settings(state, &settings)
@@ -189,6 +235,9 @@ pub fn build_stt_from_settings(
 ) -> Result<Arc<dyn crate::stt::SttEngine>> {
     let kind = stt_engine_kind(&settings.string("stt_engine", "groq"));
     let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
+    if kind == SttEngineKind::WhisperCpp {
+        verify_whisper_binary(state, &whisper_cpp)?;
+    }
     let cache_key = stt_cache_key(kind, &groq.api_key, &groq.model, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
@@ -218,7 +267,10 @@ pub fn build_stt_for_kind(
         SttEngineKind::Groq if groq.api_key.trim().is_empty() => {
             return Err(AppError::api_key_missing("Groq API key is not set"))
         }
-        SttEngineKind::WhisperCpp => crate::stt::whisper_cpp::validate_config(&whisper_cpp)?,
+        SttEngineKind::WhisperCpp => {
+            verify_whisper_binary(state, &whisper_cpp)?;
+            crate::stt::whisper_cpp::validate_config(&whisper_cpp)?;
+        }
         SttEngineKind::Groq => {}
     }
     Ok(SttFactory::create(kind, groq, whisper_cpp))
@@ -835,6 +887,76 @@ mod tests {
         }
     }
 
+    /// A scratch binary file and its canonical clean-path string.
+    fn scratch_binary(name: &str) -> (PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("voxitype-gate-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("whisper-cli.exe");
+        std::fs::write(&file, b"stub").unwrap();
+        let canonical = file.canonicalize().unwrap();
+        let clean = crate::commands::misc::canonical_to_clean_string(&canonical);
+        (canonical, clean)
+    }
+
+    fn whisper_config(binary_path: String) -> WhisperCppConfig {
+        WhisperCppConfig {
+            binary_path,
+            model_path: "model.bin".to_string(),
+            threads: 4,
+        }
+    }
+
+    #[test]
+    fn whisper_binary_gate_accepts_matching_token() {
+        let state = test_app_state([21u8; 32]);
+        let (_canonical, clean) = scratch_binary("match");
+        let token = crate::crypto::seal_token(&clean, &state.master_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set(WHISPER_BINARY_TOKEN_KEY, &token)
+            .unwrap();
+
+        assert!(verify_whisper_binary(&state, &whisper_config(clean)).is_ok());
+    }
+
+    #[test]
+    fn whisper_binary_gate_rejects_missing_token() {
+        let state = test_app_state([22u8; 32]);
+        let (_canonical, clean) = scratch_binary("missing");
+        let err = verify_whisper_binary(&state, &whisper_config(clean)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttEngineError);
+        assert!(err.message.contains("Settings"));
+    }
+
+    #[test]
+    fn whisper_binary_gate_rejects_tampered_path() {
+        let state = test_app_state([23u8; 32]);
+        let (_canonical, clean) = scratch_binary("tampered");
+        // Token vouches for a different (planted) binary than the stored path.
+        let token =
+            crate::crypto::seal_token("C:\\attacker\\payload.exe", &state.master_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set(WHISPER_BINARY_TOKEN_KEY, &token)
+            .unwrap();
+
+        let err = verify_whisper_binary(&state, &whisper_config(clean)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttEngineError);
+        assert!(err.message.contains("does not match"));
+    }
+
+    #[test]
+    fn whisper_binary_gate_rejects_undecryptable_token() {
+        let state = test_app_state([24u8; 32]);
+        let (_canonical, clean) = scratch_binary("badtoken");
+        let token = crate::crypto::seal_token(&clean, &[99u8; 32]).unwrap();
+        SettingsManager::new(&state.db)
+            .set(WHISPER_BINARY_TOKEN_KEY, &token)
+            .unwrap();
+
+        let err = verify_whisper_binary(&state, &whisper_config(clean)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttEngineError);
+        assert!(err.message.contains("token is invalid"));
+    }
+
     #[test]
     fn decrypted_api_key_when_not_set_returns_ok_empty() {
         let state = test_app_state([1u8; 32]);
@@ -1081,13 +1203,21 @@ mod tests {
         let secret_key = "gsk_full_test_key_xyz123";
         let encrypted = crate::crypto::encrypt_api_key(secret_key, &master_key).unwrap();
 
+        // The whisper.cpp engine gate requires a picker-issued token matching
+        // the stored binary's canonical path, so use a real scratch binary.
+        let (_canonical, binary) = scratch_binary("snapshot");
+
         let mgr = SettingsManager::new(&state.db);
         mgr.set("stt_engine", &"whisper_cpp").unwrap();
         mgr.set("stt_model", &"ggml-base.bin").unwrap();
-        mgr.set("whisper_cpp_binary_path", &"/usr/bin/whisper-cli")
-            .unwrap();
+        mgr.set("whisper_cpp_binary_path", &binary).unwrap();
         mgr.set("whisper_cpp_model_path", &"/models/base.bin")
             .unwrap();
+        mgr.set(
+            WHISPER_BINARY_TOKEN_KEY,
+            &crate::crypto::seal_token(&binary, &master_key).unwrap(),
+        )
+        .unwrap();
         mgr.set("whisper_cpp_threads", &6u32).unwrap();
         mgr.set("stt_language", &"en").unwrap();
         mgr.set("command_mode", &true).unwrap();
@@ -1185,7 +1315,7 @@ mod tests {
         );
         assert_eq!(
             snapshot.string("whisper_cpp_binary_path", "whisper-cli"),
-            "/usr/bin/whisper-cli"
+            binary
         );
         assert_eq!(
             snapshot.string("whisper_cpp_model_path", ""),

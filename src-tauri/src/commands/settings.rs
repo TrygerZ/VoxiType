@@ -29,9 +29,10 @@ pub(crate) fn sanitize_settings_for_frontend(all: &mut Value) {
 
 /// Keys the frontend may write via `update_setting`. Anything else is rejected
 /// at the IPC boundary so a compromised page can't pollute config.
-/// `whisper_cpp_binary_path` and `whisper_cpp_model_path` are intentionally
-/// absent: writing them requires `set_whisper_cpp_paths`, which only accepts
-/// paths previously returned by the native file picker (see commands::misc).
+/// `whisper_cpp_binary_path`, `whisper_cpp_model_path`, and
+/// `whisper_cpp_binary_token` are intentionally absent: writing them requires
+/// `set_whisper_cpp_paths`, which only accepts paths previously returned by the
+/// native file picker and seals the matching token (see commands::misc).
 /// `hotkey` and `floating_widget` have their own commands; `floating_widget_pos`
 /// is written backend-side only.
 const SETTABLE_KEYS: &[&str] = &[
@@ -196,6 +197,7 @@ mod tests {
         // settable; whisper paths go through set_whisper_cpp_paths instead.
         assert!(!SETTABLE_KEYS.contains(&"whisper_cpp_binary_path"));
         assert!(!SETTABLE_KEYS.contains(&"whisper_cpp_model_path"));
+        assert!(!SETTABLE_KEYS.contains(&"whisper_cpp_binary_token"));
         assert!(!SETTABLE_KEYS.contains(&"floating_widget_pos"));
         assert!(!SETTABLE_KEYS.contains(&"hotkey"));
         assert!(!SETTABLE_KEYS.contains(&"evil_setting"));

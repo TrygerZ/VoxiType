@@ -381,6 +381,20 @@ pub fn set_whisper_cpp_paths(
         None
     };
 
+    store_whisper_paths(state.inner(), canonical_binary, canonical_model)
+}
+
+/// Persist the canonical whisper.cpp paths, sealing the binary path into a
+/// picker-issued token under the master key.
+///
+/// The token is written only here (never through `update_setting`) so the
+/// engine builder can later confirm the stored binary is the one the user
+/// picked. A missing binary leaves any prior token untouched.
+fn store_whisper_paths(
+    state: &AppStateInner,
+    canonical_binary: Option<String>,
+    canonical_model: Option<String>,
+) -> std::result::Result<(), AppError> {
     let binary_json = canonical_binary
         .as_ref()
         .map(serde_json::to_string)
@@ -389,13 +403,22 @@ pub fn set_whisper_cpp_paths(
         .as_ref()
         .map(serde_json::to_string)
         .transpose()?;
+    let token_json = canonical_binary
+        .as_ref()
+        .map(|path| crate::crypto::seal_token(path, &state.master_key))
+        .transpose()?
+        .map(|token| serde_json::to_string(&token))
+        .transpose()?;
 
-    let mut entries = Vec::with_capacity(2);
+    let mut entries = Vec::with_capacity(3);
     if let Some(ref val) = binary_json {
         entries.push(("whisper_cpp_binary_path", val.as_str()));
     }
     if let Some(ref val) = model_json {
         entries.push(("whisper_cpp_model_path", val.as_str()));
+    }
+    if let Some(ref val) = token_json {
+        entries.push((super::runtime::WHISPER_BINARY_TOKEN_KEY, val.as_str()));
     }
 
     SettingsManager::new(&state.db).set_raw_batch(&entries)?;
@@ -682,6 +705,43 @@ mod tests {
             last_picker_dirs: std::sync::Mutex::new(std::collections::HashMap::new()),
             widget_timer: crate::overlay::WidgetTimerState::new(),
         }
+    }
+
+    #[test]
+    fn store_whisper_paths_writes_matching_token() {
+        let state = test_app_state([7u8; 32]);
+        let (_canonical, binary) = scratch_dir_with_file("store-token");
+        let model = binary.clone();
+
+        store_whisper_paths(&state, Some(binary.clone()), Some(model)).unwrap();
+
+        let stored = SettingsManager::new(&state.db)
+            .get::<String>(super::super::runtime::WHISPER_BINARY_TOKEN_KEY)
+            .unwrap()
+            .expect("token must be written");
+        let opened = crate::crypto::open_token(&stored, &state.master_key).unwrap();
+        assert_eq!(
+            opened, binary,
+            "token must vouch for the stored binary path"
+        );
+    }
+
+    #[test]
+    fn store_whisper_paths_without_binary_leaves_token_untouched() {
+        let state = test_app_state([8u8; 32]);
+        let (_canonical, binary) = scratch_dir_with_file("store-token-keep");
+        store_whisper_paths(&state, Some(binary.clone()), None).unwrap();
+
+        // A later model-only update must not clear the binary's token.
+        store_whisper_paths(&state, None, Some("C:\\models\\base.bin".to_string())).unwrap();
+        let stored = SettingsManager::new(&state.db)
+            .get::<String>(super::super::runtime::WHISPER_BINARY_TOKEN_KEY)
+            .unwrap()
+            .expect("token must survive a model-only update");
+        assert_eq!(
+            crate::crypto::open_token(&stored, &state.master_key).unwrap(),
+            binary
+        );
     }
 
     #[test]

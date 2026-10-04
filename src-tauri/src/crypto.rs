@@ -419,6 +419,21 @@ pub fn decrypt_api_key(stored: &str, master_key: &[u8; 32]) -> Result<String> {
     String::from_utf8(plaintext).map_err(|e| AppError::internal(format!("utf8 error: {e}")))
 }
 
+/// Seal a short trusted string (for example a picker-issued binary path)
+/// under the master key, reusing the API-key envelope format.
+pub fn seal_token(plaintext: &str, master_key: &[u8; 32]) -> Result<String> {
+    encrypt_api_key(plaintext, master_key)
+}
+
+/// Open a token produced by [`seal_token`].
+///
+/// Fails on tampering, a wrong master key, or a value that is not a sealed
+/// token, so a caller can treat any error as "the token does not vouch for
+/// this value".
+pub fn open_token(token: &str, master_key: &[u8; 32]) -> Result<String> {
+    decrypt_api_key(token, master_key)
+}
+
 /// One-shot upgrade of a legacy plaintext API key to the encrypted envelope.
 ///
 /// Returns `Ok(Some(encrypted))` when `stored` is a non-empty plaintext value,
@@ -500,6 +515,21 @@ mod tests {
     fn migration_skips_empty() {
         let key = [12u8; 32];
         assert_eq!(migrate_plaintext_key("", &key).unwrap(), None);
+    }
+
+    #[test]
+    fn token_seal_roundtrips() {
+        let key = [13u8; 32];
+        let path = r"C:\Program Files\whisper\whisper-cli.exe";
+        let token = seal_token(path, &key).unwrap();
+        assert!(is_encrypted(&token));
+        assert_eq!(open_token(&token, &key).unwrap(), path);
+    }
+
+    #[test]
+    fn token_open_fails_with_wrong_key() {
+        let token = seal_token("C:\\whisper.exe", &[14u8; 32]).unwrap();
+        assert!(open_token(&token, &[15u8; 32]).is_err());
     }
 
     #[test]
