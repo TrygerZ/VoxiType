@@ -57,9 +57,11 @@ pub fn paste() -> Result<()> {
         enigo: &mut enigo,
         key: Key::Control,
     };
+    // Named key: layout-independent, unlike Key::Unicode('v') which fails on
+    // non-Latin layouts.
     _guard
         .enigo
-        .key(Key::Unicode('v'), Direction::Click)
+        .key(Key::V, Direction::Click)
         .map_err(|e| AppError::injection(format!("V click failed: {e}")))?;
     Ok(())
 }

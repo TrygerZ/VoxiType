@@ -119,13 +119,13 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
                 .key(Key::Backspace, Direction::Click)
                 .map_err(map_err)?;
         }
-        VoiceCommand::SelectAll => combo(&mut enigo, 'a', map_err)?,
-        VoiceCommand::Copy => combo(&mut enigo, 'c', map_err)?,
-        VoiceCommand::Paste => combo(&mut enigo, 'v', map_err)?,
-        VoiceCommand::Cut => combo(&mut enigo, 'x', map_err)?,
-        VoiceCommand::Undo => combo(&mut enigo, 'z', map_err)?,
-        VoiceCommand::Redo => combo(&mut enigo, 'y', map_err)?,
-        VoiceCommand::Save => combo(&mut enigo, 's', map_err)?,
+        VoiceCommand::SelectAll
+        | VoiceCommand::Copy
+        | VoiceCommand::Paste
+        | VoiceCommand::Cut
+        | VoiceCommand::Undo
+        | VoiceCommand::Redo
+        | VoiceCommand::Save => combo(&mut enigo, command, map_err)?,
         VoiceCommand::Escape => {
             enigo.key(Key::Escape, Direction::Click).map_err(map_err)?;
         }
@@ -133,22 +133,39 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
     Ok(())
 }
 
+/// Named, layout-independent key for a Ctrl/Cmd combo command.
+///
+/// `Key::Unicode(letter)` resolves through `VkKeyScanW`, which fails on
+/// non-Latin keyboard layouts; named letter keys are positional and work
+/// regardless of layout. Returns `None` for commands that are not combos.
+fn combo_key(command: VoiceCommand) -> Option<Key> {
+    match command {
+        VoiceCommand::SelectAll => Some(Key::A),
+        VoiceCommand::Copy => Some(Key::C),
+        VoiceCommand::Paste => Some(Key::V),
+        VoiceCommand::Cut => Some(Key::X),
+        VoiceCommand::Undo => Some(Key::Z),
+        VoiceCommand::Redo => Some(Key::Y),
+        VoiceCommand::Save => Some(Key::S),
+        _ => None,
+    }
+}
+
 /// Simulate Ctrl+<key> on Windows/Linux or Cmd+<key> on macOS.
 fn combo(
     enigo: &mut Enigo,
-    key: char,
+    command: VoiceCommand,
     map_err: impl Fn(enigo::InputError) -> AppError,
 ) -> Result<()> {
+    let key = combo_key(command)
+        .ok_or_else(|| AppError::injection(format!("{command:?} is not a combo command")))?;
     let modifier = modifier_key();
     enigo.key(modifier, Direction::Press).map_err(&map_err)?;
     let _guard = KeyGuard {
         enigo,
         key: modifier,
     };
-    _guard
-        .enigo
-        .key(Key::Unicode(key), Direction::Click)
-        .map_err(&map_err)?;
+    _guard.enigo.key(key, Direction::Click).map_err(&map_err)?;
     Ok(())
 }
 
@@ -180,6 +197,24 @@ mod tests {
     fn rejects_unknown_phrases() {
         assert_eq!(VoiceCommand::from_phrase("halo dunia"), None);
         assert_eq!(VoiceCommand::from_phrase(""), None);
+    }
+
+    #[test]
+    fn combo_commands_map_to_named_layout_independent_keys() {
+        assert_eq!(combo_key(VoiceCommand::SelectAll), Some(Key::A));
+        assert_eq!(combo_key(VoiceCommand::Copy), Some(Key::C));
+        assert_eq!(combo_key(VoiceCommand::Paste), Some(Key::V));
+        assert_eq!(combo_key(VoiceCommand::Cut), Some(Key::X));
+        assert_eq!(combo_key(VoiceCommand::Undo), Some(Key::Z));
+        assert_eq!(combo_key(VoiceCommand::Redo), Some(Key::Y));
+        assert_eq!(combo_key(VoiceCommand::Save), Some(Key::S));
+    }
+
+    #[test]
+    fn non_combo_commands_have_no_combo_key() {
+        assert_eq!(combo_key(VoiceCommand::NewLine), None);
+        assert_eq!(combo_key(VoiceCommand::Tab), None);
+        assert_eq!(combo_key(VoiceCommand::Escape), None);
     }
 
     #[test]
