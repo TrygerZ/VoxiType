@@ -8,6 +8,7 @@ pub mod audio;
 pub mod commands;
 pub mod crypto;
 pub mod data_dir;
+mod data_dir_acl;
 pub mod error;
 pub mod events;
 pub mod export;

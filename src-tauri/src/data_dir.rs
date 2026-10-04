@@ -425,11 +425,16 @@ fn resolve_custom_dir(default_dir: &Path) -> Result<Option<PathBuf>> {
     }
 
     validate_data_dir(&custom_dir)?;
+    // Custom directories are shared-location candidates; the default app-data
+    // directory is trusted and skips the ACL check so a misconfigured profile
+    // ACL cannot brick startup.
+    crate::data_dir_acl::validate_custom_dir_acl(&custom_dir)?;
     Ok(Some(custom_dir))
 }
 
 pub(crate) fn write_marker(default_dir: &Path, current: &Path, pending: &Path) -> Result<()> {
     validate_data_dir(pending)?;
+    crate::data_dir_acl::validate_custom_dir_acl(pending)?;
     let marker = DataDirMarker {
         current: current.to_path_buf(),
         pending: Some(pending.to_path_buf()),
@@ -552,9 +557,31 @@ mod tests {
                 .unwrap_or_default();
             let path = std::env::temp_dir().join(format!("voxitype-data-dir-{nonce}"));
             std::fs::create_dir_all(&path).expect("test temp directory should be creatable");
+            restrict_to_current_user(&path);
             Self(path)
         }
     }
+
+    /// Custom directories used in tests must satisfy the H-2 ACL check. Some
+    /// environments (CI containers, shared temp roots) inherit a DACL that
+    /// grants write to a group, so pin the test directory to the current user.
+    /// Best effort: on non-Windows, or when ACL editing is refused, the base
+    /// ACL is left as-is.
+    #[cfg(windows)]
+    fn restrict_to_current_user(path: &Path) {
+        let Ok(sid) = crate::data_dir_acl::current_user_sid_string() else {
+            return;
+        };
+        let _ = std::process::Command::new("icacls")
+            .arg(path)
+            .arg("/inheritance:r")
+            .arg("/grant:r")
+            .arg(format!("*{sid}:(OI)(CI)F"))
+            .status();
+    }
+
+    #[cfg(not(windows))]
+    fn restrict_to_current_user(_path: &Path) {}
 
     impl Drop for TempDir {
         fn drop(&mut self) {
