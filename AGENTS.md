@@ -20,14 +20,14 @@
 | Text Injection | enigo + arboard (clipboard paste + keystroke fallback) | src-tauri/src/injection/ |
 | Hotkey | Tauri global-shortcut plugin | src-tauri/src/hotkey/ |
 | Crypto | AES-256-GCM API key encryption at rest | src-tauri/src/crypto.rs |
-| Logging | tracing to stderr + daily-rotated files | src-tauri/src/logging.rs |
+| Logging | tracing to stderr + daily-rotated files (14-file retention, active data directory) | src-tauri/src/logging.rs |
 | Active Window | Win32 API foreground process detection | src-tauri/src/active_window.rs |
 | Overlay | Floating widget window control | src-tauri/src/overlay.rs |
 | Sound Cues | Start/stop tones | src-tauri/src/sound.rs |
 | Updater | GitHub Releases version checker | src-tauri/src/updater.rs |
-| Util | Shared HTTP client + retry/backoff | src-tauri/src/util.rs |
+| Util | Shared HTTP client, retry/backoff, atomic file writes | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
-| Data Directory | Marker resolution, validation, and copy-on-migrate | src-tauri/src/data_dir.rs |
+| Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
 | Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi) | src-tauri/src/export.rs |
 
@@ -37,7 +37,7 @@
 Always use **RTK (Rust Token Killer)** as a proxy for all terminal commands. RTK saves 60-90% tokens by filtering unnecessary output. Examples: `rtk cargo build`, `rtk git status`, `rtk npm run dev`. Use `rtk gain` to view token savings analytics.
 
 ### Ask When Uncertain
-If you encounter unclear, ambiguous instructions or anything that needs clarification — **ASK ME FIRST**. Do not proceed on assumptions. This includes:
+If you encounter unclear, ambiguous instructions or anything that needs clarification, **ASK ME FIRST**. Do not proceed on assumptions. This includes:
 - Incomplete or contradictory feature specifications
 - Design/architecture choices not explicitly stated
 - Priorities between implementation options
@@ -52,7 +52,7 @@ All code in this project must follow **Clean Code** principles:
 - No magic numbers or string literals without named constants
 - Explicit and meaningful error handling, not panic
 - Comments only for "why", not "what" or "how"
-- DRY (Don't Repeat Yourself) — avoid code duplication
+- DRY (Don't Repeat Yourself): avoid code duplication
 - Testing as part of the definition of "done"
 
 ## Commands
@@ -98,6 +98,8 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, floating_widget_hide_requested, floating_widget_reveal_requested)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
+- `src-tauri/src/data_dir_acl.rs` - Windows ACL validation for custom data directories
+- `src-tauri/src/util.rs` - Shared HTTP client, retry/backoff, and atomic file writes
 - `src-tauri/src/error.rs` - Unified AppError with typed ErrorCode
 - `src-tauri/src/injection/mod.rs` - TextInjector trait (clipboard, keystroke, command)
 - `src-tauri/src/active_window.rs` - Win32 foreground process detection
@@ -155,7 +157,7 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `state_changed` | `{ state: "idle"\|"recording"\|"processing"\|"error" }` | Pipeline state transition |
 | `transcription_complete` | `{ id, text, word_count, duration_ms }` | Successful transcription result |
 | `transcription_error` | `{ message, code }` | Transcription failure |
-| `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0–1.0) |
+| `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0 to 1.0) |
 | `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 | `navigate` | `string` | System tray route navigation request for main window |

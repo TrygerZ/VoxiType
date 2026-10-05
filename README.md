@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.6.1** - Open-source voice-to-text for every app.
+**Version 0.6.2** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
@@ -196,13 +196,14 @@ src-tauri/src/        # Rust backend
 ├── commands/         # Tauri IPC handlers (48 commands across 9 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
+├── data_dir_acl.rs   # Windows ACL validation for custom data directories
 ├── error.rs          # Unified AppError + typed ErrorCode
 ├── events.rs         # Tauri event emitters (state_changed, audio_level, etc.)
 ├── export.rs         # Transcript export writers (TXT, DOCX, PDF)
 ├── hotkey/           # Global hotkey registration + rebind
 ├── injection/        # Text injection (keystroke, clipboard, hybrid, command mode)
 ├── llm/              # LLM formatting (Ollama, Groq, rule-based, fallback chain)
-├── logging.rs        # tracing to stderr + rotating file
+├── logging.rs        # tracing to stderr + daily files (14-file retention, attached after data directory resolution)
 ├── main.rs           # Tauri entry point
 ├── overlay.rs        # Floating widget window control + position persistence
 ├── pipeline/         # State machine orchestrator + batch processing + file transcription job
@@ -218,7 +219,7 @@ src-tauri/src/        # Rust backend
 ├── stt/              # Speech-to-text (Groq Whisper + whisper.cpp)
 ├── tray/             # System tray icon + context menu
 ├── updater.rs        # GitHub Releases version checker
-└── util.rs           # Shared HTTP client + retry/backoff helpers
+└── util.rs           # Shared HTTP client, retry/backoff, and atomic file writes
 ```
 
 ## Configuration
@@ -253,7 +254,7 @@ Settings are stored as key-value pairs in SQLite, JSON-encoded. Key settings:
 | `auto_start` | bool | Launch VoxiType at Windows sign-in |
 | `auto_update` | bool | Check for updates automatically |
 
-Data directory selection uses a marker file (`data_dir.txt`) in the default app-data directory. On first use, migration copies the active previous directory's DB, `master.key`, and logs. DB and key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. Selected directory takes effect after restart.
+Data directory selection uses a marker file (`data_dir.txt`) in the default app-data directory. On first use, migration copies the active previous directory's DB, `master.key`, and logs. DB and key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. Custom directories must not grant other local accounts read, write, or control access; rejected directories report the offending account. Legacy unencrypted `master.key` files are accepted only in the default directory. Log files retain 14 daily files under the active data directory. Selected directory takes effect after restart.
 
 ## Offline STT Setup
 

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-04
+
+### Fixed
+- Fixed data-directory recovery treating a graduated JSON marker as a filesystem path, which could replace a valid database with an empty one when the target master key was missing. Migration now uses the marker's active directory as its source.
+- Fixed interrupted master key writes corrupting `master.key` and making stored API keys unreadable. Key files are now written atomically.
+
+### Security
+- Rejected custom data directories whose ACL grants write or control rights to an unapproved principal. Common read grants are also rejected when they overlap those rights. The error identifies the offending account; allowed principals are the current user, SYSTEM, Administrators, CREATOR OWNER, and OWNER RIGHTS.
+- Required the whisper.cpp binary path to match a token written when the binary is selected in Settings. Existing whisper.cpp setups must re-select the binary once after updating.
+- Restricted legacy unencrypted `master.key` files to the default data directory. A raw key in a custom directory now fails closed and requires the API key to be entered again in Settings; migration re-wraps legitimate legacy keys.
+
+### Changed
+- Limited log retention to 14 daily files and stored logs under the active data directory.
+
 ## [0.6.1] - 2026-10-04
 
 ### Fixed
@@ -304,7 +318,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/TrygerZ/VoxiType/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/TrygerZ/VoxiType/compare/v0.5.1...v0.5.2
