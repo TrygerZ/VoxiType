@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { FolderOpen, RotateCw } from "lucide-react";
 import {
+  errorCode,
   formatTauriError,
   getDataDirectory,
   pickDataDirectory,
@@ -23,12 +24,6 @@ import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { useT } from "../../lib/i18n";
-
-function errorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== "object" || !("code" in err)) return undefined;
-  const code = (err as { code: unknown }).code;
-  return typeof code === "string" ? code : undefined;
-}
 
 export function GeneralTab() {
   const t = useT();

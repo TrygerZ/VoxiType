@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import {
+  errorCode,
   getDataDirectory,
   pickDataDirectory,
   restartApp,
@@ -26,12 +27,6 @@ interface Props {
   onBack: () => void;
   onSkip: () => void;
   onContinue: () => void;
-}
-
-function errorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== "object" || !("code" in err)) return undefined;
-  const code = (err as { code: unknown }).code;
-  return typeof code === "string" ? code : undefined;
 }
 
 export function DataDirectoryStep(props: Props) {

@@ -7,6 +7,7 @@ import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import {
+  errorCode,
   formatTauriError,
   pickSetupFile,
   testGroqApi,
@@ -244,14 +245,6 @@ async function runStatus(
       timerRef.current = null;
     }, 3000);
   }
-}
-
-function errorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== "object" || !("code" in err)) {
-    return undefined;
-  }
-  const code = err.code;
-  return typeof code === "string" ? code : undefined;
 }
 
 function PathPickerField({

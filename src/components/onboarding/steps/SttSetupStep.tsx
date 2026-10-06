@@ -26,6 +26,7 @@ import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import {
+  errorCode,
   formatTauriError,
   openUrl,
   pickSetupFile,
@@ -289,15 +290,6 @@ async function runStatus(
     }, 3000);
   }
 }
-function errorCode(err: unknown) {
-  return err &&
-    typeof err === "object" &&
-    "code" in err &&
-    typeof err.code === "string"
-    ? err.code
-    : undefined;
-}
-
 function GroqSetup({
   apiKey,
   status,

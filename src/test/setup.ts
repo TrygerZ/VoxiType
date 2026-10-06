@@ -10,6 +10,12 @@ vi.mock("../lib/tauri", () => ({
     }
     return String(error);
   },
+  errorCode: (error: unknown) => {
+    if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+      return error.code;
+    }
+    return undefined;
+  },
   startRecording: vi.fn().mockResolvedValue(undefined),
   stopRecording: vi.fn().mockResolvedValue(undefined),
   getSettings: vi.fn().mockResolvedValue({}),

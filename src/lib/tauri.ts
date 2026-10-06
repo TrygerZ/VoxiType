@@ -12,6 +12,16 @@ export function formatTauriError(err: unknown): string {
   }
   return String(err);
 }
+
+/** Extract the typed ErrorCode from a Tauri IPC error, or undefined when the
+ *  rejection carries none. */
+export function errorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object" || !("code" in err)) {
+    return undefined;
+  }
+  const code = err.code;
+  return typeof code === "string" ? code : undefined;
+}
 import type {
   AppInfo,
   DeviceInfo,
