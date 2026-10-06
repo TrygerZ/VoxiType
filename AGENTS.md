@@ -21,7 +21,7 @@
 | Hotkey | Tauri global-shortcut plugin | src-tauri/src/hotkey/ |
 | Crypto | AES-256-GCM API key encryption at rest | src-tauri/src/crypto.rs |
 | Logging | tracing to stderr + daily-rotated files (14-file retention, active data directory) | src-tauri/src/logging.rs |
-| Active Window | Win32 API foreground process detection | src-tauri/src/active_window.rs |
+| Active Window | Win32 foreground process and window detection | src-tauri/src/active_window.rs |
 | Overlay | Floating widget window control | src-tauri/src/overlay.rs |
 | Sound Cues | Start/stop tones | src-tauri/src/sound.rs |
 | Updater | GitHub Releases version checker | src-tauri/src/updater.rs |
@@ -95,14 +95,14 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
 - `src-tauri/src/storage/db.rs` - SQLite schema + migrations
-- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, floating_widget_hide_requested, floating_widget_reveal_requested)
+- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, notice, floating_widget_hide_requested, floating_widget_reveal_requested)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
 - `src-tauri/src/data_dir_acl.rs` - Windows ACL validation for custom data directories
 - `src-tauri/src/util.rs` - Shared HTTP client, retry/backoff, and atomic file writes
 - `src-tauri/src/error.rs` - Unified AppError with typed ErrorCode
 - `src-tauri/src/injection/mod.rs` - TextInjector trait (clipboard, keystroke, command)
-- `src-tauri/src/active_window.rs` - Win32 foreground process detection
+- `src-tauri/src/active_window.rs` - Win32 foreground process and window detection
 - `src-tauri/src/logging.rs` - tracing init (stderr + file rotation)
 - `tauri.conf.json` - Tauri config, capabilities, windows
 - `vite.config.ts` - Vite + Tailwind + React plugin config
@@ -162,6 +162,7 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 | `navigate` | `string` | System tray route navigation request for main window |
 | `file_transcription_progress` | `{ stage: "transcribing"\|"formatting", done, total }` | File job progress; `total` is 0 when the file reports no duration |
+| `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
 
 ## Architecture Rules
 1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector

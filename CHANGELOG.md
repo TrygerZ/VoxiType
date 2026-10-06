@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-10-06
+
+### Fixed
+- Fixed clipboard restoration replacing content copied while dictated text was on the clipboard. Restoration now skips when the clipboard no longer contains the dictated text.
+- Fixed quiet speech passing the noise gate only to be discarded by the voice threshold without notice. The gate now derives from the voice threshold, and discarded no-speech recordings show an informational notice.
+- Fixed captured audio growing without bound if the level-emitter task failed. A 300-second sample cap now bounds the capture ring independently; resampler flush can add at most one block beyond the cap.
+- Fixed command-mode verification accepting an unknown recording target or confusing two windows in the same process. It now checks the exact window handle and fails closed when verification is unavailable.
+- Fixed command-mode keystrokes running on an asynchronous runtime worker. Command execution now runs on the blocking pool.
+- Fixed startup hotkey conflicts leaving the app without a working hotkey or user-visible feedback. The failure is persisted and shown once as an error toast; rebinding clears it only after registration succeeds.
+- Fixed process paths longer than the 260-character buffer disabling per-app mode detection. The process path buffer now supports up to 1024 UTF-16 units.
+
+### Changed
+- Logged sound cue playback and stream failures at warn level instead of debug.
+- Renamed the tray item to "Toggle Recording" to reflect that it toggles recording.
+
 ## [0.6.4] - 2026-10-06
 
 ### Fixed
@@ -352,7 +367,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...v0.6.2
