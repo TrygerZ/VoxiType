@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-10-06
+
+### Fixed
+- Fixed mid-file audio decode failures discarding completed transcript text. Non-empty partial transcripts are now retained, with the decode reason reported unless an earlier STT issue already explains the incomplete result. Failures before any text is transcribed still return the decode error.
+- Fixed history insert failures discarding completed file transcripts. The failure is logged, and the result is still returned.
+- Fixed the resampler flush appending raw interleaved samples from an incomplete frame to mono audio. The incomplete frame is now dropped.
+- Fixed PDF exports replacing 18 defined CP1252 WinAnsi characters with question marks. The mapping now covers all defined characters in the 0x80-0x9F range; undefined positions still export as question marks.
+
 ## [0.6.5] - 2026-10-06
 
 ### Fixed
@@ -84,9 +92,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [0.6.0] - 2026-10-03
 
 ### Added
-- Added file transcription for MP3, WAV, M4A, AAC, FLAC, and OGG files up to 60 minutes. Users choose Groq Whisper or whisper.cpp and the audio language per job, can toggle LLM cleanup with a selectable engine and dictionary replacements, and can cancel a running job. A failure partway through keeps the finished part of the transcript and reports what was skipped. Results are saved to History under the File mode. Dictation keeps working while a file is processed.
+- Added file transcription for MP3, WAV, M4A, AAC, FLAC, and OGG files up to 60 minutes. Users choose Groq Whisper or whisper.cpp and the audio language per job, can toggle LLM cleanup with a selectable engine and dictionary replacements, and can cancel a running job. An STT failure partway through keeps the finished part of the transcript and reports what was skipped. Results are saved to History under the File mode. Dictation keeps working while a file is processed.
 - Added bulk file transcription: up to 20 files per batch, processed one at a time. A failed file is reported and the batch continues; cancel stops the remaining files. Each file shows a live processing timer and its final duration.
-- Added transcript export as TXT, Word (DOCX), or PDF, one file per audio file, named after the audio and never overwriting existing files. PDF uses a built-in Latin font; characters outside Latin-1 print as `?`.
+- Added transcript export as TXT, Word (DOCX), or PDF, one file per audio file, named after the audio and never overwriting existing files. PDF uses a built-in Latin font; characters outside the supported WinAnsi set print as `?`.
 
 ### Changed
 - whisper.cpp process timeout now scales with audio length (minimum 300 s) instead of a fixed 300 s.
@@ -367,7 +375,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...v0.6.3

@@ -29,7 +29,7 @@
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
 | Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
-| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi) | src-tauri/src/export.rs |
+| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
 
 ## Global Rules
 
@@ -87,11 +87,12 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
 - `src-tauri/src/commands/mod.rs` - IPC handler registration (48 commands)
-- `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica)
+- `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica and defined CP1252 WinAnsi mappings)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
-- `src-tauri/src/pipeline/file_job.rs` - File transcription: chunked STT, segmented LLM formatting, replacements. Runs outside the state machine, parallel to dictation
-- `src-tauri/src/audio/file_decode.rs` - symphonia decode to 16 kHz mono, silence-aware chunk splitting, 60-minute cap
+- `src-tauri/src/pipeline/file_job.rs` - File transcription: chunked STT tracks completed chunks; non-empty partial text is retained after later STT or decode failures, with incomplete stages reported. Segmented LLM formatting preserves raw text for failed segments; replacements. Runs outside the state machine, parallel to dictation.
+- `src-tauri/src/commands/file_transcription.rs` - File transcription command: retains non-empty partial transcripts after decode failures and returns completed results when history insertion fails
+- `src-tauri/src/audio/file_decode.rs` - symphonia decode to 16 kHz mono, silence-aware chunk splitting, 60-minute cap.
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
 - `src-tauri/src/storage/db.rs` - SQLite schema + migrations
