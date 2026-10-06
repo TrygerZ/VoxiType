@@ -14,6 +14,9 @@ use crate::stt::{SttConfig, SttEngine, TranscriptionResult};
 pub struct BatchOutcome {
     pub transcription: TranscriptionResult,
     pub formatted_text: String,
+    /// Name of the engine that produced `formatted_text`. For a fallback
+    /// wrapper this is the engine that actually won, not the configured one.
+    pub llm_engine: String,
     pub inject: InjectResult,
 }
 
@@ -119,9 +122,14 @@ pub async fn run_batch_with_transcription(
             .map_err(|e| AppError::injection(format!("Injection task failed: {e}")))??
     };
 
+    // Read the engine name after the format/translate calls so a fallback
+    // wrapper reports the engine that actually produced the text.
+    let llm_engine = llm.name().to_string();
+
     Ok(BatchOutcome {
         transcription,
         formatted_text,
+        llm_engine,
         inject,
     })
 }
@@ -341,6 +349,43 @@ mod tests {
         .unwrap();
         // "um" filler removed, capitalized, period added.
         assert_eq!(out.formatted_text, "Halo dunia.");
+        assert_eq!(out.llm_engine, "rule_based");
         assert!(out.inject.success);
+    }
+
+    #[tokio::test]
+    async fn outcome_reports_winning_engine_on_fallback() {
+        use crate::llm::{FallbackFormatter, LlmFactory, LlmFormatter, RuleBasedConfig};
+        struct AlwaysFails;
+        #[async_trait]
+        impl LlmFormatter for AlwaysFails {
+            async fn format(&self, _t: &str, _m: &LlmMode, _l: &str) -> Result<String> {
+                Err(AppError::llm_connection_refused("down"))
+            }
+            async fn translate(&self, _t: &str, _s: &str, _d: &str) -> Result<String> {
+                Err(AppError::llm_connection_refused("down"))
+            }
+            fn name(&self) -> &'static str {
+                "cloud_llm"
+            }
+        }
+        let primary: Arc<dyn LlmFormatter> = Arc::new(AlwaysFails);
+        let llm = Arc::new(FallbackFormatter::new(
+            primary,
+            LlmFactory::rule_based(RuleBasedConfig::default()),
+        ));
+
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("um halo dunia", "id"),
+            llm,
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            Arc::new(MockInjector),
+        )
+        .await
+        .unwrap();
+        // The fallback produced the text, so history must attribute it there.
+        assert_eq!(out.llm_engine, "rule_based");
     }
 }
