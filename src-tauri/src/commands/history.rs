@@ -4,6 +4,7 @@ use tauri::State;
 
 use crate::error::AppError;
 use crate::injection::{HybridInjector, TextInjector};
+use crate::pipeline::AppStateTag;
 use crate::storage::{HistoryFilter, HistoryRepository, TranscriptionEntry};
 use crate::AppStateInner;
 
@@ -17,11 +18,15 @@ pub fn get_history(
     HistoryRepository::new(&state.db).list(&filter.unwrap_or_default())
 }
 
+/// Longest accepted search query.
+const MAX_SEARCH_QUERY_LEN: usize = 1024;
+
 #[tauri::command]
 pub fn search_history(
     state: State<'_, AppStateInner>,
     query: String,
 ) -> std::result::Result<Vec<TranscriptionEntry>, AppError> {
+    super::check_len("search query", &query, MAX_SEARCH_QUERY_LEN)?;
     HistoryRepository::new(&state.db).search(&query)
 }
 
@@ -50,12 +55,25 @@ pub fn clear_history(
     HistoryRepository::new(&state.db).clear(keep_pinned.unwrap_or(true))
 }
 
+/// Re-injection is refused while the pipeline owns the keyboard: a dictation
+/// that is Recording or Processing will inject its own keystrokes, and
+/// interleaving the two produces garbled output.
+fn re_inject_allowed(state: AppStateTag) -> std::result::Result<(), AppError> {
+    match state {
+        AppStateTag::Recording | AppStateTag::Processing => Err(AppError::invalid_input(
+            "Cannot re-inject while dictation is recording or processing",
+        )),
+        AppStateTag::Idle | AppStateTag::Error => Ok(()),
+    }
+}
+
 #[tauri::command]
 pub async fn re_inject(
     window: tauri::Window,
     state: State<'_, AppStateInner>,
     id: String,
 ) -> std::result::Result<(), AppError> {
+    re_inject_allowed(state.pipeline.state_tag())?;
     let _ = window.minimize();
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     let entry = HistoryRepository::new(&state.db)
@@ -129,5 +147,15 @@ mod tests {
     fn validate_export_count_rejects_over_cap() {
         let err = validate_export_count(MAX_EXPORT_RECORDS + 1).unwrap_err();
         assert!(err.message.contains("exceeds maximum of 10000 records"));
+    }
+
+    #[test]
+    fn re_inject_allowed_only_when_idle_or_error() {
+        assert!(re_inject_allowed(AppStateTag::Idle).is_ok());
+        assert!(re_inject_allowed(AppStateTag::Error).is_ok());
+        let rec = re_inject_allowed(AppStateTag::Recording).unwrap_err();
+        assert_eq!(rec.code, crate::error::ErrorCode::InvalidInput);
+        let proc = re_inject_allowed(AppStateTag::Processing).unwrap_err();
+        assert_eq!(proc.code, crate::error::ErrorCode::InvalidInput);
     }
 }

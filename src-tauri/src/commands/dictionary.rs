@@ -35,6 +35,7 @@ pub fn add_dictionary_word(
 }
 
 fn validate_entry(entry: &DictionaryEntry) -> std::result::Result<(), AppError> {
+    super::check_non_empty("dictionary word", &entry.word)?;
     if entry.word.len() > MAX_WORD_LEN {
         return Err(AppError::internal(format!(
             "dictionary word exceeds {MAX_WORD_LEN} chars"
@@ -46,6 +47,19 @@ fn validate_entry(entry: &DictionaryEntry) -> std::result::Result<(), AppError> 
                 "dictionary replacement exceeds {MAX_WORD_LEN} chars"
             )));
         }
+    }
+    super::check_len(
+        "dictionary category",
+        &entry.category,
+        super::MAX_IDENTIFIER_LEN,
+    )?;
+    super::check_len(
+        "dictionary language",
+        &entry.language,
+        super::MAX_IDENTIFIER_LEN,
+    )?;
+    if let Some(p) = entry.pronunciation.as_deref() {
+        super::check_len("dictionary pronunciation", p, super::MAX_IDENTIFIER_LEN)?;
     }
     Ok(())
 }
@@ -150,6 +164,30 @@ mod tests {
     #[test]
     fn allows_normal_entry() {
         assert!(validate_entry(&entry("hello", Some("hai"))).is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_word() {
+        let err = validate_entry(&entry("", None)).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+        let blank = validate_entry(&entry("   ", None)).unwrap_err();
+        assert_eq!(blank.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn rejects_oversized_identifier_fields() {
+        let big = "a".repeat(super::super::MAX_IDENTIFIER_LEN + 1);
+        let mut e = entry("ok", None);
+        e.category = big.clone();
+        assert!(validate_entry(&e).is_err());
+
+        let mut e = entry("ok", None);
+        e.language = big.clone();
+        assert!(validate_entry(&e).is_err());
+
+        let mut e = entry("ok", None);
+        e.pronunciation = Some(big);
+        assert!(validate_entry(&e).is_err());
     }
 
     #[test]

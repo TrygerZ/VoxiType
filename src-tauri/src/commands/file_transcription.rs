@@ -51,7 +51,7 @@ pub struct FileJobState {
 
 /// Holds a busy flag and clears it on every exit path, including panics
 /// and early returns.
-struct FlagGuard<'a>(&'a AtomicBool);
+pub(crate) struct FlagGuard<'a>(&'a AtomicBool);
 
 impl<'a> FlagGuard<'a> {
     fn acquire(flag: &'a AtomicBool) -> Option<Self> {
@@ -68,11 +68,22 @@ impl Drop for FlagGuard<'_> {
 }
 
 impl FileJobState {
-    fn begin(&self) -> Result<FlagGuard<'_>> {
+    pub(crate) fn begin(&self) -> Result<FlagGuard<'_>> {
         let guard = FlagGuard::acquire(&self.running)
             .ok_or_else(|| AppError::invalid_input("A file transcription is already running"))?;
         self.cancel.store(false, Ordering::SeqCst);
         Ok(guard)
+    }
+
+    /// Acquire the shared picker flag so only one native dialog opens at a
+    /// time. `None` means another picker is already open.
+    pub(crate) fn begin_picking(&self) -> Option<FlagGuard<'_>> {
+        FlagGuard::acquire(&self.picking)
+    }
+
+    /// Whether a file-transcription job currently holds the running flag.
+    pub(crate) fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
     }
 }
 
@@ -108,7 +119,7 @@ pub async fn pick_audio_files(
     state: State<'_, AppStateInner>,
     jobs: State<'_, FileJobState>,
 ) -> std::result::Result<Vec<String>, AppError> {
-    let Some(_picking) = FlagGuard::acquire(&jobs.picking) else {
+    let Some(_picking) = jobs.begin_picking() else {
         return Ok(Vec::new());
     };
     pick_gated_files(&state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
@@ -119,7 +130,13 @@ const EXPORT_DIRECTORY_TITLE: &str = "Select a folder for the exported transcrip
 #[tauri::command]
 pub async fn pick_export_directory(
     state: State<'_, AppStateInner>,
+    jobs: State<'_, FileJobState>,
 ) -> std::result::Result<Option<String>, AppError> {
+    // One native dialog at a time: a rapid second click returns no folder
+    // instead of stacking another explorer window.
+    let Some(_picking) = jobs.begin_picking() else {
+        return Ok(None);
+    };
     let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(EXPORT_DIRECTORY_TITLE))
         .await
         .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
@@ -155,6 +172,14 @@ pub fn export_transcripts(
         return Err(AppError::invalid_input(format!(
             "Export at most {MAX_BATCH_FILES} transcripts at a time"
         )));
+    }
+    for item in &items {
+        super::check_len("export item text", &item.text, super::MAX_TEXT_BLOB_LEN)?;
+        super::check_len(
+            "export item source path",
+            &item.source_path,
+            super::MAX_IDENTIFIER_LEN,
+        )?;
     }
     let dir = Path::new(&directory);
     items

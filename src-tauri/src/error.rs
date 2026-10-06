@@ -41,6 +41,8 @@ pub enum ErrorCode {
     InvalidInput,
     NetworkError,
     Internal,
+    /// A destructive action (restart) was refused because work is in progress.
+    WorkInProgress,
 }
 
 /// The single error type that bubbles up to the command layer.
@@ -134,6 +136,9 @@ impl AppError {
     }
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidInput, msg)
+    }
+    pub fn work_in_progress(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::WorkInProgress, msg)
     }
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Internal, msg)

@@ -31,10 +31,7 @@ pub fn set_hotkey<R: Runtime>(
     key: String,
     mode: String,
 ) -> std::result::Result<(), AppError> {
-    let hk_mode = match mode.as_str() {
-        "toggle" => hotkey::HotkeyMode::Toggle,
-        _ => hotkey::HotkeyMode::Ptt,
-    };
+    let hk_mode = parse_hotkey_mode(&mode)?;
     let new_cfg = hotkey::HotkeyConfig { key, mode: hk_mode };
     let state = app.state::<AppStateInner>();
     let old_cfg = SettingsManager::new(&state.db)
@@ -45,6 +42,18 @@ pub fn set_hotkey<R: Runtime>(
     hotkey::rebind(&app, &new_cfg, old_cfg.as_ref(), || {
         SettingsManager::new(&state.db).set("hotkey", &new_cfg)
     })
+}
+
+/// Parse a hotkey mode id from the frontend. An unknown value is rejected
+/// rather than silently coerced to push-to-talk.
+fn parse_hotkey_mode(mode: &str) -> std::result::Result<hotkey::HotkeyMode, AppError> {
+    match mode {
+        "ptt" => Ok(hotkey::HotkeyMode::Ptt),
+        "toggle" => Ok(hotkey::HotkeyMode::Toggle),
+        other => Err(AppError::invalid_input(format!(
+            "Unknown hotkey mode '{other}'"
+        ))),
+    }
 }
 
 #[tauri::command]
@@ -261,7 +270,13 @@ pub(crate) fn ensure_picker_backed_path(
 #[tauri::command]
 pub async fn pick_data_directory(
     state: State<'_, AppStateInner>,
+    jobs: State<'_, super::file_transcription::FileJobState>,
 ) -> std::result::Result<Option<String>, AppError> {
+    // One native dialog at a time: a rapid second click returns no folder
+    // instead of stacking another explorer window.
+    let Some(_picking) = jobs.begin_picking() else {
+        return Ok(None);
+    };
     let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(DATA_DIRECTORY_TITLE))
         .await
         .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
@@ -300,8 +315,39 @@ pub fn get_data_directory(state: State<'_, AppStateInner>) -> crate::data_dir::D
     crate::data_dir::get_status(&state.default_app_data_dir, &state.app_data_dir)
 }
 
+/// Refuse a restart while work would be lost, unless `force` is set.
+///
+/// A file-transcription job or a dictation that is recording/processing both
+/// lose partial work on restart. Returning `WorkInProgress` lets the frontend
+/// ask for confirmation and retry with `force = true`.
+fn ensure_restartable(
+    pipeline: &crate::pipeline::PipelineOrchestrator,
+    jobs: &super::file_transcription::FileJobState,
+    force: bool,
+) -> std::result::Result<(), AppError> {
+    if force {
+        return Ok(());
+    }
+    let recording = matches!(
+        pipeline.state_tag(),
+        crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
+    );
+    if jobs.is_running() || recording {
+        return Err(AppError::work_in_progress(
+            "A transcription or recording is in progress. Restart anyway?",
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub fn restart_app(app: AppHandle) {
+pub fn restart_app(
+    app: AppHandle,
+    jobs: State<'_, super::file_transcription::FileJobState>,
+    force: Option<bool>,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    ensure_restartable(&state.pipeline, &jobs, force.unwrap_or(false))?;
     tracing::info!("Restarting application via restart_app command");
     app.restart();
 }
@@ -573,6 +619,45 @@ pub async fn test_whisper_cpp(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_hotkey_mode_accepts_known_and_rejects_unknown() {
+        assert_eq!(parse_hotkey_mode("ptt").unwrap(), hotkey::HotkeyMode::Ptt);
+        assert_eq!(
+            parse_hotkey_mode("toggle").unwrap(),
+            hotkey::HotkeyMode::Toggle
+        );
+        let err = parse_hotkey_mode("hold").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn ensure_restartable_refuses_when_recording_and_force_overrides() {
+        let pipeline = crate::pipeline::PipelineOrchestrator::new();
+        let jobs = crate::commands::FileJobState::default();
+        // Idle pipeline, no job: restart allowed.
+        assert!(ensure_restartable(&pipeline, &jobs, false).is_ok());
+
+        pipeline
+            .apply(crate::pipeline::StateEvent::StartRecording { active_app: None })
+            .unwrap();
+        let err = ensure_restartable(&pipeline, &jobs, false).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::WorkInProgress);
+        // force bypasses the guard.
+        assert!(ensure_restartable(&pipeline, &jobs, true).is_ok());
+    }
+
+    #[test]
+    fn ensure_restartable_refuses_when_file_job_running() {
+        let pipeline = crate::pipeline::PipelineOrchestrator::new();
+        let jobs = crate::commands::FileJobState::default();
+        let _guard = jobs.begin_picking(); // does not set running
+        assert!(ensure_restartable(&pipeline, &jobs, false).is_ok());
+        // begin() marks a job running.
+        let _job = jobs.begin().unwrap();
+        let err = ensure_restartable(&pipeline, &jobs, false).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::WorkInProgress);
+    }
 
     #[test]
     fn allows_allowed_https_hosts() {

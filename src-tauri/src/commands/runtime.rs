@@ -145,11 +145,21 @@ pub fn decrypted_api_key_from_settings(
     decrypt_api_key_str(&raw, &state.master_key)
 }
 
+/// whisper.cpp `-t` thread flag bounds. A stored out-of-range value (legacy
+/// rows written before write-side validation, or a hand-edited DB) is clamped
+/// here, the single place both dictation and file-job engines route through.
+pub(crate) const MIN_WHISPER_THREADS: u32 = 1;
+pub(crate) const MAX_WHISPER_THREADS: u32 = 32;
+const DEFAULT_WHISPER_THREADS: u32 = 4;
+
 fn whisper_cpp_config_from_settings(settings: &SettingsSnapshot) -> WhisperCppConfig {
+    let threads = settings
+        .u32("whisper_cpp_threads", DEFAULT_WHISPER_THREADS)
+        .clamp(MIN_WHISPER_THREADS, MAX_WHISPER_THREADS);
     WhisperCppConfig {
         binary_path: settings.string("whisper_cpp_binary_path", "whisper-cli"),
         model_path: settings.string("whisper_cpp_model_path", ""),
-        threads: settings.u32("whisper_cpp_threads", 4),
+        threads,
     }
 }
 
@@ -233,7 +243,7 @@ pub fn build_stt_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Result<Arc<dyn crate::stt::SttEngine>> {
-    let kind = stt_engine_kind(&settings.string("stt_engine", "groq"));
+    let kind = stt_engine_kind(&settings.string("stt_engine", "groq"))?;
     let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
     if kind == SttEngineKind::WhisperCpp {
         verify_whisper_binary(state, &whisper_cpp)?;
@@ -276,10 +286,16 @@ pub fn build_stt_for_kind(
     Ok(SttFactory::create(kind, groq, whisper_cpp))
 }
 
-fn stt_engine_kind(value: &str) -> SttEngineKind {
+/// Map a stored `stt_engine` string to its engine kind. An unknown value is an
+/// error, never a silent fallback: coercion would hide config corruption and
+/// run a different engine than the user selected.
+fn stt_engine_kind(value: &str) -> Result<SttEngineKind> {
     match value {
-        "whisper_cpp" => SttEngineKind::WhisperCpp,
-        _ => SttEngineKind::Groq,
+        "groq" => Ok(SttEngineKind::Groq),
+        "whisper_cpp" => Ok(SttEngineKind::WhisperCpp),
+        other => Err(AppError::invalid_input(format!(
+            "Unknown stt_engine '{other}'"
+        ))),
     }
 }
 
@@ -298,23 +314,37 @@ fn stt_cache_key(
     }
 }
 
-pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
+pub fn build_llm(state: &AppStateInner) -> Result<Arc<dyn crate::llm::LlmFormatter>> {
     let settings = SettingsSnapshot::load(&state.db).unwrap_or_default();
     build_llm_from_settings(state, &settings)
+}
+
+/// Map a stored `llm_engine` string to its engine kind. An unknown value is an
+/// error, never a silent fallback to Ollama.
+fn llm_engine_kind(value: &str) -> Result<LlmEngineKind> {
+    match value {
+        "off" => Ok(LlmEngineKind::Off),
+        "groq" => Ok(LlmEngineKind::Groq),
+        "rule_based" => Ok(LlmEngineKind::RuleBased),
+        "ollama" => Ok(LlmEngineKind::Ollama),
+        other => Err(AppError::invalid_input(format!(
+            "Unknown llm_engine '{other}'"
+        ))),
+    }
 }
 
 pub fn build_llm_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
-) -> Arc<dyn crate::llm::LlmFormatter> {
-    let kind = match settings.string("llm_engine", "ollama").as_str() {
-        "off" => LlmEngineKind::Off,
-        "groq" => LlmEngineKind::Groq,
-        "rule_based" => LlmEngineKind::RuleBased,
-        _ => LlmEngineKind::Ollama,
-    };
+) -> Result<Arc<dyn crate::llm::LlmFormatter>> {
+    let kind = llm_engine_kind(&settings.string("llm_engine", "ollama"))?;
     let (ollama, groq) = llm_configs_from_settings(state, settings);
-    LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
+    Ok(LlmFactory::create(
+        kind,
+        ollama,
+        groq,
+        RuleBasedConfig::default(),
+    ))
 }
 
 /// Ollama and Groq LLM configs with the user's model and API key.
@@ -409,8 +439,20 @@ pub fn telemetry_enabled(db: &Database) -> bool {
     settings.bool("telemetry", false)
 }
 
+/// Escape a value for CSV: neutralize spreadsheet formula injection, then
+/// quote and flatten newlines. A leading `=`, `+`, `-`, `@`, tab, or CR would
+/// otherwise be interpreted as a formula by Excel/Sheets.
 pub fn csv_escape(s: &str) -> String {
-    s.replace('"', "\"\"").replace('\r', "").replace('\n', " ")
+    let needs_formula_guard = s
+        .chars()
+        .next()
+        .is_some_and(|c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'));
+    let body = s.replace('"', "\"\"").replace('\r', "").replace('\n', " ");
+    if needs_formula_guard {
+        format!("'{body}")
+    } else {
+        body
+    }
 }
 
 pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
@@ -493,7 +535,10 @@ pub async fn process_audio<R: Runtime>(
         }
     }
 
-    let llm = build_llm_from_settings(&state, &settings);
+    let llm = match build_llm_from_settings(&state, &settings) {
+        Ok(l) => l,
+        Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
+    };
     let active_app = state.pipeline.active_app();
     let mode = active_mode_from_settings(&state.db, &settings, active_app.as_deref());
     let replacements = DictionaryRepository::new(&state.db)
@@ -838,6 +883,65 @@ mod tests {
     }
 
     #[test]
+    fn stt_engine_kind_maps_known_and_rejects_unknown() {
+        assert_eq!(stt_engine_kind("groq").unwrap(), SttEngineKind::Groq);
+        assert_eq!(
+            stt_engine_kind("whisper_cpp").unwrap(),
+            SttEngineKind::WhisperCpp
+        );
+        let err = stt_engine_kind("garbage").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn llm_engine_kind_maps_known_and_rejects_unknown() {
+        assert_eq!(llm_engine_kind("off").unwrap(), LlmEngineKind::Off);
+        assert_eq!(llm_engine_kind("ollama").unwrap(), LlmEngineKind::Ollama);
+        assert_eq!(llm_engine_kind("groq").unwrap(), LlmEngineKind::Groq);
+        assert_eq!(
+            llm_engine_kind("rule_based").unwrap(),
+            LlmEngineKind::RuleBased
+        );
+        let err = llm_engine_kind("gpt").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn whisper_threads_are_clamped_to_range() {
+        let snapshot = |threads: u32| {
+            let mut map = serde_json::Map::new();
+            map.insert(
+                "whisper_cpp_threads".to_string(),
+                serde_json::json!(threads),
+            );
+            SettingsSnapshot::new(map)
+        };
+        assert_eq!(whisper_cpp_config_from_settings(&snapshot(0)).threads, 1);
+        assert_eq!(whisper_cpp_config_from_settings(&snapshot(8)).threads, 8);
+        assert_eq!(
+            whisper_cpp_config_from_settings(&snapshot(9999)).threads,
+            32
+        );
+    }
+
+    #[test]
+    fn csv_escape_guards_formula_leads_and_normalizes() {
+        // Formula-leading characters get a single-quote prefix.
+        for lead in ["=1+1", "+SUM(A1)", "-2+3", "@cmd", "\ttab", "\rcr"] {
+            assert!(
+                csv_escape(lead).starts_with('\''),
+                "expected guard for {lead:?}"
+            );
+        }
+        // Normal cells are untouched except for quote doubling and newline flattening.
+        assert_eq!(csv_escape("hello"), "hello");
+        assert_eq!(csv_escape("a\"b"), "a\"\"b");
+        assert_eq!(csv_escape("a\nb"), "a b");
+        // A formula char not at the start is not a lead and stays as-is.
+        assert_eq!(csv_escape("a=b"), "a=b");
+    }
+
+    #[test]
     fn hotwords_below_cap_joined_with_comma() {
         let hotwords = vec!["alpha".to_string(), "beta".to_string()];
         assert_eq!(
@@ -1129,8 +1233,8 @@ mod tests {
             active_mode_from_settings(&state.db, &snapshot, None).id()
         );
         assert_eq!(
-            build_llm(&state).name(),
-            build_llm_from_settings(&state, &snapshot).name()
+            build_llm(&state).unwrap().name(),
+            build_llm_from_settings(&state, &snapshot).unwrap().name()
         );
         assert_eq!(
             decrypted_api_key(&state).unwrap(),
@@ -1191,8 +1295,8 @@ mod tests {
             active_mode_from_settings(&state.db, &snapshot, None).id()
         );
         assert_eq!(
-            build_llm(&state).name(),
-            build_llm_from_settings(&state, &snapshot).name()
+            build_llm(&state).unwrap().name(),
+            build_llm_from_settings(&state, &snapshot).unwrap().name()
         );
     }
 
@@ -1341,8 +1445,8 @@ mod tests {
             active_mode_from_settings(&state.db, &snapshot, None).id()
         );
         assert_eq!(
-            build_llm(&state).name(),
-            build_llm_from_settings(&state, &snapshot).name()
+            build_llm(&state).unwrap().name(),
+            build_llm_from_settings(&state, &snapshot).unwrap().name()
         );
         assert_eq!(
             decrypted_api_key(&state).unwrap(),

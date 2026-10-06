@@ -3,6 +3,7 @@
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
 
+use crate::commands::runtime::{MAX_WHISPER_THREADS, MIN_WHISPER_THREADS};
 use crate::error::AppError;
 use crate::storage::SettingsManager;
 use crate::AppStateInner;
@@ -68,9 +69,7 @@ pub fn update_setting<R: Runtime>(
     if !SETTABLE_KEYS.contains(&key.as_str()) {
         return Err(AppError::internal(format!("Unknown setting key '{key}'")));
     }
-    if key == "floating_widget_auto_hide_seconds" {
-        validate_auto_hide_seconds(&value)?;
-    }
+    validate_setting_value(&key, &value)?;
     let encoded = encode_setting_value(&key, &value, &state.master_key)?;
     SettingsManager::new(&state.db).set_raw(&key, &encoded)?;
     if key == "floating_widget_auto_hide_seconds" {
@@ -95,6 +94,139 @@ pub(crate) fn validate_auto_hide_seconds(value: &Value) -> std::result::Result<u
         ));
     }
     Ok(secs)
+}
+
+/// Reject a whisper.cpp thread count outside the range the engine honors.
+/// Read-side clamping (see `runtime::whisper_cpp_config_from_settings`) stays
+/// for legacy rows; this stops a compromised webview from persisting one.
+fn validate_whisper_threads(value: &Value) -> std::result::Result<(), AppError> {
+    let in_range = value.as_u64().is_some_and(|v| {
+        (u64::from(MIN_WHISPER_THREADS)..=u64::from(MAX_WHISPER_THREADS)).contains(&v)
+    });
+    if !in_range {
+        return Err(AppError::invalid_input(format!(
+            "Setting 'whisper_cpp_threads' must be an integer between {MIN_WHISPER_THREADS} and {MAX_WHISPER_THREADS}"
+        )));
+    }
+    Ok(())
+}
+
+/// Upper bound for the serialized JSON of any single setting value. Bounds
+/// what a compromised webview can persist into the settings table.
+const MAX_SETTING_JSON_BYTES: usize = 64 * 1024;
+/// Longest accepted identifier-like string setting (mic device id, model name).
+const MAX_SETTING_STRING_LEN: usize = 4 * 1024;
+/// Longest accepted custom mode id (built-ins are shorter; custom ids exist).
+const MAX_ACTIVE_MODE_LEN: usize = 64;
+
+const STT_ENGINES: &[&str] = &["groq", "whisper_cpp"];
+const LLM_ENGINES: &[&str] = &["off", "ollama", "groq", "rule_based"];
+const UI_LANGUAGES: &[&str] = &["en", "id"];
+
+/// Validate a setting value at the write boundary. Enum-valued keys are
+/// checked against their known sets so garbage can never persist and degrade
+/// silently at read time (M-6); every value is length-capped (M-13).
+fn validate_setting_value(key: &str, value: &Value) -> std::result::Result<(), AppError> {
+    let serialized = serde_json::to_string(value)?;
+    if serialized.len() > MAX_SETTING_JSON_BYTES {
+        return Err(AppError::invalid_input(format!(
+            "Setting '{key}' exceeds {MAX_SETTING_JSON_BYTES} bytes"
+        )));
+    }
+    match key {
+        "stt_engine" => validate_enum(key, value, STT_ENGINES),
+        "llm_engine" => validate_enum(key, value, LLM_ENGINES),
+        "language" => validate_enum(key, value, UI_LANGUAGES),
+        // stt_language accepts the "auto" sentinel in addition to a language code.
+        "stt_language" => validate_language_or_auto(key, value),
+        "translation_target" => validate_language_code(key, value),
+        "active_mode" => validate_active_mode(value),
+        "mic_device" | "stt_model" | "llm_model" => {
+            validate_string_len(key, value, MAX_SETTING_STRING_LEN)
+        }
+        "floating_widget_auto_hide_seconds" => validate_auto_hide_seconds(value).map(|_| ()),
+        "whisper_cpp_threads" => validate_whisper_threads(value),
+        _ => Ok(()),
+    }
+}
+
+/// Reject a value that is not one of the known strings for `key`.
+fn validate_enum(key: &str, value: &Value, allowed: &[&str]) -> std::result::Result<(), AppError> {
+    let s = value
+        .as_str()
+        .ok_or_else(|| AppError::invalid_input(format!("Setting '{key}' must be a string")))?;
+    if !allowed.contains(&s) {
+        return Err(AppError::invalid_input(format!(
+            "Setting '{key}' has unknown value '{s}'"
+        )));
+    }
+    Ok(())
+}
+
+/// Accept "auto" or a language code for `stt_language`.
+fn validate_language_or_auto(key: &str, value: &Value) -> std::result::Result<(), AppError> {
+    if value.as_str() == Some("auto") {
+        return Ok(());
+    }
+    validate_language_code(key, value)
+}
+
+/// Accept a language code: two or three lowercase letters, optional
+/// `-`/`_` region suffix of two letters (e.g. "en", "id", "pt-BR"). The
+/// region is case-insensitive to accept the ISO 3166 uppercase convention.
+fn validate_language_code(key: &str, value: &Value) -> std::result::Result<(), AppError> {
+    let s = value
+        .as_str()
+        .ok_or_else(|| AppError::invalid_input(format!("Setting '{key}' must be a string")))?;
+    let mut parts = s.split(['-', '_']);
+    let base = parts.next().unwrap_or("");
+    let region = parts.next();
+    let valid_base = (2..=3).contains(&base.len()) && base.chars().all(|c| c.is_ascii_lowercase());
+    let valid_region = match region {
+        None => true,
+        Some(r) => r.len() == 2 && r.chars().all(|c| c.is_ascii_alphabetic()),
+    };
+    if !valid_base || !valid_region || parts.next().is_some() {
+        return Err(AppError::invalid_input(format!(
+            "Setting '{key}' has invalid language code '{s}'"
+        )));
+    }
+    Ok(())
+}
+
+/// Custom mode ids are allowed, but bounded and free of control characters.
+fn validate_active_mode(value: &Value) -> std::result::Result<(), AppError> {
+    let s = value
+        .as_str()
+        .ok_or_else(|| AppError::invalid_input("Setting 'active_mode' must be a string"))?;
+    if s.trim().is_empty() {
+        return Err(AppError::invalid_input(
+            "Setting 'active_mode' must not be empty",
+        ));
+    }
+    if s.chars().count() > MAX_ACTIVE_MODE_LEN {
+        return Err(AppError::invalid_input(format!(
+            "Setting 'active_mode' exceeds {MAX_ACTIVE_MODE_LEN} characters"
+        )));
+    }
+    if s.chars().any(char::is_control) {
+        return Err(AppError::invalid_input(
+            "Setting 'active_mode' must not contain control characters",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_string_len(key: &str, value: &Value, max: usize) -> std::result::Result<(), AppError> {
+    let s = value
+        .as_str()
+        .ok_or_else(|| AppError::invalid_input(format!("Setting '{key}' must be a string")))?;
+    if s.chars().count() > max {
+        return Err(AppError::invalid_input(format!(
+            "Setting '{key}' exceeds {max} characters"
+        )));
+    }
+    Ok(())
 }
 
 fn encode_setting_value(
@@ -201,6 +333,84 @@ mod tests {
         assert!(!SETTABLE_KEYS.contains(&"floating_widget_pos"));
         assert!(!SETTABLE_KEYS.contains(&"hotkey"));
         assert!(!SETTABLE_KEYS.contains(&"evil_setting"));
+    }
+
+    fn assert_invalid(key: &str, value: serde_json::Value) {
+        let err = validate_setting_value(key, &value).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput, "key {key}");
+    }
+
+    #[test]
+    fn validate_setting_accepts_valid_enum_values() {
+        assert!(validate_setting_value("stt_engine", &serde_json::json!("groq")).is_ok());
+        assert!(validate_setting_value("stt_engine", &serde_json::json!("whisper_cpp")).is_ok());
+        for engine in ["off", "ollama", "groq", "rule_based"] {
+            assert!(
+                validate_setting_value("llm_engine", &serde_json::json!(engine)).is_ok(),
+                "llm_engine {engine}"
+            );
+        }
+        for lang in ["en", "id"] {
+            assert!(validate_setting_value("language", &serde_json::json!(lang)).is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_setting_rejects_unknown_enum_values() {
+        assert_invalid("stt_engine", serde_json::json!("whisper"));
+        assert_invalid("stt_engine", serde_json::json!(42));
+        assert_invalid("llm_engine", serde_json::json!("gpt"));
+        assert_invalid("language", serde_json::json!("fr"));
+        assert_invalid("language", serde_json::json!(null));
+    }
+
+    #[test]
+    fn validate_setting_language_code_rules() {
+        for ok in ["en", "id", "auto", "eng", "pt-BR", "zh_cn"] {
+            assert!(
+                validate_setting_value("stt_language", &serde_json::json!(ok)).is_ok(),
+                "stt_language {ok}"
+            );
+        }
+        for ok in ["en", "id", "pt-BR"] {
+            assert!(
+                validate_setting_value("translation_target", &serde_json::json!(ok)).is_ok(),
+                "translation_target {ok}"
+            );
+        }
+        // translation_target has no "auto" sentinel.
+        assert_invalid("translation_target", serde_json::json!("auto"));
+        for bad in ["english", "e", "EN", "en-US-extra", "en1"] {
+            assert_invalid("stt_language", serde_json::json!(bad));
+        }
+    }
+
+    #[test]
+    fn validate_setting_active_mode_rules() {
+        assert!(validate_setting_value("active_mode", &serde_json::json!("dictation")).is_ok());
+        assert!(validate_setting_value("active_mode", &serde_json::json!("my-custom")).is_ok());
+        assert_invalid("active_mode", serde_json::json!(""));
+        assert_invalid("active_mode", serde_json::json!("   "));
+        assert_invalid("active_mode", serde_json::json!("bad\nmode"));
+        assert_invalid("active_mode", serde_json::json!("x".repeat(65)));
+    }
+
+    #[test]
+    fn validate_setting_length_caps() {
+        assert!(validate_setting_value("stt_model", &serde_json::json!("x".repeat(4096))).is_ok());
+        assert_invalid("stt_model", serde_json::json!("x".repeat(4097)));
+        assert_invalid("mic_device", serde_json::json!("x".repeat(4097)));
+        assert_invalid("llm_model", serde_json::json!(123));
+        // Serialized JSON over 64 KB is rejected for any key.
+        assert_invalid("sound_cues", serde_json::json!("x".repeat(70 * 1024)));
+    }
+
+    #[test]
+    fn validate_setting_whisper_threads_range() {
+        assert!(validate_setting_value("whisper_cpp_threads", &serde_json::json!(1)).is_ok());
+        assert!(validate_setting_value("whisper_cpp_threads", &serde_json::json!(32)).is_ok());
+        assert_invalid("whisper_cpp_threads", serde_json::json!(0));
+        assert_invalid("whisper_cpp_threads", serde_json::json!(33));
     }
 
     #[test]

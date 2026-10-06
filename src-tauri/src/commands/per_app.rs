@@ -18,6 +18,19 @@ pub fn set_per_app_mode(
     state: State<'_, AppStateInner>,
     mapping: crate::storage::PerAppMode,
 ) -> std::result::Result<(), AppError> {
+    super::check_len(
+        "per-app process name",
+        &mapping.app_process_name,
+        super::MAX_IDENTIFIER_LEN,
+    )?;
+    super::check_len(
+        "per-app mode id",
+        &mapping.mode_id,
+        super::MAX_IDENTIFIER_LEN,
+    )?;
+    if let Some(name) = mapping.app_display_name.as_deref() {
+        super::check_len("per-app display name", name, super::MAX_IDENTIFIER_LEN)?;
+    }
     PerAppModeRepository::new(&state.db).upsert(&mapping)
 }
 
