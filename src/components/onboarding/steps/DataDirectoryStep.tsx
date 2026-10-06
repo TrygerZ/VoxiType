@@ -28,6 +28,12 @@ interface Props {
   onContinue: () => void;
 }
 
+function errorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object" || !("code" in err)) return undefined;
+  const code = (err as { code: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export function DataDirectoryStep(props: Props) {
   const { t } = props;
   const [activePath, setActivePath] = useState("");
@@ -36,6 +42,7 @@ export function DataDirectoryStep(props: Props) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   useEffect(() => {
     void getDataDirectory()
@@ -73,14 +80,20 @@ export function DataDirectoryStep(props: Props) {
     }
   };
 
-  const handleRestart = async () => {
+  const handleRestart = async (force = false) => {
     if (busy) return;
     setBusy(true);
     try {
       setError("");
-      await restartApp();
+      await restartApp(force);
+      setConfirmRestart(false);
     } catch (e: unknown) {
-      setError(formatDirectoryError(e, t));
+      // The backend refuses a restart while work is active; ask first.
+      if (errorCode(e) === "WorkInProgress") {
+        setConfirmRestart(true);
+      } else {
+        setError(formatDirectoryError(e, t));
+      }
       setBusy(false);
     }
   };
@@ -146,7 +159,7 @@ export function DataDirectoryStep(props: Props) {
             <Check className="h-4 w-4" />
             {t("data_directory.apply")}
           </Button>
-          {pendingRestart && (
+          {pendingRestart && !confirmRestart && (
             <Button
               type="button"
               variant="secondary"
@@ -158,7 +171,38 @@ export function DataDirectoryStep(props: Props) {
               {t("data_directory.restart_now")}
             </Button>
           )}
+          {pendingRestart && confirmRestart && (
+            <>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={busy}
+                onClick={() => void handleRestart(true)}
+                data-testid="restart-app-confirm-button"
+              >
+                {t("data_directory.restart_confirm_btn")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setConfirmRestart(false)}
+                data-testid="restart-app-cancel-button"
+              >
+                {t("data_directory.restart_cancel")}
+              </Button>
+            </>
+          )}
         </div>
+        {confirmRestart && (
+          <p
+            role="alert"
+            className="mt-3 text-xs text-vx-error"
+            data-testid="restart-app-confirm-message"
+          >
+            {t("data_directory.restart_confirm")}
+          </p>
+        )}
         {pendingRestart && (
           <div
             className="mt-3 rounded bg-vx-accent-soft/30 px-3 py-2"

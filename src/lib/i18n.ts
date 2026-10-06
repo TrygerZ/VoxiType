@@ -5,7 +5,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 
 type Dict = Record<string, string>;
 
-const id: Dict = {
+export const id: Dict = {
   "app.name": "VoxiType",
   "error.settings_load_failed": "Gagal memuat pengaturan",
   "error.dictionary_load_failed": "Gagal memuat kamus",
@@ -102,7 +102,7 @@ const id: Dict = {
   "settings.general.command": "Mode perintah",
   "settings.general.command.desc": "Perintah suara seperti 'baris baru' memicu tombol keyboard.",
   "settings.general.stats": "Statistik penggunaan anonim",
-  "settings.general.stats.desc": "Hanya disimpan secara lokal — tidak pernah dikirim.",
+  "settings.general.stats.desc": "Hanya disimpan secara lokal - tidak pernah dikirim.",
 
   // Audio Tab
   "settings.audio.title": "Audio",
@@ -146,7 +146,7 @@ const id: Dict = {
   "settings.llm.ollama_hint": "Pastikan Ollama berjalan secara lokal di port 11434.",
   "settings.llm.groq_group": "Kredensial Groq",
   "settings.llm.api_key": "Groq API Key",
-  "settings.llm.api_key_hint": "Berbagi dengan pengaturan STT — disimpan secara terenkripsi.",
+  "settings.llm.api_key_hint": "Berbagi dengan pengaturan STT, disimpan secara terenkripsi.",
   "settings.llm.saved_placeholder": "•••••••• (tersimpan)",
   "settings.llm.test_conn": "Tes Koneksi",
   "settings.llm.testing": "Menguji...",
@@ -394,7 +394,7 @@ const id: Dict = {
   "onboarding.welcome.prep_body": "Setup cepat, sekitar 2 menit. Anda akan memilih mesin transkripsi lalu menetapkan hotkey. Semua bisa diubah nanti dari Pengaturan.",
   // STT recommendation (heuristic: match real world — guide the beginner)
   "onboarding.stt.recommended": "Direkomendasikan",
-  "onboarding.stt.groq.recommend_note": "Paling mudah untuk pemula — setup kurang dari 1 menit.",
+  "onboarding.stt.groq.recommend_note": "Paling mudah untuk pemula, setup kurang dari 1 menit.",
   "onboarding.stt.offline.recommend_note": "Cocok jika ingin transkripsi tanpa koneksi internet.",
   "data_directory.title": "Pilih folder data",
   "data_directory.body": "Opsional: pindahkan riwayat, kamus, dan pengaturan lokal VoxiType ke folder lain.",
@@ -407,6 +407,9 @@ const id: Dict = {
   "data_directory.continue": "Lanjut",
   "data_directory.restart": "Perubahan berlaku setelah aplikasi direstart. VoxiType tidak akan restart otomatis.",
   "data_directory.restart_now": "Restart sekarang",
+  "data_directory.restart_confirm": "Ada pekerjaan yang sedang berjalan. Restart sekarang akan membatalkannya.",
+  "data_directory.restart_confirm_btn": "Tetap restart",
+  "data_directory.restart_cancel": "Batal",
   "data_directory.pending_restart": "Menunggu restart: {path}",
   "data_directory.success": "Lokasi tersimpan. Restart aplikasi untuk menerapkan perubahan.",
   "data_directory.fallback_error": "Pemindahan folder gagal: {reason}",
@@ -466,7 +469,7 @@ const id: Dict = {
   "home.translate_desc": "Terjemahkan teks transkripsi secara otomatis",
 };
 
-const en: Dict = {
+export const en: Dict = {
   "app.name": "VoxiType",
   "error.settings_load_failed": "Failed to load settings",
   "error.dictionary_load_failed": "Failed to load dictionary",
@@ -563,7 +566,7 @@ const en: Dict = {
   "settings.general.command": "Command mode",
   "settings.general.command.desc": "Spoken commands like 'new line' trigger keystrokes.",
   "settings.general.stats": "Anonymous usage stats",
-  "settings.general.stats.desc": "Stored locally only — never transmitted.",
+  "settings.general.stats.desc": "Stored locally only - never transmitted.",
 
   // Audio Tab
   "settings.audio.title": "Audio",
@@ -607,7 +610,7 @@ const en: Dict = {
   "settings.llm.ollama_hint": "Make sure Ollama is running locally on port 11434.",
   "settings.llm.groq_group": "Groq credentials",
   "settings.llm.api_key": "Groq API Key",
-  "settings.llm.api_key_hint": "Shared with the STT setting — stored encrypted.",
+  "settings.llm.api_key_hint": "Shared with the STT setting, stored encrypted.",
   "settings.llm.saved_placeholder": "•••••••• (saved)",
   "settings.llm.test_conn": "Test Connection",
   "settings.llm.testing": "Testing...",
@@ -855,7 +858,7 @@ const en: Dict = {
   "onboarding.welcome.prep_body": "Quick setup, about 2 minutes. You will pick a transcription engine then set a hotkey. Everything can be changed later in Settings.",
   // STT recommendation (heuristic: match real world — guide the beginner)
   "onboarding.stt.recommended": "Recommended",
-  "onboarding.stt.groq.recommend_note": "Easiest for beginners — under 1 minute to set up.",
+  "onboarding.stt.groq.recommend_note": "Easiest for beginners, under 1 minute to set up.",
   "onboarding.stt.offline.recommend_note": "Best when you want transcription without internet.",
   "data_directory.title": "Choose data folder",
   "data_directory.body": "Optional: move VoxiType history, dictionary, and local settings to another folder.",
@@ -868,6 +871,9 @@ const en: Dict = {
   "data_directory.continue": "Continue",
   "data_directory.restart": "Changes apply after restarting the app. VoxiType will not restart automatically.",
   "data_directory.restart_now": "Restart now",
+  "data_directory.restart_confirm": "Work is in progress. Restarting now will cancel it.",
+  "data_directory.restart_confirm_btn": "Restart anyway",
+  "data_directory.restart_cancel": "Cancel",
   "data_directory.pending_restart": "Pending restart: {path}",
   "data_directory.success": "Location saved. Restart the app to apply the change.",
   "data_directory.fallback_error": "Folder migration failed: {reason}",

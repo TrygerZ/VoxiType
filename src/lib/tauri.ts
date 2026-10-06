@@ -111,7 +111,10 @@ export const setDataDirectory = (path: string) =>
   invoke<void>("set_data_directory", { path });
 export const getDataDirectory = () =>
   invoke<DataDirectoryStatus>("get_data_directory");
-export const restartApp = () => invoke<void>("restart_app");
+// restart_app refuses (WorkInProgress) while a job or recording is active
+// unless force is true; the caller confirms with the user first.
+export const restartApp = (force = false) =>
+  invoke<void>("restart_app", { force });
 
 // Whisper.cpp paths are gated backend-side: only paths previously returned
 // by pickSetupFile are accepted (see set_whisper_cpp_paths in commands/misc).
