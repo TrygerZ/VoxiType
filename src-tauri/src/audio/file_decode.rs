@@ -8,13 +8,12 @@
 use std::fs::File;
 use std::path::Path;
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 use super::resampler::Resampler;
 use super::TARGET_SAMPLE_RATE;
@@ -30,7 +29,7 @@ fn decode_error(e: SymphoniaError) -> AppError {
 /// An opened audio file positioned at its first audio track.
 pub struct AudioFile {
     format: Box<dyn FormatReader>,
-    decoder: Box<dyn Decoder>,
+    decoder: Box<dyn AudioDecoder>,
     track_id: u32,
     /// Duration from container metadata; `None` when the container omits it.
     pub duration_secs: Option<f64>,
@@ -44,27 +43,28 @@ impl AudioFile {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             hint.with_extension(ext);
         }
-        let probed = symphonia::default::get_probe()
-            .format(
+        let format = symphonia::default::get_probe()
+            .probe(
                 &hint,
                 stream,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .map_err(decode_error)?;
-        let format = probed.format;
         let track = format
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .default_track(TrackType::Audio)
             .ok_or_else(|| AppError::invalid_input("File contains no audio track"))?;
-        let params = &track.codec_params;
-        let duration_secs = match (params.n_frames, params.sample_rate) {
+        let params = track
+            .codec_params
+            .as_ref()
+            .and_then(|p| p.audio())
+            .ok_or_else(|| AppError::invalid_input("File contains no audio track"))?;
+        let duration_secs = match (track.num_frames, params.sample_rate) {
             (Some(frames), Some(rate)) if rate > 0 => Some(frames as f64 / rate as f64),
             _ => None,
         };
         let decoder = symphonia::default::get_codecs()
-            .make(params, &DecoderOptions::default())
+            .make_audio_decoder(params, &AudioDecoderOptions::default())
             .map_err(decode_error)?;
         Ok(Self {
             track_id: track.id,
@@ -117,18 +117,14 @@ impl AudioFile {
     fn next_interleaved(&mut self) -> Result<Option<(Vec<f32>, u32, u16)>> {
         loop {
             let packet = match self.format.next_packet() {
-                Ok(p) => p,
-                Err(SymphoniaError::IoError(e))
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-                {
-                    return Ok(None)
-                }
+                Ok(Some(p)) => p,
+                Ok(None) => return Ok(None),
                 // ponytail: chained streams (rare, e.g. Ogg radio dumps) stop at the
                 // first reset; re-create the decoder here if users report truncation.
                 Err(SymphoniaError::ResetRequired) => return Ok(None),
                 Err(e) => return Err(decode_error(e)),
             };
-            if packet.track_id() != self.track_id {
+            if packet.track_id != self.track_id {
                 continue;
             }
             let decoded = match self.decoder.decode(&packet) {
@@ -139,11 +135,12 @@ impl AudioFile {
                 }
                 Err(e) => return Err(decode_error(e)),
             };
-            let spec = *decoded.spec();
-            let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
-            buffer.copy_interleaved_ref(decoded);
-            let channels = spec.channels.count().max(1) as u16;
-            return Ok(Some((buffer.samples().to_vec(), spec.rate, channels)));
+            let spec = decoded.spec();
+            let channels = spec.channels().count().max(1) as u16;
+            let rate = spec.rate();
+            let mut samples = Vec::new();
+            decoded.copy_to_vec_interleaved(&mut samples);
+            return Ok(Some((samples, rate, channels)));
         }
     }
 }

@@ -32,7 +32,7 @@ async-trait = "0.1"
 # --- Audio pipeline ---
 cpal = "0.15"
 rubato = "0.16"
-symphonia = { version = "0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+symphonia = { version = "0.6.1", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 
 # --- Transcript export (DOCX container; entries are stored, not compressed) ---
 zip = { version = "=7.2.0", default-features = false }
