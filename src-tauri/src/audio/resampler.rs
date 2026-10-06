@@ -110,18 +110,16 @@ impl Resampler {
 
     /// Flush any buffered remainder by zero-padding to a final chunk.
     pub fn flush(&mut self) -> Result<Vec<f32>> {
+        // Leftover holds at most `channels - 1` raw interleaved samples from a
+        // partial frame; they are not mono output, so drop them.
+        self.leftover_buffer.clear();
         let Some(resampler) = self.resampler.as_mut() else {
-            let mut rem = std::mem::take(&mut self.pending);
-            rem.extend_from_slice(&self.leftover_buffer);
-            self.leftover_buffer.clear();
-            return Ok(rem);
+            return Ok(std::mem::take(&mut self.pending));
         };
-        if self.pending.is_empty() && self.leftover_buffer.is_empty() {
+        if self.pending.is_empty() {
             return Ok(Vec::new());
         }
         let mut chunk: Vec<f32> = std::mem::take(&mut self.pending);
-        chunk.extend_from_slice(&self.leftover_buffer);
-        self.leftover_buffer.clear();
         chunk.resize(self.chunk_frames, 0.0);
         let processed = resampler
             .process(&[chunk], None)
@@ -147,6 +145,15 @@ mod tests {
         let mut r = Resampler::new(16_000, 16_000, 1).unwrap();
         let out = r.process(&[0.1, 0.2, 0.3]).unwrap();
         assert_eq!(out, vec![0.1, 0.2, 0.3]);
+    }
+
+    #[test]
+    fn flush_drops_partial_frame_leftover() {
+        let mut r = Resampler::new(16_000, 16_000, 2).unwrap();
+        // One full stereo frame [1.0, 1.0] -> mono 1.0 ; the trailing 0.5 is
+        // half a frame and must not leak into the output as a raw sample.
+        assert_eq!(r.process(&[1.0, 1.0, 0.5]).unwrap(), vec![1.0]);
+        assert_eq!(r.flush().unwrap(), Vec::<f32>::new());
     }
 
     #[test]
