@@ -77,6 +77,21 @@ fn normalize_token(tok: &str) -> String {
         .to_lowercase()
 }
 
+/// Whether punctuation at this position sits inside a single token and must
+/// neither be split by a space nor trigger sentence capitalization: decimals
+/// and dotted domains (`3.14`, `example.com`), decimal commas and times
+/// (`3,5`, `12:30`).
+fn is_intra_token_punctuation(prev: Option<char>, c: char, next: Option<char>) -> bool {
+    let (Some(p), Some(n)) = (prev, next) else {
+        return false;
+    };
+    match c {
+        '.' => p.is_alphanumeric() && n.is_alphanumeric(),
+        ',' | ':' => p.is_ascii_digit() && n.is_ascii_digit(),
+        _ => false,
+    }
+}
+
 /// Ensure a single space after sentence punctuation, no space before it.
 fn fix_punctuation_spacing(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -88,8 +103,15 @@ fn fix_punctuation_spacing(text: &str) -> String {
                 out.pop();
             }
             out.push(c);
+            let prev = i.checked_sub(1).map(|j| chars[j]);
+            let next = chars.get(i + 1).copied();
+            // Punctuation inside a token (decimals, times, domains) keeps the
+            // token intact instead of being split by a space.
+            if is_intra_token_punctuation(prev, c, next) {
+                continue;
+            }
             // Ensure following space if next char isn't space/end/punct.
-            if let Some(&next) = chars.get(i + 1) {
+            if let Some(next) = next {
                 if next != ' ' && !next.is_ascii_punctuation() {
                     out.push(' ');
                 }
@@ -105,15 +127,20 @@ fn fix_punctuation_spacing(text: &str) -> String {
 fn capitalize_sentences(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut capitalize_next = true;
-    for c in text.chars() {
+    let chars: Vec<char> = text.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
         if capitalize_next && c.is_alphabetic() {
             out.extend(c.to_uppercase());
             capitalize_next = false;
-        } else {
-            out.push(c);
-            if matches!(c, '.' | '!' | '?') {
-                capitalize_next = true;
-            }
+            continue;
+        }
+        out.push(c);
+        let prev = i.checked_sub(1).map(|j| chars[j]);
+        let next = chars.get(i + 1).copied();
+        // `!` and `?` always end a sentence; `.` ends one only when it is not
+        // part of an intra-token token (so "example.com" stays lowercase).
+        if matches!(c, '!' | '?') || (c == '.' && !is_intra_token_punctuation(prev, c, next)) {
+            capitalize_next = true;
         }
     }
     out
@@ -178,9 +205,57 @@ mod tests {
 
     #[test]
     fn removes_multi_word_fillers() {
-        // "you know" is a two-token default filler; it must be dropped as a
-        // phrase, not left behind because it isn't a single token.
-        let out = fmt().clean("i think you know this works");
+        // A two-token filler phrase must be dropped as a phrase, not left
+        // behind because it isn't a single token. "you know" is no longer a
+        // default (it is a legitimate phrase), so the config is supplied.
+        let config = RuleBasedConfig {
+            filler_words: vec!["you know".to_string()],
+        };
+        let out = RuleBasedFormatter::new(config).clean("i think you know this works");
         assert_eq!(out, "I think this works.");
+    }
+
+    #[test]
+    fn default_config_keeps_legitimate_words() {
+        // "like" and "you know" were removed from the default filler list
+        // because they corrupt legitimate text.
+        let out = fmt().clean("it works like a charm you know");
+        assert_eq!(out, "It works like a charm you know.");
+    }
+
+    #[test]
+    fn keeps_decimal_point_intact() {
+        assert_eq!(
+            fmt().clean("pi is 3.14 approximately"),
+            "Pi is 3.14 approximately."
+        );
+    }
+
+    #[test]
+    fn keeps_time_colon_intact() {
+        assert_eq!(fmt().clean("meet at 12:30 today"), "Meet at 12:30 today.");
+    }
+
+    #[test]
+    fn keeps_decimal_comma_intact() {
+        assert_eq!(fmt().clean("beratnya 3,5 kg"), "Beratnya 3,5 kg.");
+    }
+
+    #[test]
+    fn keeps_domain_dot_intact_and_lowercase() {
+        assert_eq!(
+            fmt().clean("visit example.com now"),
+            "Visit example.com now."
+        );
+    }
+
+    #[test]
+    fn normal_comma_spacing_still_regresses() {
+        assert_eq!(fmt().clean("halo ,dunia"), "Halo, dunia.");
+    }
+
+    #[test]
+    fn sentence_dot_still_capitalizes_next_word() {
+        assert_eq!(fmt().clean("halo. dunia"), "Halo. Dunia.");
     }
 }
