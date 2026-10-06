@@ -96,6 +96,10 @@ export const deleteSnippet = (id: string) =>
 
 // --- System ---
 export const getMicrophones = () => invoke<DeviceInfo[]>("get_microphones");
+// Onboarding microphone level meter: streams `audio_level` outside Recording.
+// Refused by the backend while a recording or processing is active.
+export const setMicMeter = (enabled: boolean, device: string | null) =>
+  invoke<void>("set_mic_meter", { enabled, device });
 export const getAppInfo = () => invoke<AppInfo>("get_app_info");
 export const checkUpdates = () => invoke<UpdateInfo>("check_updates");
 
