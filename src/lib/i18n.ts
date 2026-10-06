@@ -966,6 +966,18 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   return formatTranslation(currentLang, key, vars);
 }
 
+/** Translate function shape returned by useT, accepted by pure helpers. */
+export type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+const BUILT_IN_MODES = new Set(["dictation", "message", "email", "file"]);
+
+// Externally written DB rows can carry arbitrary mode ids; render those with a
+// capitalized id instead of the raw "settings.modes.<id>" i18n key.
+export function modeLabel(t: Translate, mode: string): string {
+  if (BUILT_IN_MODES.has(mode)) return t(`settings.modes.${mode}`);
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
 useSettingsStore.subscribe((state) => {
   const lang = state.settings.language;
   if (typeof lang === "string") {

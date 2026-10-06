@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { formatTauriError, setHotkey } from "../../lib/tauri";
+import { invokeAction } from "../../lib/invokeAction";
 import { useT } from "../../lib/i18n";
 import { getHotkeySetting } from "../../lib/settingsGuards";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -47,7 +48,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const saveHotkey = async () => { try { await setHotkey(hotkeyKey, hotkeyMode); await loadSettings(); setStep("smoke_test"); } catch (e: unknown) { setHotkeyError(formatTauriError(e)); } };
 
   if (step === "welcome") return <WelcomeStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} onStart={() => setStep("quick_settings")} onSkip={() => void finish()} />;
-  if (step === "quick_settings") return <QuickSettingsStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} lang={language} soundCues={soundCues} onLanguageChange={(value) => { setLanguage(value); void update("language", value); }} onSoundCuesChange={setSoundCues} onBack={() => setStep("welcome")} onContinue={saveQuickSettings} />;
+  if (step === "quick_settings") return <QuickSettingsStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} lang={language} soundCues={soundCues} onLanguageChange={(value) => { setLanguage(value); void invokeAction(() => update("language", value)); }} onSoundCuesChange={setSoundCues} onBack={() => setStep("welcome")} onContinue={saveQuickSettings} />;
   if (step === "microphone") return <MicrophoneStep step={step} currentStepIdx={currentStepIdx} t={t} selectedDevice={micDevice} onDeviceChange={setMicDevice} onBack={() => setStep("quick_settings")} onContinue={() => void saveMicrophone()} onSkip={() => setStep("stt_setup")} />;
   if (step === "stt_setup") return <SttSetupStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} sttEngine={sttEngine} sttLanguage={sttLanguage} apiKey={apiKey} whisperBinary={binary} whisperModel={model} whisperThreads={threads} onEngineChange={setSttEngine} onLanguageChange={setSttLanguage} onApiKeyChange={setApiKey} onThreadsChange={setThreads} onBinaryChange={setBinary} onModelChange={setModel} onSave={() => void saveStt()} onBack={() => setStep("quick_settings")} onSkip={() => setStep("data_directory")} />;
   if (step === "data_directory") return <DataDirectoryStep step={step} currentStepIdx={currentStepIdx} t={t} onBack={() => setStep("stt_setup")} onSkip={() => setStep("hotkey")} onContinue={() => setStep("hotkey")} />;
