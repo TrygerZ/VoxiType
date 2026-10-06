@@ -70,7 +70,7 @@ impl TextInjector for HybridInjector {
 
         // Save current clipboard content before writing dictation text.
         let prev = clipboard::read_snapshot();
-        let mut restore_guard = ClipboardRestoreGuard::new(prev);
+        let mut restore_guard = ClipboardRestoreGuard::new(prev, text.to_string());
 
         clipboard::write_text(text)?;
 
@@ -110,19 +110,24 @@ impl TextInjector for HybridInjector {
 /// RAII guard ensuring clipboard restoration on all exit paths.
 struct ClipboardRestoreGuard {
     snapshot: Option<clipboard::ClipboardSnapshot>,
+    /// The text this injection wrote to the clipboard. The restore is skipped
+    /// when the clipboard no longer holds it, so an external copy made during
+    /// the injection window is preserved.
+    dictated: String,
 }
 
 impl ClipboardRestoreGuard {
-    fn new(snapshot: clipboard::ClipboardSnapshot) -> Self {
+    fn new(snapshot: clipboard::ClipboardSnapshot, dictated: String) -> Self {
         Self {
             snapshot: Some(snapshot),
+            dictated,
         }
     }
 
     /// Restore previous clipboard content and disarm guard.
     fn restore(&mut self) {
         if let Some(snapshot) = self.snapshot.take() {
-            restore_clipboard(&snapshot);
+            restore_clipboard(&snapshot, &self.dictated);
         }
     }
 }
@@ -133,7 +138,21 @@ impl Drop for ClipboardRestoreGuard {
     }
 }
 
-fn restore_clipboard(prev: &clipboard::ClipboardSnapshot) {
+fn restore_clipboard(prev: &clipboard::ClipboardSnapshot, dictated: &str) {
+    match clipboard::read_text() {
+        Some(current) if current == dictated => {}
+        // The clipboard no longer holds the dictated text: an external writer
+        // intervened (user copy, clipboard manager, sync tool). Keep theirs.
+        // `None` also lands here: non-text, empty, or unreadable content means
+        // we cannot prove the dictated text is still there, so do not clobber.
+        _ => {
+            tracing::info!(
+                "Clipboard changed during injection; keeping external content, skipping restore"
+            );
+            return;
+        }
+    }
+
     match prev {
         clipboard::ClipboardSnapshot::Text(prev_text) => {
             if let Err(e) = clipboard::write_text(prev_text) {
@@ -247,7 +266,10 @@ mod tests {
         clipboard::write_text(test_prev).unwrap();
 
         {
-            let guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
+            let guard = ClipboardRestoreGuard::new(
+                ClipboardSnapshot::Text(test_prev.to_string()),
+                "OVERWRITTEN".to_string(),
+            );
             clipboard::write_text("OVERWRITTEN").unwrap();
             assert_eq!(clipboard::read_text().as_deref(), Some("OVERWRITTEN"));
             drop(guard);
@@ -262,7 +284,10 @@ mod tests {
         use crate::injection::clipboard::ClipboardSnapshot;
 
         let test_prev = "VOXITYPE_TEST_GUARD_EXPLICIT";
-        let mut guard = ClipboardRestoreGuard::new(ClipboardSnapshot::Text(test_prev.to_string()));
+        let mut guard = ClipboardRestoreGuard::new(
+            ClipboardSnapshot::Text(test_prev.to_string()),
+            test_prev.to_string(),
+        );
         guard.restore();
         assert!(guard.snapshot.is_none());
     }
@@ -275,7 +300,8 @@ mod tests {
         let sensitive = "VOXITYPE_TEST_SENSITIVE_DICTATION";
         clipboard::write_text(sensitive).unwrap();
 
-        let mut guard = ClipboardRestoreGuard::new(ClipboardSnapshot::NonText);
+        let mut guard =
+            ClipboardRestoreGuard::new(ClipboardSnapshot::NonText, sensitive.to_string());
 
         // Invariant: text must NOT be wiped before restore is invoked (paste still in progress).
         assert_eq!(clipboard::read_text().as_deref(), Some(sensitive));
@@ -294,12 +320,35 @@ mod tests {
         clipboard::write_text(sensitive).unwrap();
 
         {
-            let _guard = ClipboardRestoreGuard::new(ClipboardSnapshot::NonText);
+            let _guard =
+                ClipboardRestoreGuard::new(ClipboardSnapshot::NonText, sensitive.to_string());
             // Invariant: text preserved inside scope before drop.
             assert_eq!(clipboard::read_text().as_deref(), Some(sensitive));
         }
 
         // On drop, fail-safe wipes text from clipboard.
         assert_eq!(clipboard::read_text().as_deref(), Some(""));
+    }
+
+    #[test]
+    fn restore_skips_when_clipboard_changed_externally() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+        use crate::injection::clipboard::{self, ClipboardSnapshot};
+
+        let dictated = "VOXITYPE_TEST_DICTATED";
+        let external = "VX_EXTERNAL";
+        clipboard::write_text(dictated).unwrap();
+
+        let guard = ClipboardRestoreGuard::new(
+            ClipboardSnapshot::Text("ORIGINAL".to_string()),
+            dictated.to_string(),
+        );
+        // An external writer (user copy, clipboard manager) replaces the dictated text.
+        clipboard::write_text(external).unwrap();
+
+        drop(guard);
+
+        // The external content survives; the stale snapshot is not restored.
+        assert_eq!(clipboard::read_text().as_deref(), Some(external));
     }
 }
