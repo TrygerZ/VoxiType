@@ -116,7 +116,9 @@ impl<'a> HistoryRepository<'a> {
             if filter.pinned_only == Some(true) {
                 sql.push_str(" AND is_pinned = 1");
             }
-            sql.push_str(" ORDER BY created_at DESC");
+            // `id DESC` breaks ties on second-granularity `created_at` so offset
+            // pagination never duplicates or skips rows at page boundaries (L-8).
+            sql.push_str(" ORDER BY created_at DESC, id DESC");
             let limit = filter.limit.unwrap_or(100).min(10000) as i64;
             let offset = filter.offset.unwrap_or(0) as i64;
             sql.push_str(" LIMIT :limit OFFSET :offset");
@@ -408,6 +410,61 @@ mod tests {
         let removed = repo.clear(false).unwrap();
         assert_eq!(removed, 1);
         assert_eq!(repo.list(&HistoryFilter::default()).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn list_paginates_deterministically_on_same_timestamp() {
+        // A pre-v3 (0.6.8) database has no idx_transcriptions_created_at, so the
+        // optimizer cannot supply a stable tie order; the query must guarantee it.
+        let temp_dir =
+            std::env::temp_dir().join(format!("voxitype_paging_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let db_path = temp_dir.join("voxitype.db");
+        let db = Database::open(&db_path).unwrap();
+        db.with_conn(|c| {
+            c.execute("DROP INDEX IF EXISTS idx_transcriptions_created_at", [])?;
+            Ok(())
+        })
+        .unwrap();
+        let repo = HistoryRepository::new(&db);
+
+        // Rows are inserted in ascending id order at one timestamp, so the
+        // natural scan order is the reverse of the id DESC tie-break order.
+        const ROW_COUNT: u32 = 10;
+        for n in 0..ROW_COUNT {
+            db.with_conn(|c| {
+                c.execute(
+                    "INSERT INTO transcriptions (id, created_at, text_raw, text_formatted)
+                     VALUES (?1, '2026-01-01T00:00:00Z', 'x', 'x')",
+                    [format!("row-{n}")],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        let mut expected: Vec<String> = (0..ROW_COUNT).map(|n| format!("row-{n}")).collect();
+        expected.sort();
+        expected.reverse();
+
+        let mut actual = Vec::new();
+        for offset in 0..ROW_COUNT {
+            let page = repo
+                .list(&HistoryFilter {
+                    limit: Some(1),
+                    offset: Some(offset),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(page.len(), 1, "offset {offset} must return exactly one row");
+            actual.push(page[0].id.clone());
+        }
+        assert_eq!(
+            actual, expected,
+            "page sequence must follow id DESC with no duplicate or skipped row"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
