@@ -3,7 +3,6 @@ import { onEvent } from "../../lib/tauri";
 import type { AudioLevelEvent } from "../../types/events";
 
 interface WaveformProps {
-  level?: number;
   active: boolean;
   barClassName?: string;
 }
@@ -21,13 +20,9 @@ const nextBarValue = (lvl: number): number => {
   return Math.max(0.08, Math.min(1, boostLevel(lvl) * jitter));
 };
 
-function useWaveformBars(active: boolean, level?: number): number[] {
+function useWaveformBars(active: boolean): number[] {
   const [bars, setBars] = useState<number[]>(STATIC_WAVE);
-  const levelRef = useRef(level ?? 0);
-
-  useEffect(() => {
-    if (level !== undefined) levelRef.current = level;
-  }, [level]);
+  const levelRef = useRef(0);
 
   useEffect(() => {
     if (!active) {
@@ -43,15 +38,15 @@ function useWaveformBars(active: boolean, level?: number): number[] {
     }, 50);
     return () => {
       clearInterval(id);
-      void unlistenPromise.then((unlisten) => unlisten());
+      void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
   }, [active]);
 
   return bars;
 }
 
-export function Waveform({ level, active, barClassName }: WaveformProps) {
-  const bars = useWaveformBars(active, level);
+export function Waveform({ active, barClassName }: WaveformProps) {
+  const bars = useWaveformBars(active);
 
   return (
     <div className="flex h-5 flex-1 items-center gap-[2px]" aria-hidden>
