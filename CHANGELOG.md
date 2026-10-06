@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-06
+
+### Fixed
+- Fixed unknown engine, language, and hotkey mode values being silently accepted or coerced. Settings are now validated when written and when read; an unrecognized value is rejected instead of falling back to a different engine.
+- Fixed whisper.cpp thread counts above 32 being persisted. Thread counts are now clamped to 1 through 32 in both the settings inputs and the backend.
+- Fixed `re_inject` inserting text while a dictation was still recording or processing. Re-injection is now rejected unless the pipeline is idle or in the error state.
+- Fixed restarting the app while a recording or file transcription was active. Restart now asks for confirmation before interrupting the work.
+- Fixed concurrent file dialogs opening twice on rapid double-click. The export directory and data directory pickers now share the same single-dialog guard as the audio picker.
+- Added length limits to all IPC inputs that previously accepted unbounded text, including dictionary, snippet, per-app, settings, search, and export fields.
+
+### Security
+- Escaped leading `=`, `+`, `-`, `@`, tab, and carriage return characters in exported CSV history, preventing spreadsheet formula injection.
+- Restricted the update release link to `https://github.com/` URLs; other schemes and hosts are discarded.
+- Opened external URLs through ShellExecuteW instead of `cmd /c start`, removing the command-line percent-expansion surface.
+
 ## [0.6.2] - 2026-10-04
 
 ### Fixed
@@ -318,7 +333,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/TrygerZ/VoxiType/compare/v0.5.2...v0.6.0
