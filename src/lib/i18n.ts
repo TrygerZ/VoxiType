@@ -7,6 +7,9 @@ type Dict = Record<string, string>;
 
 export const id: Dict = {
   "app.name": "VoxiType",
+  "notice.no_speech": "Tidak ada suara yang terdeteksi",
+  "notice.hotkey_unavailable":
+    "Hotkey tidak dapat didaftarkan. Pilih shortcut lain di Pengaturan.",
   "error.settings_load_failed": "Gagal memuat pengaturan",
   "error.dictionary_load_failed": "Gagal memuat kamus",
   "error.history_load_failed": "Gagal memuat riwayat",
@@ -471,6 +474,9 @@ export const id: Dict = {
 
 export const en: Dict = {
   "app.name": "VoxiType",
+  "notice.no_speech": "No speech detected",
+  "notice.hotkey_unavailable":
+    "The hotkey could not be registered. Choose a different shortcut in Settings.",
   "error.settings_load_failed": "Failed to load settings",
   "error.dictionary_load_failed": "Failed to load dictionary",
   "error.history_load_failed": "Failed to load history",

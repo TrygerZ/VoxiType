@@ -36,3 +36,8 @@ export interface WidgetHideRequestedEvent {
 export interface WidgetRevealRequestedEvent {
   id: number;
 }
+
+export interface NoticeEvent {
+  code: string;
+  message: string;
+}

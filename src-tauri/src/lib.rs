@@ -234,9 +234,21 @@ pub fn run() {
                 tracing::warn!("Tray setup failed: {e}");
             }
 
-            // Global hotkey.
-            if let Err(e) = hotkey::register(handle, &hotkey_cfg) {
-                tracing::warn!("Hotkey registration failed: {e}");
+            // Global hotkey. Persist whether registration succeeded so the
+            // frontend can surface a notice on load: it is usually not listening
+            // yet when setup runs, so an emitted event would be missed.
+            let hotkey_unavailable = match hotkey::register(handle, &hotkey_cfg) {
+                Ok(()) => false,
+                Err(e) => {
+                    tracing::warn!("Hotkey registration failed: {e}");
+                    true
+                }
+            };
+            let state = handle.state::<AppStateInner>();
+            if let Err(e) =
+                SettingsManager::new(&state.db).set("hotkey_unavailable", &hotkey_unavailable)
+            {
+                tracing::warn!("Failed to persist hotkey_unavailable: {e}");
             }
 
             // Floating widget: remember its position across drags and apply the

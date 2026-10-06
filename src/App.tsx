@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { FloatingDock, type View } from "./components/common/FloatingDock";
 import { HomeView } from "./components/common/HomeView";
@@ -14,6 +14,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { onEvent } from "./lib/tauri";
+import { toast } from "./stores/toastStore";
+import type { NoticeEvent } from "./types/events";
 import { setLanguage, useT } from "./lib/i18n";
 import { ToastContainer } from "./components/ui/Toast";
 
@@ -53,7 +55,7 @@ export default function App() {
     let active = true;
     const VALID_ROUTES = ["settings", "history", "dictionary", "snippets", "about"] as const;
     type Route = typeof VALID_ROUTES[number];
-    
+
     const isValidRoute = (value: string): value is Route => {
       return VALID_ROUTES.includes(value as Route);
     };
@@ -64,12 +66,44 @@ export default function App() {
         setView(route);
       }
     });
-    
+
     return () => {
       active = false;
       unsub.then((fn) => fn());
     };
   }, []);
+
+  // Backend notices (for example a discarded no-speech recording).
+  useEffect(() => {
+    let active = true;
+    const unsub = onEvent<NoticeEvent>("notice", (payload) => {
+      if (!active) return;
+      const message =
+        payload.code === "no_speech_detected"
+          ? t("notice.no_speech")
+          : payload.message;
+      toast(message, "info");
+    });
+    return () => {
+      active = false;
+      unsub.then((fn) => fn());
+    };
+  }, [t]);
+
+  // A hotkey that failed to register at startup is persisted by the backend;
+  // surface it once per app load so the user can rebind.
+  const hotkeyNoticeShown = useRef(false);
+  useEffect(() => {
+    if (
+      loaded &&
+      !error &&
+      settings.hotkey_unavailable === true &&
+      !hotkeyNoticeShown.current
+    ) {
+      hotkeyNoticeShown.current = true;
+      toast(t("notice.hotkey_unavailable"), "error");
+    }
+  }, [loaded, error, settings.hotkey_unavailable, t]);
 
   if (!loaded) {
     return (
