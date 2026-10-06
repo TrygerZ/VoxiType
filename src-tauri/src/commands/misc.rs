@@ -41,7 +41,15 @@ pub fn set_hotkey<R: Runtime>(
 
     hotkey::rebind(&app, &new_cfg, old_cfg.as_ref(), || {
         SettingsManager::new(&state.db).set("hotkey", &new_cfg)
-    })
+    })?;
+
+    // `rebind` returning Ok is not proof the accelerator is registered: the
+    // identical-accelerator path is a no-op that registers nothing. Clear the
+    // startup-unavailable flag only when the plugin confirms registration.
+    if hotkey::is_registered(&app, &new_cfg.key) {
+        SettingsManager::new(&state.db).set("hotkey_unavailable", &false)?;
+    }
+    Ok(())
 }
 
 /// Parse a hotkey mode id from the frontend. An unknown value is rejected
@@ -639,7 +647,10 @@ mod tests {
         assert!(ensure_restartable(&pipeline, &jobs, false).is_ok());
 
         pipeline
-            .apply(crate::pipeline::StateEvent::StartRecording { active_app: None })
+            .apply(crate::pipeline::StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         let err = ensure_restartable(&pipeline, &jobs, false).unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::WorkInProgress);

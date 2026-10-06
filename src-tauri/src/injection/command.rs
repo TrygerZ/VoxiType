@@ -66,19 +66,26 @@ impl VoiceCommand {
 }
 
 /// Verify that the current foreground window matches the window that was active
-/// when capture started. If the window changed, abort to prevent executing
-/// editing macros in the wrong application.
-pub fn verify_target_window(expected: Option<&str>, current: Option<&str>) -> Result<()> {
-    if let Some(initial) = expected {
-        if current != Some(initial) {
-            let current_display = current.unwrap_or("none");
-            tracing::warn!(
-                "Foreground window changed from {initial} to {current_display}; aborting command injection"
-            );
-            return Err(AppError::injection(format!(
-                "Command aborted: target window changed from {initial} to {current_display}"
-            )));
-        }
+/// when capture started. Fails closed: an unverifiable start (no window handle
+/// was captured) aborts, and a changed window aborts, so editing macros never
+/// run in the wrong application.
+pub fn verify_target_window(expected: Option<isize>, current: Option<isize>) -> Result<()> {
+    let Some(expected) = expected else {
+        tracing::warn!("No target window captured at recording start; aborting command injection");
+        return Err(AppError::injection(
+            "Command aborted: target window could not be verified",
+        ));
+    };
+    if current != Some(expected) {
+        let current_display = current
+            .map(|h| h.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        tracing::warn!(
+            "Foreground window changed from {expected} to {current_display}; aborting command injection"
+        );
+        return Err(AppError::injection(format!(
+            "Command aborted: target window changed from {expected} to {current_display}"
+        )));
     }
     Ok(())
 }
@@ -219,14 +226,22 @@ mod tests {
 
     #[test]
     fn verifies_target_window_matches() {
-        assert!(verify_target_window(Some("code"), Some("code")).is_ok());
-        assert!(verify_target_window(None, Some("code")).is_ok());
-        assert!(verify_target_window(None, None).is_ok());
+        assert!(verify_target_window(Some(100), Some(100)).is_ok());
 
-        let err_diff = verify_target_window(Some("code"), Some("chrome")).unwrap_err();
+        let err_diff = verify_target_window(Some(100), Some(200)).unwrap_err();
         assert_eq!(err_diff.code, crate::error::ErrorCode::InjectionFailed);
 
-        let err_lost = verify_target_window(Some("code"), None).unwrap_err();
+        let err_lost = verify_target_window(Some(100), None).unwrap_err();
         assert_eq!(err_lost.code, crate::error::ErrorCode::InjectionFailed);
+    }
+
+    #[test]
+    fn verifies_target_window_fails_closed_when_unverifiable() {
+        // No window handle captured at start: verification is impossible, so abort.
+        let err_unknown = verify_target_window(None, Some(100)).unwrap_err();
+        assert_eq!(err_unknown.code, crate::error::ErrorCode::InjectionFailed);
+
+        let err_both_none = verify_target_window(None, None).unwrap_err();
+        assert_eq!(err_both_none.code, crate::error::ErrorCode::InjectionFailed);
     }
 }

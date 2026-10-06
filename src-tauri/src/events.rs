@@ -39,6 +39,14 @@ pub struct WidgetRevealRequested {
     pub id: u64,
 }
 
+/// A user-visible informational notice. `code` lets the frontend map to a
+/// translated string; `message` is a plain fallback for unknown codes.
+#[derive(Debug, Clone, Serialize)]
+pub struct Notice {
+    pub code: String,
+    pub message: String,
+}
+
 pub fn emit_file_transcription_progress<R: Runtime>(
     app: &AppHandle<R>,
     progress: crate::pipeline::file_job::Progress,
@@ -96,6 +104,19 @@ pub fn emit_audio_level<R: Runtime>(app: &AppHandle<R>, level: f32) {
 pub fn emit_widget_hide_requested<R: Runtime>(app: &AppHandle<R>, id: u64) {
     if let Err(e) = app.emit("floating_widget_hide_requested", WidgetHideRequested { id }) {
         tracing::warn!("Failed to emit floating_widget_hide_requested: {e}");
+    }
+}
+
+/// Emit a user-visible notice (non-error informational signal).
+pub fn emit_notice<R: Runtime>(app: &AppHandle<R>, code: &str, message: &str) {
+    if let Err(e) = app.emit(
+        "notice",
+        Notice {
+            code: code.to_string(),
+            message: message.to_string(),
+        },
+    ) {
+        tracing::warn!("Failed to emit notice: {e}");
     }
 }
 

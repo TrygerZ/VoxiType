@@ -23,8 +23,9 @@ use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCpp
 use crate::util::MutexExt;
 use crate::{events, AppStateInner};
 
-// Maximum recording duration in seconds to prevent runaway recordings
-pub const MAX_RECORDING_DURATION_SECS: u64 = 300;
+// Maximum recording duration in seconds to prevent runaway recordings. Shares
+// the capture module's hard sample cap so the two limits cannot diverge.
+pub const MAX_RECORDING_DURATION_SECS: u64 = crate::audio::MAX_CAPTURE_SECS;
 
 // ---------------------------------------------------------------
 // Settings-derived config builders
@@ -510,15 +511,26 @@ pub async fn process_audio<R: Runtime>(
         match stt.transcribe(&audio, &stt_config).await {
             Ok(tr) => {
                 if let Some(cmd) = crate::injection::VoiceCommand::from_phrase(&tr.text) {
-                    let initial_app = state.pipeline.active_app();
-                    let current_app = crate::active_window::foreground_process_name();
+                    let expected_window = state.pipeline.active_window_id();
+                    let current_window = crate::active_window::foreground_window_id();
                     if let Err(e) = crate::injection::command::verify_target_window(
-                        initial_app.as_deref(),
-                        current_app.as_deref(),
+                        expected_window,
+                        current_window,
                     ) {
                         return fail_session(&app, &state.pipeline, session_generation, &e);
                     }
-                    if let Err(e) = crate::injection::command::execute(cmd) {
+                    // enigo drives the OS input queue and must not run on a tokio
+                    // worker thread; offload it to the blocking pool like capture init.
+                    let executed = tokio::task::spawn_blocking(move || {
+                        crate::injection::command::execute(cmd)
+                    })
+                    .await
+                    .unwrap_or_else(|join_err| {
+                        Err(AppError::injection(format!(
+                            "Command execution task failed: {join_err}"
+                        )))
+                    });
+                    if let Err(e) = executed {
                         return fail_session(&app, &state.pipeline, session_generation, &e);
                     }
                     finish_session(&state.pipeline, session_generation, "command");
@@ -725,9 +737,15 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
 
     let active_app = crate::active_window::foreground_process_name();
+    // Capture the HWND too: command-mode verification compares the exact window,
+    // not just the process name, so two windows of one app cannot be confused.
+    let active_window_id = crate::active_window::foreground_window_id();
     // Atomic check-and-start: a concurrent start (hotkey plus IPC) that loses
     // the race is benign, not a user-facing error.
-    let Some(tag) = state.pipeline.try_start_recording(active_app) else {
+    let Some(tag) = state
+        .pipeline
+        .try_start_recording(active_app, active_window_id)
+    else {
         tracing::debug!("Ignoring duplicate start: pipeline is not startable");
         return;
     };
@@ -854,13 +872,15 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// Return to idle after discarding audio that holds no usable speech.
-/// Mirrors the cancel path: no STT, no stop cue.
+/// Mirrors the cancel path: no STT, no stop cue. Emits a notice so the user
+/// learns the recording was discarded rather than silently lost.
 fn discard_silent_recording<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppStateInner,
     session_generation: u64,
 ) {
     tracing::debug!("Discarding recording without sustained voice");
+    events::emit_notice(app, "no_speech_detected", "No speech detected");
     finish_session(&state.pipeline, session_generation, "discarded audio");
     events::emit_state(app, state.pipeline.state_tag());
     crate::overlay::maybe_hide(app);
