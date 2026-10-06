@@ -5,7 +5,7 @@
 //! `Arc` and a stop channel), which keeps the pipeline / Tauri managed state
 //! `Send + Sync`.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -22,6 +22,22 @@ use crate::util::MutexExt;
 
 /// ~2% decay per frame for smooth UI meter without erratic jumps
 const LEVEL_DECAY_FACTOR: f32 = 0.98;
+
+/// Hard cap on captured audio, in seconds. A lost level emitter can no longer
+/// leave the ring growing without bound; the cap is the single source for
+/// both this module and the runtime's recording-duration limit.
+pub const MAX_CAPTURE_SECS: u64 = 300;
+
+/// Cap on captured samples at [`TARGET_SAMPLE_RATE`].
+const MAX_CAPTURE_SAMPLES: usize = MAX_CAPTURE_SECS as usize * TARGET_SAMPLE_RATE as usize;
+
+/// Amplitude threshold separating audible voice from background silence.
+const VOICE_THRESHOLD: f32 = 0.01;
+
+/// Fraction of [`VOICE_THRESHOLD`] used for the block-level noise gate. Keeping
+/// the gate strictly below the voice threshold means a block that passes the
+/// gate can still be rejected by `has_enough_voice`, rather than the reverse.
+const NOISE_GATE_FACTOR: f32 = 0.5;
 
 /// Runtime configuration for a capture session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,9 +56,11 @@ impl Default for AudioConfig {
             input_gain: 1.0,
             sample_rate: 48_000,
             buffer_size_ms: 50,
-            // Very low so quiet speech is never gated. STT handles silence
-            // itself; the gate only drops near-dead-silent blocks.
-            noise_gate_threshold: 0.005,
+            // Derived from the voice threshold so the gate and `has_enough_voice`
+            // cannot drift apart. Kept below it so quiet speech is captured, not
+            // gated away, then discarded downstream. STT handles silence itself;
+            // the gate only drops near-dead-silent blocks.
+            noise_gate_threshold: VOICE_THRESHOLD * NOISE_GATE_FACTOR,
         }
     }
 }
@@ -54,6 +72,10 @@ struct Shared {
     level: AtomicU32,
     gain: f32,
     noise_gate: f32,
+    /// Hard cap on `ring` length; once reached, further output is dropped.
+    max_samples: usize,
+    /// Set once the cap is hit so the warning is logged a single time.
+    capped: AtomicBool,
 }
 
 impl Shared {
@@ -185,11 +207,31 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
         Ok(out) => {
             drop(resampler);
             if !out.is_empty() {
-                shared.ring.lock_recover().extend_from_slice(&out);
+                append_capped(shared, &out);
             }
         }
         // Don't silently swallow: a dropped block is lost audio, so surface it.
         Err(e) => tracing::warn!("Resampler dropped an audio block: {e}"),
+    }
+}
+
+/// Append resampled output to the ring without growing it past `max_samples`.
+///
+/// The level emitter normally stops recording at the duration cap, but if that
+/// task is lost the ring would otherwise grow unbounded; this hard cap keeps
+/// memory bounded regardless.
+fn append_capped(shared: &Shared, out: &[f32]) {
+    let mut ring = shared.ring.lock_recover();
+    let room = shared.max_samples.saturating_sub(ring.len());
+    let take = room.min(out.len());
+    if take > 0 {
+        ring.extend_from_slice(&out[..take]);
+    }
+    if take < out.len() && !shared.capped.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            "Recording reached the {} second cap; further audio is discarded",
+            MAX_CAPTURE_SECS
+        );
     }
 }
 
@@ -225,6 +267,8 @@ impl ActiveCapture {
             level: AtomicU32::new(0),
             gain: 1.0,
             noise_gate: 0.0,
+            max_samples: MAX_CAPTURE_SAMPLES,
+            capped: AtomicBool::new(false),
         });
         (
             ActiveCapture {
@@ -300,6 +344,8 @@ impl AudioCaptureImpl {
             level: AtomicU32::new(0),
             gain: config.input_gain,
             noise_gate: config.noise_gate_threshold,
+            max_samples: MAX_CAPTURE_SAMPLES,
+            capped: AtomicBool::new(false),
         });
 
         let (ready_rx, stop_tx, handle) = spawn_capture_thread(device, supported, shared.clone());
@@ -384,9 +430,6 @@ impl AudioCaptureImpl {
         self.shared.as_ref().map(|s| s.get_level()).unwrap_or(0.0)
     }
 }
-
-/// Amplitude threshold separating audible voice from background silence.
-const VOICE_THRESHOLD: f32 = 0.01;
 
 /// Minimum span of voiced audio a recording must contain to reach STT.
 /// Shorter bursts are taps or clicks that produce no usable transcription.
@@ -489,6 +532,32 @@ mod tests {
     }
 
     #[test]
+    fn default_noise_gate_is_below_voice_threshold() {
+        let gate = AudioConfig::default().noise_gate_threshold;
+        assert!(gate > 0.0);
+        assert!(gate < VOICE_THRESHOLD);
+    }
+
+    #[test]
+    fn ring_caps_at_max_samples() {
+        let resampler = Resampler::new(16_000, TARGET_SAMPLE_RATE, 1).unwrap();
+        let shared = Arc::new(Shared {
+            ring: Mutex::new(Vec::new()),
+            resampler: Mutex::new(resampler),
+            level: AtomicU32::new(0),
+            gain: 1.0,
+            noise_gate: 0.0,
+            max_samples: 10,
+            capped: AtomicBool::new(false),
+        });
+
+        append_capped(&shared, &[0.5; 100]);
+
+        assert_eq!(shared.ring.lock_recover().len(), 10);
+        assert!(shared.capped.load(Ordering::Relaxed));
+    }
+
+    #[test]
     fn test_audio_level_decay() {
         let resampler = Resampler::new(16_000, TARGET_SAMPLE_RATE, 1).unwrap();
         let shared = Arc::new(Shared {
@@ -497,6 +566,8 @@ mod tests {
             level: AtomicU32::new(0),
             gain: 1.0,
             noise_gate: 0.0,
+            max_samples: MAX_CAPTURE_SAMPLES,
+            capped: AtomicBool::new(false),
         });
 
         assert_eq!(shared.get_level(), 0.0);
