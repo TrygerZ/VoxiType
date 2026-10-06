@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-06
+
+### Fixed
+- Fixed the rule-based cleaner inserting spaces inside numbers, times, and web addresses. `3.14` became `3. 14`, `12:30` became `12: 30`, and `example.com` became `example. Com`.
+- Fixed the default filler list removing the legitimate words "like" and "you know" from dictated text.
+- Fixed long dictations silently falling back to the rule-based cleaner because the Groq completion limit was fixed at 500 tokens. The limit now scales with the input length up to 8192 tokens.
+- Fixed an empty whisper.cpp transcription being saved as an empty history entry instead of reporting an error.
+- Fixed history and telemetry crediting the selected engine when the rule-based fallback actually produced the text.
+- Fixed missing confidence data from Groq silently skipping the English verification pass. Unknown confidence now triggers verification.
+- Fixed whisper.cpp failure output reaching logs and the UI unsanitized.
+
+### Security
+- Redacted Groq API keys from debug output and stored a SHA-256 hash instead of the raw key in the speech-to-text engine cache key.
+
+### Changed
+- Honored server Retry-After headers on Groq rate limits and added jitter to exponential retry backoff.
+- Added an explicit 30-second timeout to Groq LLM requests.
+- Returned an error instead of panicking when building the shared HTTP client fails.
+
 ## [0.6.3] - 2026-10-06
 
 ### Fixed
@@ -333,7 +352,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...v0.6.1
