@@ -54,7 +54,7 @@ impl<'a> DictionaryRepository<'a> {
                 "INSERT INTO dictionary_entries
                    (id, word, pronunciation, category, replacement, language, usage_count, is_active)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
-                 ON CONFLICT(word, language) DO UPDATE SET
+                 ON CONFLICT(word COLLATE NOCASE, language) DO UPDATE SET
                    pronunciation=excluded.pronunciation,
                    category=excluded.category,
                    replacement=excluded.replacement,
@@ -331,6 +331,39 @@ mod tests {
         assert_eq!(repo.get_hotwords_by_language("id").unwrap(), vec!["halo"]);
         assert_eq!(repo.get_hotwords_by_language("en").unwrap(), vec!["hello"]);
         assert!(repo.get_hotwords_by_language("fr").unwrap().is_empty());
+    }
+
+    #[test]
+    fn upsert_same_word_different_case_updates_existing() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        repo.upsert(&DictionaryEntry {
+            id: "1".into(),
+            word: "js".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("JavaScript".into()),
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+        repo.upsert(&DictionaryEntry {
+            id: "2".into(),
+            word: "JS".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("JavaScript ES2020".into()),
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+
+        let all = repo.get_all(&DictFilter::default()).unwrap();
+        assert_eq!(all.len(), 1, "casing variants must collapse to one row");
+        // The second upsert updated the existing row (original word kept).
+        assert_eq!(all[0].replacement.as_deref(), Some("JavaScript ES2020"));
     }
 
     #[test]
