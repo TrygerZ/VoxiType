@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-10-06
+
+### Changed
+- Preserved supported audio formats while adapting file decoding to symphonia 0.6.1. Files with a default audio track now select it preferentially.
+- Upgraded rusqlite from 0.32 to 0.40.2 and bundled SQLite from 3.46.0 to 3.53.2. Existing storage behavior remained unchanged.
+- Completed the final dependency upgrade in the 0.6.x remediation plan.
+
+### Removed
+- Removed the unused `@tauri-apps/plugin-log` package.
+
 ## [0.6.9] - 2026-10-06
 
 ### Fixed
@@ -412,7 +422,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.9...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.10...HEAD
+[0.6.10]: https://github.com/TrygerZ/VoxiType/compare/v0.6.9...v0.6.10
 [0.6.9]: https://github.com/TrygerZ/VoxiType/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/TrygerZ/VoxiType/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...v0.6.7
