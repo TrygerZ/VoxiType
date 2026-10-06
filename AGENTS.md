@@ -96,7 +96,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/audio/meter.rs` - generation-guarded onboarding microphone capture state.
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
-- `src-tauri/src/storage/db.rs` - SQLite schema + migrations
+- `src-tauri/src/storage/db.rs` - SQLite schema migrations (current schema v3) + pre-migration backup
 - `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, notice, floating_widget_hide_requested, floating_widget_reveal_requested)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate

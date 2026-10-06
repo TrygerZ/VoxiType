@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.6.8** - Open-source voice-to-text for every app.
+**Version 0.6.9** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
@@ -210,13 +210,13 @@ src-tauri/src/        # Rust backend
 ├── pipeline/         # State machine orchestrator + batch processing + file transcription job
 ├── sound.rs          # Optional recording sound cues (start/stop tones)
 ├── storage/          # SQLite database
-│   ├── db.rs         # Database open + migrations
+│   ├── db.rs         # Database open + migrations + pre-migration backup
 │   ├── settings.rs   # SettingsManager (key-value JSON)
 │   ├── history.rs    # HistoryRepository (CRUD + FTS5 search)
 │   ├── dictionary.rs # DictionaryRepository (word-bounded replacements, hotword boosting)
 │   ├── snippets.rs   # SnippetRepository (trigger expansion)
 │   ├── per_app_modes.rs # PerAppModeRepository
-│   └── stats.rs      # StatsRepository (local usage totals)
+│   └── stats.rs      # StatsRepository (local-date usage totals)
 ├── stt/              # Speech-to-text (Groq Whisper + whisper.cpp)
 ├── tray/             # System tray icon + context menu
 ├── updater.rs        # GitHub Releases version checker

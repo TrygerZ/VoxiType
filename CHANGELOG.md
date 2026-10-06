@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-10-06
+
+### Fixed
+- Fixed dictionary words differing only by letter case coexisting and one silently shadowing the other within the same language. The schema now keeps the most-used entry for each case-insensitive word and language, then enforces a matching unique index. Each transactional migration step now writes its schema version in the same transaction.
+- Fixed history pages duplicating or skipping rows with the same timestamp. Pagination now breaks ties by ID.
+- Fixed usage statistics assigning daily totals by UTC instead of the user's local date. Daily buckets now use local dates, and recent statistics cover a calendar range.
+
+### Changed
+- Checkpointed the write-ahead log before creating the pre-migration backup, preserving committed rows left by an unclean previous session. Remaining sidecars are copied best-effort.
+
 ## [0.6.8] - 2026-10-06
 
 ### Added
@@ -402,7 +412,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.8...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.9...HEAD
+[0.6.9]: https://github.com/TrygerZ/VoxiType/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/TrygerZ/VoxiType/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...v0.6.6
