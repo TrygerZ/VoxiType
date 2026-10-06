@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-10-06
+
+### Fixed
+- Fixed API keys typed shortly before leaving Settings being dropped within the debounce window. The pending value is now saved on unmount.
+- Fixed file-transcription batches remaining locked in the running state when progress-listener subscription failed. The failure now resets the batch state and shows an error.
+- Fixed history rows reverting to stale data when an in-flight fetch completed after a delete, clear, or pin action. History mutations now invalidate older fetches, and dictionary and snippet stores reject out-of-order load results.
+- Fixed list loading indicators remaining active after successful mutations invalidated an in-flight fetch. Mutations now clear the loading state.
+- Fixed waveform listener failures producing unhandled promise rejections.
+- Fixed unknown mode IDs displaying raw translation keys. External IDs now display as readable labels.
+- Fixed onboarding language-save failures providing no user feedback.
+- Fixed copy buttons showing a success indicator when the clipboard write failed.
+
+### Changed
+- Kept error toasts visible for 8 seconds and announced them to screen readers. Success and info toasts remain visible for 3 seconds.
+- Delayed downloaded file cleanup by one second so WebView2 can commit the download.
+- Consolidated six local error-code helpers into one shared helper, removing duplicate code and type casts.
+- Removed unused audio-level state and the waveform level prop.
+
 ## [0.6.6] - 2026-10-06
 
 ### Fixed
@@ -375,7 +393,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...v0.6.4
