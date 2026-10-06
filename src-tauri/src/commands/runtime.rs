@@ -736,6 +736,11 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let started_at = Instant::now();
     let state = app.state::<AppStateInner>();
 
+    // A recording must never run beside the onboarding meter: two emitters on
+    // the same `audio_level` event would fight. The meter is only used during
+    // onboarding, so stop it unconditionally here.
+    super::misc::stop_mic_meter(app);
+
     let active_app = crate::active_window::foreground_process_name();
     // Capture the HWND too: command-mode verification compares the exact window,
     // not just the process name, so two windows of one app cannot be confused.
@@ -1027,6 +1032,7 @@ mod tests {
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
             widget_timer: WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
         }
     }
 

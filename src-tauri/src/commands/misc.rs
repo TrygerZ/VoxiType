@@ -6,7 +6,7 @@ use std::process::Command;
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::audio::DeviceInfo;
+use crate::audio::{AudioConfig, DeviceInfo};
 pub use crate::data_dir::DataDirectoryStatus;
 use crate::error::AppError;
 use crate::hotkey;
@@ -23,6 +23,100 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 #[tauri::command]
 pub fn get_microphones() -> std::result::Result<Vec<DeviceInfo>, AppError> {
     crate::audio::device::list_input_devices()
+}
+
+/// Emit interval for the onboarding meter. The frontend re-renders on each
+/// `audio_level` event, so throttling to ten per second keeps it smooth.
+const MIC_METER_INTERVAL_MS: u64 = 100;
+
+/// Start or stop the onboarding microphone level meter.
+///
+/// The meter runs outside the Recording state so the onboarding step can show
+/// a live level. It must never coexist with a recording: two emitters on
+/// `audio_level` would fight, so a change is refused while the pipeline is
+/// Recording or Processing.
+#[tauri::command]
+pub async fn set_mic_meter<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+    device: Option<String>,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    if matches!(
+        state.pipeline.state_tag(),
+        crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
+    ) {
+        return Err(AppError::work_in_progress(
+            "Cannot change the microphone meter while recording",
+        ));
+    }
+    if !enabled {
+        stop_mic_meter(&app);
+        return Ok(());
+    }
+    enable_mic_meter(&app, device).await
+}
+
+/// Open the meter capture and start its emitter. A failed open stops the meter;
+/// a commit rejected as superseded is not an error.
+async fn enable_mic_meter<R: Runtime>(
+    app: &AppHandle<R>,
+    device: Option<String>,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    let device = device
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| "default".to_string());
+    super::check_len("mic meter device", &device, super::MAX_IDENTIFIER_LEN)?;
+
+    let gen = state.mic_meter.begin_start();
+    let config = AudioConfig {
+        mic_device: device,
+        ..Default::default()
+    };
+    // Device initialization is blocking; keep it off the async worker threads.
+    let opened =
+        tokio::task::spawn_blocking(move || crate::audio::AudioCaptureImpl::open_stream(&config))
+            .await
+            .map_err(|e| AppError::audio(format!("Mic meter open task failed: {e}")))?;
+    let capture = match opened {
+        Ok(capture) => capture,
+        Err(e) => {
+            state.mic_meter.stop();
+            return Err(e);
+        }
+    };
+    // A rejected commit means the request was superseded or stopped in the
+    // meantime; that is not an error.
+    if state.mic_meter.commit(gen, capture) {
+        spawn_mic_meter_emitter(app.clone(), gen);
+    }
+    Ok(())
+}
+
+/// Stop the onboarding microphone meter if one is running. Called before a
+/// recording starts so the two never emit `audio_level` at the same time.
+pub fn stop_mic_meter<R: Runtime>(app: &AppHandle<R>) {
+    app.state::<AppStateInner>().mic_meter.stop();
+}
+
+/// Stream the meter's level until it is stopped, throttled to
+/// [`MIC_METER_INTERVAL_MS`]. `my_generation` is the start request this emitter
+/// belongs to: a superseded emitter exits on the generation change even when a
+/// fast stop-then-start flipped `is_active()` back to true before it woke.
+fn spawn_mic_meter_emitter<R: Runtime>(app: AppHandle<R>, my_generation: u64) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            {
+                let state = app.state::<AppStateInner>();
+                if state.mic_meter.generation() != my_generation || !state.mic_meter.is_active() {
+                    break;
+                }
+                crate::events::emit_audio_level(&app, state.mic_meter.level());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(MIC_METER_INTERVAL_MS)).await;
+        }
+    });
 }
 
 #[tauri::command]
@@ -800,6 +894,7 @@ mod tests {
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(std::collections::HashMap::new()),
             widget_timer: crate::overlay::WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
         }
     }
 

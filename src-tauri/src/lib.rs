@@ -57,6 +57,8 @@ pub struct AppStateInner {
     /// attacker-controlled paths.
     pub last_picker_dirs: std::sync::Mutex<HashMap<String, Vec<PathBuf>>>,
     pub widget_timer: overlay::WidgetTimerState,
+    /// Onboarding microphone level meter, independent of the dictation pipeline.
+    pub mic_meter: crate::audio::MicMeterState,
 }
 
 impl AppStateInner {
@@ -91,6 +93,7 @@ impl AppStateInner {
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
             widget_timer: overlay::WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
         })
     }
 }
@@ -296,6 +299,7 @@ pub fn run() {
             commands::get_active_app,
             commands::set_hotkey,
             commands::get_microphones,
+            commands::set_mic_meter,
             commands::get_app_info,
             commands::check_updates,
             commands::open_url,
