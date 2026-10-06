@@ -220,14 +220,14 @@ fn build_file_formatter(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
     kind: LlmEngineKind,
-) -> Arc<dyn LlmFormatter> {
+) -> Result<Arc<dyn LlmFormatter>> {
     let (mut ollama, groq) = llm_configs_from_settings(state, settings);
     ollama.request_timeout = FILE_OLLAMA_TIMEOUT;
     match kind {
         LlmEngineKind::Ollama => LlmFactory::ollama(ollama),
         LlmEngineKind::Groq => LlmFactory::groq(groq),
-        LlmEngineKind::RuleBased => LlmFactory::rule_based(RuleBasedConfig::default()),
-        LlmEngineKind::Off => LlmFactory::off(),
+        LlmEngineKind::RuleBased => Ok(LlmFactory::rule_based(RuleBasedConfig::default())),
+        LlmEngineKind::Off => Ok(LlmFactory::off()),
     }
 }
 
@@ -268,7 +268,8 @@ async fn run_job<R: Runtime>(
     let stt = build_stt_for_kind(state, &settings, request.stt_engine)?;
     let formatter = request
         .llm_engine
-        .map(|kind| build_file_formatter(state, &settings, kind));
+        .map(|kind| build_file_formatter(state, &settings, kind))
+        .transpose()?;
     let stt_config = build_stt_config_for_language(&state.db, request.language.clone());
     let report = |p| crate::events::emit_file_transcription_progress(app, p);
 

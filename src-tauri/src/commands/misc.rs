@@ -561,7 +561,7 @@ pub async fn test_groq_api(
 ) -> std::result::Result<(), AppError> {
     let api_key = resolve_test_api_key(&state, api_key)?;
 
-    let client = crate::util::http_client();
+    let client = crate::util::http_client()?;
     let resp = client
         .get("https://api.groq.com/openai/v1/models")
         .bearer_auth(api_key.trim())

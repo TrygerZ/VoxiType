@@ -18,11 +18,11 @@ pub struct OllamaFormatter {
 }
 
 impl OllamaFormatter {
-    pub fn new(config: OllamaConfig) -> Self {
-        Self {
-            client: crate::util::http_client(),
+    pub fn new(config: OllamaConfig) -> Result<Self> {
+        Ok(Self {
+            client: crate::util::http_client()?,
             config,
-        }
+        })
     }
 
     async fn generate(&self, system: &str, prompt: &str) -> Result<String> {

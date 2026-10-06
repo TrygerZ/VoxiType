@@ -55,6 +55,10 @@ pub struct AppError {
     /// errors (4xx) from transient server/rate-limit failures.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_status: Option<u16>,
+    /// `Retry-After` value (seconds) parsed from a rate-limited response, when
+    /// present. The retry loop honors it instead of an exponential delay.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_secs: Option<u64>,
 }
 
 impl AppError {
@@ -63,6 +67,7 @@ impl AppError {
             code,
             message: message.into(),
             http_status: None,
+            retry_after_secs: None,
         }
     }
 
@@ -70,6 +75,13 @@ impl AppError {
     /// classify the failure as transient or permanent.
     pub fn with_http_status(mut self, status: u16) -> Self {
         self.http_status = Some(status);
+        self
+    }
+
+    /// Attach a server-requested retry delay (seconds) so the retry loop can
+    /// honor `Retry-After` instead of an exponential backoff.
+    pub fn with_retry_after_secs(mut self, secs: u64) -> Self {
+        self.retry_after_secs = Some(secs);
         self
     }
 

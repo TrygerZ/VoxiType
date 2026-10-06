@@ -38,7 +38,7 @@ struct GitHubRelease {
 
 /// Check GitHub for a newer release. `current` is the running app version.
 pub async fn check(current: &str) -> Result<UpdateInfo> {
-    let client = crate::util::http_client();
+    let client = crate::util::http_client()?;
     let resp = client
         .get(format!(
             "https://api.github.com/repos/{REPO}/releases/latest"

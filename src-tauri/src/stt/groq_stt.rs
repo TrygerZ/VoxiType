@@ -26,11 +26,11 @@ pub struct GroqSttEngine {
 }
 
 impl GroqSttEngine {
-    pub fn new(config: GroqSttConfig) -> Self {
-        Self {
-            client: crate::util::http_client(),
+    pub fn new(config: GroqSttConfig) -> Result<Self> {
+        Ok(Self {
+            client: crate::util::http_client()?,
             config,
-        }
+        })
     }
 
     /// Single-pass transcription: encode audio, call Groq, parse response.
@@ -83,6 +83,8 @@ impl GroqSttEngine {
                         .await?;
 
                     let status = resp.status();
+                    // Capture the header before `text()` consumes the response.
+                    let retry_after = crate::util::retry_after_secs(resp.headers());
                     let body = resp.text().await?;
 
                     if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -95,10 +97,13 @@ impl GroqSttEngine {
                         // The upstream body is untrusted: sanitize and cap it so
                         // oversized or hostile payloads cannot flood logs or the UI.
                         let safe_body = crate::util::sanitize_error_body(&body);
-                        return Err(AppError::stt_api(format!(
-                            "Groq STT error {status}: {safe_body}"
-                        ))
-                        .with_http_status(status.as_u16()));
+                        let mut err =
+                            AppError::stt_api(format!("Groq STT error {status}: {safe_body}"))
+                                .with_http_status(status.as_u16());
+                        if let Some(secs) = retry_after {
+                            err = err.with_retry_after_secs(secs);
+                        }
+                        return Err(err);
                     }
                     Ok(body)
                 }
@@ -204,10 +209,15 @@ impl SttEngine for GroqSttEngine {
 pub const ID_VERIFICATION_CONFIDENCE_THRESHOLD: f32 = 0.75;
 
 /// Decide whether an auto-detected Indonesian result requires an English verification pass.
+///
+/// An unknown confidence (`None`) must not silently disable verification, so it
+/// is treated as "needs checking".
 pub fn should_verify_id_transcription(config_language: &str, first: &TranscriptionResult) -> bool {
     config_language == "auto"
         && first.language == "id"
-        && first.confidence < ID_VERIFICATION_CONFIDENCE_THRESHOLD
+        && first
+            .confidence
+            .is_none_or(|c| c < ID_VERIFICATION_CONFIDENCE_THRESHOLD)
 }
 
 /// Derive a 0.0–1.0 confidence score from segment avg_logprob values.
@@ -221,17 +231,31 @@ pub fn should_verify_id_transcription(config_language: &str, first: &Transcripti
 /// We convert avg_logprob to a 0–1 scale where 0 ≈ −2.0 (very poor) and
 /// 1.0 ≈ 0.0 (perfect). This gives `pick_better_transcription` a
 /// language-agnostic quality signal that works in both directions.
-fn compute_confidence(segments: &[GroqSegment]) -> f32 {
-    if segments.is_empty() {
-        return 1.0;
-    }
+///
+/// Returns `None` when no segment carries `avg_logprob` (empty segments or a
+/// provider schema change), so callers treat the confidence as unknown rather
+/// than optimistically assuming 1.0. The drift is warned once per process.
+fn compute_confidence(segments: &[GroqSegment]) -> Option<f32> {
     let logprobs: Vec<f32> = segments.iter().filter_map(|s| s.avg_logprob).collect();
     if logprobs.is_empty() {
-        return 1.0;
+        warn_missing_logprobs_once();
+        return None;
     }
     let avg = logprobs.iter().sum::<f32>() / logprobs.len() as f32;
     // Map [−2.0, 0.0] → [0.0, 1.0]
-    (1.0 + avg / 2.0).clamp(0.0, 1.0)
+    Some((1.0 + avg / 2.0).clamp(0.0, 1.0))
+}
+
+/// Warn once per process that Groq returned no `avg_logprob`, so confidence is
+/// unknown. Repeated warnings would flood the log on every transcription.
+fn warn_missing_logprobs_once() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        tracing::warn!(
+            "Groq verbose_json returned no segment avg_logprob; \
+             confidence is unknown and language verification will run"
+        );
+    });
 }
 
 /// Compare two transcription results (one auto-detected as "id", one forced
@@ -250,12 +274,16 @@ fn pick_better_transcription(
     // Primary signal: confidence (derived from avg_logprob).
     // The correct-language pass has measurably higher confidence because
     // Whisper's token probabilities are higher when the language matches.
+    // A missing confidence on either side is unknown, so skip the numeric
+    // comparison and go straight to the text-marker tie-break.
     const CONFIDENCE_THRESHOLD: f32 = 0.1;
-    if en_result.confidence > id_result.confidence + CONFIDENCE_THRESHOLD {
-        return en_result;
-    }
-    if id_result.confidence > en_result.confidence + CONFIDENCE_THRESHOLD {
-        return id_result;
+    if let (Some(id_conf), Some(en_conf)) = (id_result.confidence, en_result.confidence) {
+        if en_conf > id_conf + CONFIDENCE_THRESHOLD {
+            return en_result;
+        }
+        if id_conf > en_conf + CONFIDENCE_THRESHOLD {
+            return id_result;
+        }
     }
 
     // Confidence is too close to call — fall back to text markers.
@@ -447,14 +475,14 @@ mod tests {
         // confidence (correct language). Should pick "en" regardless of markers.
         let id_res = TranscriptionResult {
             text: "the system is working today".to_string(),
-            confidence: 0.3,
+            confidence: Some(0.3),
             language: "id".to_string(),
             duration_ms: 0,
             raw_response: None,
         };
         let en_res = TranscriptionResult {
             text: "the system is working today".to_string(),
-            confidence: 0.85,
+            confidence: Some(0.85),
             language: "en".to_string(),
             duration_ms: 0,
             raw_response: None,
@@ -469,14 +497,14 @@ mod tests {
         // "en" pass has low confidence. Should keep "id".
         let id_res = TranscriptionResult {
             text: "saya pergi ke pasar dengan mereka".to_string(),
-            confidence: 0.85,
+            confidence: Some(0.85),
             language: "id".to_string(),
             duration_ms: 0,
             raw_response: None,
         };
         let en_res = TranscriptionResult {
             text: "sahya pergee ke pasar".to_string(),
-            confidence: 0.3,
+            confidence: Some(0.3),
             language: "en".to_string(),
             duration_ms: 0,
             raw_response: None,
@@ -518,7 +546,7 @@ mod tests {
     fn should_verify_id_skips_high_confidence_and_triggers_low_confidence() {
         let high_conf = TranscriptionResult {
             text: "saya sedang berbicara bahasa indonesia".to_string(),
-            confidence: 0.85,
+            confidence: Some(0.85),
             language: "id".to_string(),
             duration_ms: 1000,
             raw_response: None,
@@ -528,7 +556,7 @@ mod tests {
 
         let low_conf = TranscriptionResult {
             text: "this is actually english".to_string(),
-            confidence: 0.40,
+            confidence: Some(0.40),
             language: "id".to_string(),
             duration_ms: 1000,
             raw_response: None,
@@ -539,12 +567,22 @@ mod tests {
         // Boundary: exact threshold does not trigger.
         let boundary = TranscriptionResult {
             text: "halo".to_string(),
-            confidence: ID_VERIFICATION_CONFIDENCE_THRESHOLD,
+            confidence: Some(ID_VERIFICATION_CONFIDENCE_THRESHOLD),
             language: "id".to_string(),
             duration_ms: 1000,
             raw_response: None,
         };
         assert!(!should_verify_id_transcription("auto", &boundary));
+
+        // Unknown confidence must trigger verification, not silently skip it.
+        let unknown = TranscriptionResult {
+            text: "halo".to_string(),
+            confidence: None,
+            language: "id".to_string(),
+            duration_ms: 1000,
+            raw_response: None,
+        };
+        assert!(should_verify_id_transcription("auto", &unknown));
 
         // Non-auto config must not trigger even with low confidence.
         assert!(!should_verify_id_transcription("id", &low_conf));
@@ -552,7 +590,7 @@ mod tests {
         // Non-id detected language must not trigger.
         let en_res = TranscriptionResult {
             text: "hello world".to_string(),
-            confidence: 0.40,
+            confidence: Some(0.40),
             language: "en".to_string(),
             duration_ms: 1000,
             raw_response: None,
@@ -572,7 +610,7 @@ mod tests {
         let seg = GroqSegment {
             avg_logprob: Some(target_logprob),
         };
-        let conf = compute_confidence(&[seg]);
+        let conf = compute_confidence(&[seg]).expect("confidence computed");
         assert!(
             (conf - ID_VERIFICATION_CONFIDENCE_THRESHOLD).abs() < f32::EPSILON,
             "Threshold {ID_VERIFICATION_CONFIDENCE_THRESHOLD} must equal compute_confidence at avg_logprob {target_logprob}"
@@ -582,13 +620,50 @@ mod tests {
         let confident_seg = GroqSegment {
             avg_logprob: Some(-0.3),
         };
-        assert!(compute_confidence(&[confident_seg]) >= ID_VERIFICATION_CONFIDENCE_THRESHOLD);
+        assert!(
+            compute_confidence(&[confident_seg]).expect("confidence computed")
+                >= ID_VERIFICATION_CONFIDENCE_THRESHOLD
+        );
 
         // Misdetected segment (-1.2 -> 0.40) is < threshold.
         let doubtful_seg = GroqSegment {
             avg_logprob: Some(-1.2),
         };
-        assert!(compute_confidence(&[doubtful_seg]) < ID_VERIFICATION_CONFIDENCE_THRESHOLD);
+        assert!(
+            compute_confidence(&[doubtful_seg]).expect("confidence computed")
+                < ID_VERIFICATION_CONFIDENCE_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn compute_confidence_is_none_without_logprobs() {
+        // Empty segments and segments missing avg_logprob (schema drift) are
+        // unknown, never a silently-optimistic 1.0.
+        assert_eq!(compute_confidence(&[]), None);
+        let no_logprob = GroqSegment { avg_logprob: None };
+        assert_eq!(compute_confidence(&[no_logprob]), None);
+    }
+
+    #[test]
+    fn pick_better_falls_back_to_markers_when_confidence_unknown() {
+        // One side unknown: skip the numeric comparison and use text markers.
+        // "id" text has English markers and no Indonesian ones -> pick "en".
+        let id_res = TranscriptionResult {
+            text: "the system is working".to_string(),
+            confidence: None,
+            language: "id".to_string(),
+            duration_ms: 0,
+            raw_response: None,
+        };
+        let en_res = TranscriptionResult {
+            text: "the system is working".to_string(),
+            confidence: Some(0.9),
+            language: "en".to_string(),
+            duration_ms: 0,
+            raw_response: None,
+        };
+        let winner = pick_better_transcription(id_res, en_res);
+        assert_eq!(winner.language, "en");
     }
 
     #[test]

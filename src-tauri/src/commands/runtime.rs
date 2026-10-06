@@ -257,7 +257,7 @@ pub fn build_stt_from_settings(
         }
     }
 
-    let new_engine = SttFactory::create(kind, groq, whisper_cpp);
+    let new_engine = SttFactory::create(kind, groq, whisper_cpp)?;
     *cache = Some((kind, cache_key, new_engine.clone()));
     Ok(new_engine)
 }
@@ -283,7 +283,7 @@ pub fn build_stt_for_kind(
         }
         SttEngineKind::Groq => {}
     }
-    Ok(SttFactory::create(kind, groq, whisper_cpp))
+    SttFactory::create(kind, groq, whisper_cpp)
 }
 
 /// Map a stored `stt_engine` string to its engine kind. An unknown value is an
@@ -299,6 +299,10 @@ fn stt_engine_kind(value: &str) -> Result<SttEngineKind> {
     }
 }
 
+/// Cache key for the selected STT engine. The API key is hashed so the raw
+/// secret is never held in a key string (it would otherwise live in memory and
+/// could surface in a panic or debug dump); the digest still changes whenever
+/// the key does, so the engine rebuilds correctly.
 fn stt_cache_key(
     kind: SttEngineKind,
     api_key: &str,
@@ -306,12 +310,18 @@ fn stt_cache_key(
     whisper_cpp: &WhisperCppConfig,
 ) -> String {
     match kind {
-        SttEngineKind::Groq => format!("{}|{}", api_key, model),
+        SttEngineKind::Groq => format!("{}|{}", api_key_digest(api_key), model),
         SttEngineKind::WhisperCpp => format!(
             "{}|{}|{}",
             whisper_cpp.binary_path, whisper_cpp.model_path, whisper_cpp.threads
         ),
     }
+}
+
+fn api_key_digest(api_key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(api_key.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn build_llm(state: &AppStateInner) -> Result<Arc<dyn crate::llm::LlmFormatter>> {
@@ -339,12 +349,7 @@ pub fn build_llm_from_settings(
 ) -> Result<Arc<dyn crate::llm::LlmFormatter>> {
     let kind = llm_engine_kind(&settings.string("llm_engine", "ollama"))?;
     let (ollama, groq) = llm_configs_from_settings(state, settings);
-    Ok(LlmFactory::create(
-        kind,
-        ollama,
-        groq,
-        RuleBasedConfig::default(),
-    ))
+    LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
 }
 
 /// Ollama and Groq LLM configs with the user's model and API key.
@@ -564,7 +569,6 @@ pub async fn process_audio<R: Runtime>(
     };
 
     let stt_name = stt.name().to_string();
-    let llm_name = llm.name().to_string();
     let mode_id = mode.id();
 
     let outcome = match precomputed {
@@ -611,8 +615,8 @@ pub async fn process_audio<R: Runtime>(
                 },
                 mode: mode_id,
                 stt_engine: stt_name,
-                stt_confidence: Some(out.transcription.confidence),
-                llm_engine: Some(llm_name),
+                stt_confidence: out.transcription.confidence,
+                llm_engine: Some(out.llm_engine.clone()),
                 duration_ms: Some(out.transcription.duration_ms as i64),
                 word_count: word_count as i64,
                 character_count: out.formatted_text.chars().count() as i64,
@@ -880,6 +884,21 @@ mod tests {
     #[test]
     fn empty_hotwords_returns_none() {
         assert_eq!(build_initial_prompt(&[]), None);
+    }
+
+    #[test]
+    fn stt_cache_key_hashes_api_key_and_is_stable() {
+        let whisper = WhisperCppConfig::default();
+        let key_a = stt_cache_key(SttEngineKind::Groq, "secret-a", "model", &whisper);
+        let key_a_again = stt_cache_key(SttEngineKind::Groq, "secret-a", "model", &whisper);
+        let key_b = stt_cache_key(SttEngineKind::Groq, "secret-b", "model", &whisper);
+
+        // Same key -> stable; different key -> different cache key.
+        assert_eq!(key_a, key_a_again);
+        assert_ne!(key_a, key_b);
+        // The raw secret never appears in the cache key.
+        assert!(!key_a.contains("secret-a"));
+        assert!(!key_b.contains("secret-b"));
     }
 
     #[test]

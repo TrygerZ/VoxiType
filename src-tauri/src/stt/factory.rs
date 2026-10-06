@@ -6,13 +6,14 @@ use super::groq_stt::GroqSttEngine;
 use super::types::{GroqSttConfig, SttEngineKind, WhisperCppConfig};
 use super::whisper_cpp::WhisperCppEngine;
 use super::SttEngine;
+use crate::error::Result;
 
 /// Builds speech-to-text engines.
 pub struct SttFactory;
 
 impl SttFactory {
-    pub fn groq(config: GroqSttConfig) -> Arc<dyn SttEngine> {
-        Arc::new(GroqSttEngine::new(config))
+    pub fn groq(config: GroqSttConfig) -> Result<Arc<dyn SttEngine>> {
+        Ok(Arc::new(GroqSttEngine::new(config)?))
     }
 
     pub fn whisper_cpp(config: WhisperCppConfig) -> Arc<dyn SttEngine> {
@@ -23,10 +24,10 @@ impl SttFactory {
         kind: SttEngineKind,
         groq: GroqSttConfig,
         whisper_cpp: WhisperCppConfig,
-    ) -> Arc<dyn SttEngine> {
+    ) -> Result<Arc<dyn SttEngine>> {
         match kind {
             SttEngineKind::Groq => Self::groq(groq),
-            SttEngineKind::WhisperCpp => Self::whisper_cpp(whisper_cpp),
+            SttEngineKind::WhisperCpp => Ok(Self::whisper_cpp(whisper_cpp)),
         }
     }
 }
