@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.6.7** - Open-source voice-to-text for every app.
+**Version 0.6.8** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
@@ -38,7 +38,7 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 - **Translation Pipeline** - Automatic LLM-based translation to target language
 - **Configurable Transcription Language** - Set transcription language via `stt_language` setting (Whisper-backed)
 - **Encrypted API Key Storage** - API keys encrypted with AES-256-GCM at rest
-- **First-Run Onboarding** - Guided setup for Groq or offline whisper.cpp, microphone, hotkey, and smoke test
+- **First-Run Onboarding** - Guided setup for Groq or offline whisper.cpp, with a live microphone level meter, hotkey, and smoke test
 - **Sound Cues** - Optional audio feedback when starting/stopping recording
 - **Usage Stats** - Local lifetime totals and opt-in telemetry, never sent anywhere
 - **Configurable Data Directory** - Choose storage location with validated migration (DB + master key + logs)
@@ -143,7 +143,7 @@ User presses hotkey
 
 ### IPC Surface
 
-VoxiType exposes **48 Tauri commands** organized into 9 modules:
+VoxiType exposes **49 Tauri commands** organized into 9 modules:
 
 | Module | Commands |
 |--------|----------|
@@ -153,7 +153,7 @@ VoxiType exposes **48 Tauri commands** organized into 9 modules:
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app`, `set_mic_meter` |
 | `stats` | `get_usage_stats` |
 | `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
@@ -194,7 +194,7 @@ src/                  # React frontend
 src-tauri/src/        # Rust backend
 ├── active_window.rs  # Per-app mode detection via Win32 API
 ├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD + file decode (symphonia)
-├── commands/         # Tauri IPC handlers (48 commands across 9 modules + runtime helpers)
+├── commands/         # Tauri IPC handlers (49 commands across 9 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
 ├── data_dir_acl.rs   # Windows ACL validation for custom data directories

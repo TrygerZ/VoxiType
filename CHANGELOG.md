@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-10-06
+
+### Added
+- Added a `set_mic_meter` command, increasing the IPC command count from 48 to 49.
+
+### Fixed
+- Fixed the onboarding microphone level meter staying at zero because audio levels were only emitted during recording. The selected device now streams levels while the onboarding step is open.
+- Fixed onboarding meter emitters remaining active after a rapid device change. Generation checks stop superseded emitters and cancel stale captures.
+
 ## [0.6.7] - 2026-10-06
 
 ### Fixed
@@ -393,7 +402,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.7...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.8...HEAD
+[0.6.8]: https://github.com/TrygerZ/VoxiType/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...v0.6.5
