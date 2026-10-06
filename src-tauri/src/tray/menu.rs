@@ -7,7 +7,7 @@ use crate::error::{AppError, Result};
 
 /// Build the tray context menu.
 pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> Result<Menu<R>> {
-    let record = MenuItem::with_id(app, "record", "Start Recording", true, None::<&str>)
+    let record = MenuItem::with_id(app, "record", "Toggle Recording", true, None::<&str>)
         .map_err(|e| AppError::internal(e.to_string()))?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)
         .map_err(|e| AppError::internal(e.to_string()))?;
