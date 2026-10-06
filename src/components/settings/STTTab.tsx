@@ -13,6 +13,7 @@ import {
   testWhisperCpp,
 } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { clampWhisperThreads } from "../../lib/settingsGuards";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -155,7 +156,7 @@ export function STTTab() {
                 void invokeAction(() =>
                   update(
                     "whisper_cpp_threads",
-                    Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                    clampWhisperThreads(e.target.value),
                   ),
                 )
               }

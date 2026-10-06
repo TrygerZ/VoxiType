@@ -32,6 +32,7 @@ import {
   testGroqApi,
   testWhisperCpp,
 } from "../../../lib/tauri";
+import { clampWhisperThreads } from "../../../lib/settingsGuards";
 import { StepShell } from "../shared/StepShell";
 import type { SttEngine, Step, TestStatus, TFunc } from "../types";
 
@@ -456,11 +457,7 @@ function OfflineSetup({
           min={1}
           max={32}
           value={threads}
-          onChange={(e) =>
-            onThreadsChange(
-              Math.max(1, Math.floor(Number(e.target.value) || 1)),
-            )
-          }
+          onChange={(e) => onThreadsChange(clampWhisperThreads(e.target.value))}
         />
         <StatusButton
           status={status}
