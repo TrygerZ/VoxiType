@@ -70,24 +70,35 @@ export const useHistoryStore = create<HistoryStore>((set, get) => {
       doSearch(query);
     },
 
+    // Each mutation bumps the token so an in-flight fetch cannot commit stale
+    // items afterwards and resurrect the row just deleted. Clearing `loading`
+    // here releases the flag the discarded fetch would otherwise leave set.
     remove: async (id) => {
+      ++requestSeq;
       await deleteHistory(id);
-      set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+      set((s) => ({
+        items: s.items.filter((i) => i.id !== id),
+        loading: false,
+      }));
     },
 
     clear: async (keepPinned = true) => {
+      ++requestSeq;
       await clearHistory(keepPinned);
       set((s) => ({
         items: keepPinned ? s.items.filter((i) => i.is_pinned) : [],
+        loading: false,
       }));
     },
 
     togglePin: async (id, pinned) => {
+      ++requestSeq;
       await pinHistory(id, pinned);
       set((s) => ({
         items: s.items.map((i) =>
           i.id === id ? { ...i, is_pinned: pinned } : i,
         ),
+        loading: false,
       }));
     },
   };

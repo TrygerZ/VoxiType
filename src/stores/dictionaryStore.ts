@@ -16,29 +16,46 @@ interface DictionaryStore {
   remove: (id: string) => Promise<void>;
 }
 
-export const useDictionaryStore = create<DictionaryStore>((set) => ({
-  entries: [],
-  loading: false,
-  error: null,
+export const useDictionaryStore = create<DictionaryStore>((set) => {
+  // Monotonic token: every fetch captures the current value and only commits
+  // its result if it is still the latest, so a slow earlier load cannot
+  // overwrite fresher entries out of order.
+  let requestSeq = 0;
 
-  load: async () => {
-    set({ loading: true, error: null });
-    try {
+  return {
+    entries: [],
+    loading: false,
+    error: null,
+
+    load: async () => {
+      const seq = ++requestSeq;
+      set({ loading: true, error: null });
+      try {
+        const entries = await getDictionary();
+        if (seq === requestSeq) {
+          set({ entries, loading: false, error: null });
+        }
+      } catch (err: unknown) {
+        if (seq === requestSeq) {
+          set({ loading: false, error: formatTauriError(err) });
+        }
+      }
+    },
+
+    add: async (entry) => {
+      // Bump so a stale in-flight load cannot overwrite the post-add list.
+      // Clearing `loading` releases the flag the discarded load would leave set.
+      const seq = ++requestSeq;
+      await addDictionaryWord(entry);
       const entries = await getDictionary();
-      set({ entries, loading: false, error: null });
-    } catch (err: unknown) {
-      set({ loading: false, error: formatTauriError(err) });
-    }
-  },
+      if (seq === requestSeq) {
+        set({ entries, loading: false });
+      }
+    },
 
-  add: async (entry) => {
-    await addDictionaryWord(entry);
-    const entries = await getDictionary();
-    set({ entries });
-  },
-
-  remove: async (id) => {
-    await deleteDictionaryWord(id);
-    set((s) => ({ entries: s.entries.filter((e) => e.id !== id) }));
-  },
-}));
+    remove: async (id) => {
+      await deleteDictionaryWord(id);
+      set((s) => ({ entries: s.entries.filter((e) => e.id !== id) }));
+    },
+  };
+});
