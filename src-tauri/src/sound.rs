@@ -114,7 +114,7 @@ pub fn play(cue: Cue) {
     std::thread::spawn(move || {
         let _guard = CUE_LOCK.lock_recover();
         if let Err(e) = play_blocking(cue) {
-            tracing::debug!("Sound cue skipped: {e}");
+            tracing::warn!("Sound cue skipped: {e}");
         }
     });
 }
@@ -166,7 +166,7 @@ fn play_blocking(cue: Cue) -> Result<(), String> {
         Some(value)
     };
 
-    let err_fn = |e| tracing::debug!("sound stream error: {e}");
+    let err_fn = |e| tracing::warn!("sound stream error: {e}");
 
     macro_rules! build {
         ($t:ty, $convert:expr) => {{
