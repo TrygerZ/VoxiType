@@ -115,6 +115,16 @@ describe("fileTranscriptionStore", () => {
     expect(vi.mocked(tauri.transcribeFile).mock.calls[0][0].path).toBe(SECOND);
   });
 
+  it("recovers to idle and does not reject when the progress listener fails to attach", async () => {
+    vi.mocked(tauri.onEvent).mockRejectedValueOnce(new Error("listen denied"));
+
+    await expect(useFileTranscriptionStore.getState().start()).resolves.toBeUndefined();
+
+    expect(useFileTranscriptionStore.getState().status).toBe("idle");
+    expect(items().some((i) => i.status === "running")).toBe(false);
+    expect(tauri.transcribeFile).not.toHaveBeenCalled();
+  });
+
   it("does not start while running or with an empty queue", async () => {
     useFileTranscriptionStore.setState({ status: "running" });
     await useFileTranscriptionStore.getState().start();
