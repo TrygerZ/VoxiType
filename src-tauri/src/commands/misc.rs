@@ -182,13 +182,18 @@ pub async fn check_updates<R: Runtime>(
 #[tauri::command]
 pub fn open_url(url: String) -> std::result::Result<(), AppError> {
     let url = validate_open_url(&url)?;
-    open::that(&url).map_err(|e| AppError::internal(format!("Failed to open URL: {e}")))?;
+    // `that_detached` is the only entry point that honors the crate's
+    // `shellexecute-on-windows` feature, which routes through ShellExecuteExW
+    // instead of `cmd /c start` (removing the command-line percent-expansion
+    // surface). `open::that` always builds the cmd command line.
+    open::that_detached(&url)
+        .map_err(|e| AppError::internal(format!("Failed to open URL: {e}")))?;
     Ok(())
 }
 
-/// Only allow http(s) URLs to a fixed host allowlist. `open::that` dispatches
-/// via the OS shell handler, which honors `file://`, `smb://`, and bare local
-/// paths — rejecting those prevents launching arbitrary executables.
+/// Only allow http(s) URLs to a fixed host allowlist. The OS shell handler
+/// honors `file://`, `smb://`, and bare local paths, so rejecting those
+/// prevents launching arbitrary executables.
 /// ponytail: hand-rolled parse instead of the `url` crate to avoid a new dep;
 /// upgrade to `url::Url` if query/fragment/auth validation ever matters.
 fn validate_open_url(url: &str) -> std::result::Result<String, AppError> {
