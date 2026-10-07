@@ -720,7 +720,7 @@ pub async fn test_whisper_cpp(
     let engine = crate::stt::whisper_cpp::WhisperCppEngine::new(WhisperCppConfig {
         binary_path: canonical_to_clean_string(&canonical_binary),
         model_path: canonical_to_clean_string(&canonical_model),
-        threads: threads.max(1),
+        threads: super::runtime::clamp_whisper_threads(threads),
     });
     let config = SttConfig {
         language,

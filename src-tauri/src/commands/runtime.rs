@@ -154,14 +154,18 @@ pub(crate) const MAX_WHISPER_THREADS: u32 = 32;
 const DEFAULT_WHISPER_THREADS: u32 = 4;
 
 fn whisper_cpp_config_from_settings(settings: &SettingsSnapshot) -> WhisperCppConfig {
-    let threads = settings
-        .u32("whisper_cpp_threads", DEFAULT_WHISPER_THREADS)
-        .clamp(MIN_WHISPER_THREADS, MAX_WHISPER_THREADS);
+    let threads =
+        clamp_whisper_threads(settings.u32("whisper_cpp_threads", DEFAULT_WHISPER_THREADS));
     WhisperCppConfig {
         binary_path: settings.string("whisper_cpp_binary_path", "whisper-cli"),
         model_path: settings.string("whisper_cpp_model_path", ""),
         threads,
     }
+}
+
+/// Clamp a caller-supplied thread count to the supported whisper.cpp range.
+pub(crate) fn clamp_whisper_threads(threads: u32) -> u32 {
+    threads.clamp(MIN_WHISPER_THREADS, MAX_WHISPER_THREADS)
 }
 
 /// Setting key holding the picker-issued token that vouches for the binary path.
@@ -970,6 +974,21 @@ mod tests {
             whisper_cpp_config_from_settings(&snapshot(9999)).threads,
             32
         );
+    }
+
+    #[test]
+    fn clamp_whisper_threads_bounds_input() {
+        assert_eq!(clamp_whisper_threads(0), MIN_WHISPER_THREADS);
+        assert_eq!(
+            clamp_whisper_threads(MIN_WHISPER_THREADS),
+            MIN_WHISPER_THREADS
+        );
+        assert_eq!(clamp_whisper_threads(8), 8);
+        assert_eq!(
+            clamp_whisper_threads(MAX_WHISPER_THREADS),
+            MAX_WHISPER_THREADS
+        );
+        assert_eq!(clamp_whisper_threads(u32::MAX), MAX_WHISPER_THREADS);
     }
 
     #[test]
