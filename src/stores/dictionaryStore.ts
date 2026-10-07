@@ -53,9 +53,16 @@ export const useDictionaryStore = create<DictionaryStore>((set) => {
       }
     },
 
+    // Bump so a stale in-flight load cannot commit afterwards and resurrect
+    // the deleted entry. Clearing `loading` releases the flag that discarded
+    // load would otherwise leave set.
     remove: async (id) => {
+      ++requestSeq;
       await deleteDictionaryWord(id);
-      set((s) => ({ entries: s.entries.filter((e) => e.id !== id) }));
+      set((s) => ({
+        entries: s.entries.filter((e) => e.id !== id),
+        loading: false,
+      }));
     },
   };
 });

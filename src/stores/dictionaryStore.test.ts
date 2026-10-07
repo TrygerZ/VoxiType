@@ -111,6 +111,56 @@ describe("dictionaryStore", () => {
     expect(useDictionaryStore.getState().loading).toBe(false);
   });
 
+  it("does not resurrect a removed entry when a stale load resolves late", async () => {
+    let resolveStale!: (entries: DictionaryEntry[]) => void;
+    const stalePromise = new Promise<DictionaryEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    const removed: DictionaryEntry = {
+      id: "1",
+      word: "stale",
+      pronunciation: null,
+      category: "tech",
+      replacement: "stale",
+      language: "en",
+      usage_count: 0,
+      is_active: true,
+    };
+    vi.mocked(tauri.getDictionary).mockImplementationOnce(() => stalePromise);
+    const load = useDictionaryStore.getState().load();
+
+    useDictionaryStore.setState({ entries: [removed] });
+    vi.mocked(tauri.deleteDictionaryWord).mockResolvedValueOnce(undefined);
+    await useDictionaryStore.getState().remove("1");
+
+    expect(useDictionaryStore.getState().entries).toEqual([]);
+
+    resolveStale([removed]);
+    await load;
+
+    expect(useDictionaryStore.getState().entries).toEqual([]);
+  });
+
+  it("clears loading when remove invalidates an in-flight load", async () => {
+    let resolveStale!: (entries: DictionaryEntry[]) => void;
+    const stalePromise = new Promise<DictionaryEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getDictionary).mockImplementationOnce(() => stalePromise);
+    const load = useDictionaryStore.getState().load();
+    expect(useDictionaryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteDictionaryWord).mockResolvedValueOnce(undefined);
+    await useDictionaryStore.getState().remove("1");
+    expect(useDictionaryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useDictionaryStore.getState().loading).toBe(false);
+  });
+
   it("clears error on subsequent successful retry", async () => {
     vi.mocked(tauri.getDictionary).mockRejectedValueOnce(
       new Error("transient db error"),

@@ -111,6 +111,56 @@ describe("snippetStore", () => {
     expect(useSnippetStore.getState().loading).toBe(false);
   });
 
+  it("does not resurrect a removed snippet when a stale load resolves late", async () => {
+    let resolveStale!: (snippets: Snippet[]) => void;
+    const stalePromise = new Promise<Snippet[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    const removed: Snippet = {
+      id: "s1",
+      name: "stale",
+      trigger_phrase: "stale",
+      content: "stale content",
+      category: null,
+      mode: null,
+      usage_count: 0,
+      is_active: true,
+    };
+    vi.mocked(tauri.getSnippets).mockImplementationOnce(() => stalePromise);
+    const load = useSnippetStore.getState().load();
+
+    useSnippetStore.setState({ snippets: [removed] });
+    vi.mocked(tauri.deleteSnippet).mockResolvedValueOnce(undefined);
+    await useSnippetStore.getState().remove("s1");
+
+    expect(useSnippetStore.getState().snippets).toEqual([]);
+
+    resolveStale([removed]);
+    await load;
+
+    expect(useSnippetStore.getState().snippets).toEqual([]);
+  });
+
+  it("clears loading when remove invalidates an in-flight load", async () => {
+    let resolveStale!: (snippets: Snippet[]) => void;
+    const stalePromise = new Promise<Snippet[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getSnippets).mockImplementationOnce(() => stalePromise);
+    const load = useSnippetStore.getState().load();
+    expect(useSnippetStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteSnippet).mockResolvedValueOnce(undefined);
+    await useSnippetStore.getState().remove("s1");
+    expect(useSnippetStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useSnippetStore.getState().loading).toBe(false);
+  });
+
   it("resets error on subsequent successful retry", async () => {
     vi.mocked(tauri.getSnippets).mockRejectedValueOnce(
       new Error("io error"),

@@ -53,9 +53,16 @@ export const useSnippetStore = create<SnippetStore>((set) => {
       }
     },
 
+    // Bump so a stale in-flight load cannot commit afterwards and resurrect
+    // the deleted snippet. Clearing `loading` releases the flag that discarded
+    // load would otherwise leave set.
     remove: async (id) => {
+      ++requestSeq;
       await deleteSnippet(id);
-      set((s) => ({ snippets: s.snippets.filter((x) => x.id !== id) }));
+      set((s) => ({
+        snippets: s.snippets.filter((x) => x.id !== id),
+        loading: false,
+      }));
     },
   };
 });
