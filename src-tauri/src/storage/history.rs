@@ -414,8 +414,8 @@ mod tests {
 
     #[test]
     fn list_paginates_deterministically_on_same_timestamp() {
-        // A pre-v3 (0.6.8) database has no idx_transcriptions_created_at, so the
-        // optimizer cannot supply a stable tie order; the query must guarantee it.
+        // Drop the index to force a rowid scan instead of an index-ordered
+        // scan, so the query's own tie-break must supply the stable order.
         let temp_dir =
             std::env::temp_dir().join(format!("voxitype_paging_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();

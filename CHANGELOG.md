@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Opened external URLs through `open::that_detached` so Windows uses ShellExecuteW as intended, instead of the `cmd /c start` path.
+- Closed a race where the onboarding microphone meter could start beside an active recording. The meter now refuses to install a capture once recording has begun, and stopping the meter is always allowed.
+- Clamped the `test_whisper_cpp` thread count to the supported range, matching the setting used during transcription.
+- Routed dictionary import through the shared case-insensitive conflict target, so imported words differing only by letter case collapse into one entry.
+- Guarded dictionary and snippet deletion against a stale list reload, so a late-resolving load no longer resurrects a removed entry.
+
 ## [0.6.10] - 2026-10-06
 
 ### Changed

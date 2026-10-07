@@ -81,6 +81,12 @@ fn normalize_token(tok: &str) -> String {
 /// neither be split by a space nor trigger sentence capitalization: decimals
 /// and dotted domains (`3.14`, `example.com`), decimal commas and times
 /// (`3,5`, `12:30`).
+///
+/// Deliberate trade-off: any `alnum.alnum` counts as intra-token, so a missing
+/// space after a sentence period before a word or digit (`halo.dunia`,
+/// `end.2024`) is left unsplit. Whisper output normally includes the space, and
+/// splitting the no-space form would corrupt domains and decimals. Preserving
+/// those intact is preferred over repairing the rare missing space.
 fn is_intra_token_punctuation(prev: Option<char>, c: char, next: Option<char>) -> bool {
     let (Some(p), Some(n)) = (prev, next) else {
         return false;

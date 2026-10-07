@@ -21,6 +21,12 @@ const DICTIONARY_NOCASE_SCHEMA_VERSION: u32 = 3;
 
 /// Unique dictionary index definition. The collation must match the upsert
 /// conflict target in `dictionary.rs` and the baseline in `schema.sql`.
+///
+/// SQLite `NOCASE` folds only ASCII A-Z, so it does not consider non-ASCII
+/// casing variants equal. The v3 migration's `lower()` shares that ASCII-only
+/// limitation. In-Rust replacement matching uses Unicode-aware `to_lowercase`,
+/// so a word and its non-ASCII case variant (for example E-acute) are neither
+/// deduped here nor rejected by the index.
 const DICTIONARY_UNIQUE_INDEX_SQL: &str = "CREATE UNIQUE INDEX IF NOT EXISTS idx_dictionary_word
      ON dictionary_entries(word COLLATE NOCASE, language)";
 
