@@ -33,8 +33,9 @@ const MIC_METER_INTERVAL_MS: u64 = 100;
 ///
 /// The meter runs outside the Recording state so the onboarding step can show
 /// a live level. It must never coexist with a recording: two emitters on
-/// `audio_level` would fight, so a change is refused while the pipeline is
-/// Recording or Processing.
+/// `audio_level` would fight, so a start is refused while the pipeline is
+/// Recording or Processing. A stop is always allowed: it only reduces
+/// activity, and refusing it could strand a meter that raced a recording.
 #[tauri::command]
 pub async fn set_mic_meter<R: Runtime>(
     app: AppHandle<R>,
@@ -42,23 +43,23 @@ pub async fn set_mic_meter<R: Runtime>(
     device: Option<String>,
 ) -> std::result::Result<(), AppError> {
     let state = app.state::<AppStateInner>();
+    if !enabled {
+        stop_mic_meter(&app);
+        return Ok(());
+    }
     if matches!(
         state.pipeline.state_tag(),
         crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
     ) {
         return Err(AppError::work_in_progress(
-            "Cannot change the microphone meter while recording",
+            "Cannot start the microphone meter while recording",
         ));
-    }
-    if !enabled {
-        stop_mic_meter(&app);
-        return Ok(());
     }
     enable_mic_meter(&app, device).await
 }
 
 /// Open the meter capture and start its emitter. A failed open stops the meter;
-/// a commit rejected as superseded is not an error.
+/// a commit rejected as superseded or blocked by a recording is not an error.
 async fn enable_mic_meter<R: Runtime>(
     app: &AppHandle<R>,
     device: Option<String>,
@@ -86,9 +87,16 @@ async fn enable_mic_meter<R: Runtime>(
             return Err(e);
         }
     };
-    // A rejected commit means the request was superseded or stopped in the
-    // meantime; that is not an error.
-    if state.mic_meter.commit(gen, capture) {
+    // Read the pipeline state immediately before committing: a recording may
+    // have started while the device was opening, in which case the capture
+    // must not be installed beside it.
+    let recording_active = matches!(
+        state.pipeline.state_tag(),
+        crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
+    );
+    // A rejected commit means the request was superseded, stopped, or blocked
+    // by a recording in the meantime; that is not an error.
+    if state.mic_meter.commit(gen, capture, recording_active) {
         spawn_mic_meter_emitter(app.clone(), gen);
     }
     Ok(())

@@ -737,8 +737,11 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
 
     // A recording must never run beside the onboarding meter: two emitters on
-    // the same `audio_level` event would fight. The meter is only used during
-    // onboarding, so stop it unconditionally here.
+    // the same `audio_level` event would fight. Stop the meter on entry so an
+    // open device is released early, and again once the transition succeeds:
+    // the second stop bumps the meter generation after the state change, so a
+    // meter that raced its way in while this start was in flight is cancelled
+    // and any later commit is rejected as stale.
     super::misc::stop_mic_meter(app);
 
     let active_app = crate::active_window::foreground_process_name();
@@ -754,6 +757,7 @@ pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
         tracing::debug!("Ignoring duplicate start: pipeline is not startable");
         return;
     };
+    super::misc::stop_mic_meter(app);
 
     state
         .widget_timer

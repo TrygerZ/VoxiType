@@ -53,8 +53,17 @@ impl MicMeterState {
 
     /// Install a freshly opened capture when it still belongs to the current
     /// start request; otherwise cancel it and report that it was rejected.
-    pub fn commit(&self, gen: u64, capture: ActiveCapture) -> bool {
+    ///
+    /// `recording_active` closes the start/start race: when a recording began
+    /// while the device was opening, the meter must not install beside it.
+    pub fn commit(&self, gen: u64, capture: ActiveCapture, recording_active: bool) -> bool {
         let mut inner = self.inner.lock_recover();
+        if recording_active {
+            inner.desired = false;
+            drop(inner);
+            capture.cancel();
+            return false;
+        }
         if inner.gen != gen || !inner.desired {
             // Drop the lock before joining the capture thread so a concurrent
             // start/stop is not blocked on device teardown.
@@ -113,7 +122,7 @@ mod tests {
         meter.stop();
 
         let (capture, finished) = ActiveCapture::dummy();
-        assert!(!meter.commit(gen, capture));
+        assert!(!meter.commit(gen, capture, false));
         assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
     }
 
@@ -124,11 +133,11 @@ mod tests {
         let newer = meter.begin_start();
 
         let (newer_capture, newer_finished) = ActiveCapture::dummy();
-        assert!(meter.commit(newer, newer_capture));
+        assert!(meter.commit(newer, newer_capture, false));
         assert!(!newer_finished.load(std::sync::atomic::Ordering::SeqCst));
 
         let (older_capture, older_finished) = ActiveCapture::dummy();
-        assert!(!meter.commit(older, older_capture));
+        assert!(!meter.commit(older, older_capture, false));
         assert!(older_finished.load(std::sync::atomic::Ordering::SeqCst));
     }
 
@@ -146,11 +155,23 @@ mod tests {
     }
 
     #[test]
+    fn commit_is_rejected_and_cancelled_when_recording_started() {
+        let meter = MicMeterState::new();
+        let gen = meter.begin_start();
+        let (capture, finished) = ActiveCapture::dummy();
+
+        assert!(!meter.commit(gen, capture, true));
+
+        assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!meter.is_active());
+    }
+
+    #[test]
     fn stop_cancels_active_capture() {
         let meter = MicMeterState::new();
         let gen = meter.begin_start();
         let (capture, finished) = ActiveCapture::dummy();
-        assert!(meter.commit(gen, capture));
+        assert!(meter.commit(gen, capture, false));
         assert!(meter.is_active());
         assert!(!finished.load(std::sync::atomic::Ordering::SeqCst));
 
