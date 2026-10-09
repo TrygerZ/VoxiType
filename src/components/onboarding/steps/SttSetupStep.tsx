@@ -26,12 +26,14 @@ import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import {
+  errorCode,
   formatTauriError,
   openUrl,
   pickSetupFile,
   testGroqApi,
   testWhisperCpp,
 } from "../../../lib/tauri";
+import { clampWhisperThreads } from "../../../lib/settingsGuards";
 import { StepShell } from "../shared/StepShell";
 import type { SttEngine, Step, TestStatus, TFunc } from "../types";
 
@@ -288,15 +290,6 @@ async function runStatus(
     }, 3000);
   }
 }
-function errorCode(err: unknown) {
-  return err &&
-    typeof err === "object" &&
-    "code" in err &&
-    typeof err.code === "string"
-    ? err.code
-    : undefined;
-}
-
 function GroqSetup({
   apiKey,
   status,
@@ -456,11 +449,7 @@ function OfflineSetup({
           min={1}
           max={32}
           value={threads}
-          onChange={(e) =>
-            onThreadsChange(
-              Math.max(1, Math.floor(Number(e.target.value) || 1)),
-            )
-          }
+          onChange={(e) => onThreadsChange(clampWhisperThreads(e.target.value))}
         />
         <StatusButton
           status={status}

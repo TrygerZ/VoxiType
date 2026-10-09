@@ -24,6 +24,7 @@ pub fn add_snippet(
     state: State<'_, AppStateInner>,
     mut snippet: crate::storage::Snippet,
 ) -> std::result::Result<(), AppError> {
+    super::check_non_empty("snippet trigger phrase", &snippet.trigger_phrase)?;
     if snippet.trigger_phrase.len() > MAX_TRIGGER_LEN {
         return Err(AppError::internal(format!(
             "snippet trigger exceeds {MAX_TRIGGER_LEN} chars"
@@ -33,6 +34,13 @@ pub fn add_snippet(
         return Err(AppError::internal(format!(
             "snippet content exceeds {MAX_CONTENT_LEN} chars"
         )));
+    }
+    super::check_len("snippet name", &snippet.name, super::MAX_IDENTIFIER_LEN)?;
+    if let Some(category) = snippet.category.as_deref() {
+        super::check_len("snippet category", category, super::MAX_IDENTIFIER_LEN)?;
+    }
+    if let Some(mode) = snippet.mode.as_deref() {
+        super::check_len("snippet mode", mode, super::MAX_IDENTIFIER_LEN)?;
     }
     if snippet.id.is_empty() {
         snippet.id = Uuid::new_v4().to_string();

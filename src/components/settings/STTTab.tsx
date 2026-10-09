@@ -7,12 +7,14 @@ import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import {
+  errorCode,
   formatTauriError,
   pickSetupFile,
   testGroqApi,
   testWhisperCpp,
 } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { clampWhisperThreads } from "../../lib/settingsGuards";
 import { toast } from "../ui/Toast";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -155,7 +157,7 @@ export function STTTab() {
                 void invokeAction(() =>
                   update(
                     "whisper_cpp_threads",
-                    Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                    clampWhisperThreads(e.target.value),
                   ),
                 )
               }
@@ -243,14 +245,6 @@ async function runStatus(
       timerRef.current = null;
     }, 3000);
   }
-}
-
-function errorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== "object" || !("code" in err)) {
-    return undefined;
-  }
-  const code = err.code;
-  return typeof code === "string" ? code : undefined;
 }
 
 function PathPickerField({

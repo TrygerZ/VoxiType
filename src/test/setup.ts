@@ -10,6 +10,12 @@ vi.mock("../lib/tauri", () => ({
     }
     return String(error);
   },
+  errorCode: (error: unknown) => {
+    if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+      return error.code;
+    }
+    return undefined;
+  },
   startRecording: vi.fn().mockResolvedValue(undefined),
   stopRecording: vi.fn().mockResolvedValue(undefined),
   getSettings: vi.fn().mockResolvedValue({}),
@@ -18,6 +24,7 @@ vi.mock("../lib/tauri", () => ({
   testGroqApi: vi.fn().mockResolvedValue(undefined),
   testWhisperCpp: vi.fn().mockResolvedValue(undefined),
   setHotkey: vi.fn().mockResolvedValue(undefined),
+  setMicMeter: vi.fn().mockResolvedValue(undefined),
   onEvent: vi.fn().mockResolvedValue(() => undefined),
   invoke: vi.fn().mockResolvedValue(undefined),
   getDataDirectory: vi.fn().mockResolvedValue({

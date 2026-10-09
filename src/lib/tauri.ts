@@ -12,6 +12,16 @@ export function formatTauriError(err: unknown): string {
   }
   return String(err);
 }
+
+/** Extract the typed ErrorCode from a Tauri IPC error, or undefined when the
+ *  rejection carries none. */
+export function errorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object" || !("code" in err)) {
+    return undefined;
+  }
+  const code = err.code;
+  return typeof code === "string" ? code : undefined;
+}
 import type {
   AppInfo,
   DeviceInfo,
@@ -86,6 +96,10 @@ export const deleteSnippet = (id: string) =>
 
 // --- System ---
 export const getMicrophones = () => invoke<DeviceInfo[]>("get_microphones");
+// Onboarding microphone level meter: streams `audio_level` outside Recording.
+// Refused by the backend while a recording or processing is active.
+export const setMicMeter = (enabled: boolean, device: string | null) =>
+  invoke<void>("set_mic_meter", { enabled, device });
 export const getAppInfo = () => invoke<AppInfo>("get_app_info");
 export const checkUpdates = () => invoke<UpdateInfo>("check_updates");
 
@@ -111,7 +125,10 @@ export const setDataDirectory = (path: string) =>
   invoke<void>("set_data_directory", { path });
 export const getDataDirectory = () =>
   invoke<DataDirectoryStatus>("get_data_directory");
-export const restartApp = () => invoke<void>("restart_app");
+// restart_app refuses (WorkInProgress) while a job or recording is active
+// unless force is true; the caller confirms with the user first.
+export const restartApp = (force = false) =>
+  invoke<void>("restart_app", { force });
 
 // Whisper.cpp paths are gated backend-side: only paths previously returned
 // by pickSetupFile are accepted (see set_whisper_cpp_paths in commands/misc).

@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS dictionary_entries (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dictionary_word
-    ON dictionary_entries(word, language);
+    ON dictionary_entries(word COLLATE NOCASE, language);
 CREATE INDEX IF NOT EXISTS idx_dictionary_category
     ON dictionary_entries(category);
 

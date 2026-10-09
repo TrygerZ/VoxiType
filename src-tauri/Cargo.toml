@@ -1,6 +1,6 @@
 [package]
 name = "voxitype"
-version = "0.6.0"
+version = "0.6.11"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
@@ -32,21 +32,23 @@ async-trait = "0.1"
 # --- Audio pipeline ---
 cpal = "0.15"
 rubato = "0.16"
-symphonia = { version = "0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+symphonia = { version = "0.6.1", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 
 # --- Transcript export (DOCX container; entries are stored, not compressed) ---
 zip = { version = "=7.2.0", default-features = false }
 
 # --- HTTP client (Ollama, Groq) ---
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
-open = "5"
+# shellexecute-on-windows: open URLs via ShellExecuteW instead of `cmd /c start`,
+# removing the cmd percent-expansion surface (L-25).
+open = { version = "5", features = ["shellexecute-on-windows"] }
 
 # --- Text injection ---
 enigo = "0.2"
 arboard = "3.4"
 
 # --- Storage ---
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 
 # --- API key encryption (AES-256-GCM at rest) ---
@@ -69,6 +71,7 @@ windows = { version = "0.58", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_WindowsProgramming",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
 ] }

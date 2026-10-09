@@ -66,12 +66,27 @@ impl Default for OllamaConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Groq cloud LLM configuration.
+///
+/// The API key is never printed: the manual `Debug` below redacts it so a
+/// stray `{:?}` in a log cannot leak the key.
+#[derive(Clone)]
 pub struct GroqLlmConfig {
     pub api_key: String,
     pub model: String,
     pub temperature: f32,
     pub max_tokens: u32,
+}
+
+impl std::fmt::Debug for GroqLlmConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GroqLlmConfig")
+            .field("api_key", &"<redacted>")
+            .field("model", &self.model)
+            .field("temperature", &self.temperature)
+            .field("max_tokens", &self.max_tokens)
+            .finish()
+    }
 }
 
 impl Default for GroqLlmConfig {
@@ -93,10 +108,34 @@ pub struct RuleBasedConfig {
 impl Default for RuleBasedConfig {
     fn default() -> Self {
         Self {
-            filler_words: ["um", "uh", "like", "you know", "anu", "eee", "ah"]
+            filler_words: ["um", "uh", "anu", "eee", "ah"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groq_llm_config_debug_redacts_api_key() {
+        let config = GroqLlmConfig {
+            api_key: "super-secret-key".to_string(),
+            ..Default::default()
+        };
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains("super-secret-key"));
+        assert!(rendered.contains("<redacted>"));
+        assert!(rendered.contains("llama-3.1-8b-instant"));
+    }
+
+    #[test]
+    fn default_filler_list_keeps_legitimate_words() {
+        let fillers = RuleBasedConfig::default().filler_words;
+        assert!(!fillers.iter().any(|w| w == "like"));
+        assert!(!fillers.iter().any(|w| w == "you know"));
     }
 }

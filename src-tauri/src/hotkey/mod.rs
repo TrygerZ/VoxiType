@@ -130,6 +130,14 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()
     register_shortcut(app, shortcut, cfg)
 }
 
+/// Whether the accelerator is currently registered with the plugin. Returns
+/// `false` when the accelerator string is invalid.
+pub fn is_registered<R: Runtime>(app: &AppHandle<R>, accelerator: &str) -> bool {
+    parse_shortcut(accelerator)
+        .map(|shortcut| app.global_shortcut().is_registered(shortcut))
+        .unwrap_or(false)
+}
+
 /// Rebind to a candidate hotkey using a transactional register-then-swap pattern:
 /// 1. If candidate accelerator is identical to old:
 ///    - If mode is identical: no-op success.

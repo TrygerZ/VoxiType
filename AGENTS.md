@@ -8,8 +8,8 @@
 | Frontend testing | Vitest + React Testing Library | vitest.config.ts, src/test/ |
 | Backend | Rust 1.85+ | src-tauri/src/ |
 | State | Zustand 5.x | src/stores/ |
-| Storage | SQLite via rusqlite | src-tauri/src/storage/ |
-| Audio | cpal + rubato + ringbuf | src-tauri/src/audio/ |
+| Storage | SQLite 3.53.2 via rusqlite 0.40.2 | src-tauri/src/storage/ |
+| Audio | cpal + rubato + ringbuf; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
 | VAD | Energy-based (default) + Silero ONNX (feature-gated `local-vad`) | src-tauri/src/audio/capture.rs |
 | STT | Groq Whisper (REST primary) + whisper.cpp (feature-gated `local-stt`) | src-tauri/src/stt/ |
 | LLM | Ollama Qwen2.5 3B, Groq Llama 3.1 8B, rule-based fallback, Off mode | src-tauri/src/llm/ |
@@ -20,16 +20,16 @@
 | Text Injection | enigo + arboard (clipboard paste + keystroke fallback) | src-tauri/src/injection/ |
 | Hotkey | Tauri global-shortcut plugin | src-tauri/src/hotkey/ |
 | Crypto | AES-256-GCM API key encryption at rest | src-tauri/src/crypto.rs |
-| Logging | tracing to stderr + daily-rotated files | src-tauri/src/logging.rs |
-| Active Window | Win32 API foreground process detection | src-tauri/src/active_window.rs |
+| Logging | tracing to stderr + daily-rotated files (14-file retention, active data directory) | src-tauri/src/logging.rs |
+| Active Window | Win32 foreground process and window detection | src-tauri/src/active_window.rs |
 | Overlay | Floating widget window control | src-tauri/src/overlay.rs |
 | Sound Cues | Start/stop tones | src-tauri/src/sound.rs |
 | Updater | GitHub Releases version checker | src-tauri/src/updater.rs |
-| Util | Shared HTTP client + retry/backoff | src-tauri/src/util.rs |
+| Util | Shared HTTP client, retry/backoff, atomic file writes | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
-| Data Directory | Marker resolution, validation, and copy-on-migrate | src-tauri/src/data_dir.rs |
+| Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
-| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi) | src-tauri/src/export.rs |
+| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
 
 ## Global Rules
 
@@ -37,7 +37,7 @@
 Always use **RTK (Rust Token Killer)** as a proxy for all terminal commands. RTK saves 60-90% tokens by filtering unnecessary output. Examples: `rtk cargo build`, `rtk git status`, `rtk npm run dev`. Use `rtk gain` to view token savings analytics.
 
 ### Ask When Uncertain
-If you encounter unclear, ambiguous instructions or anything that needs clarification — **ASK ME FIRST**. Do not proceed on assumptions. This includes:
+If you encounter unclear, ambiguous instructions or anything that needs clarification, **ASK ME FIRST**. Do not proceed on assumptions. This includes:
 - Incomplete or contradictory feature specifications
 - Design/architecture choices not explicitly stated
 - Priorities between implementation options
@@ -52,7 +52,7 @@ All code in this project must follow **Clean Code** principles:
 - No magic numbers or string literals without named constants
 - Explicit and meaningful error handling, not panic
 - Comments only for "why", not "what" or "how"
-- DRY (Don't Repeat Yourself) — avoid code duplication
+- DRY (Don't Repeat Yourself): avoid code duplication
 - Testing as part of the definition of "done"
 
 ## Commands
@@ -68,7 +68,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (48 total across 9 modules)
+## IPC Commands (49 total across 9 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -79,28 +79,32 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app`, `set_mic_meter` |
 | `stats` | `get_usage_stats` |
 | `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (48 commands)
-- `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (49 commands)
+- `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica and defined CP1252 WinAnsi mappings)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
-- `src-tauri/src/pipeline/file_job.rs` - File transcription: chunked STT, segmented LLM formatting, replacements. Runs outside the state machine, parallel to dictation
-- `src-tauri/src/audio/file_decode.rs` - symphonia decode to 16 kHz mono, silence-aware chunk splitting, 60-minute cap
+- `src-tauri/src/pipeline/file_job.rs` - File transcription: chunked STT tracks completed chunks; non-empty partial text is retained after later STT or decode failures, with incomplete stages reported. Segmented LLM formatting preserves raw text for failed segments; replacements. Runs outside the state machine, parallel to dictation.
+- `src-tauri/src/commands/file_transcription.rs` - File transcription command: retains non-empty partial transcripts after decode failures and returns completed results when history insertion fails
+- `src-tauri/src/audio/file_decode.rs` - symphonia decode to 16 kHz mono, silence-aware chunk splitting, 60-minute cap.
+- `src-tauri/src/audio/meter.rs` - generation-guarded onboarding microphone capture state.
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
-- `src-tauri/src/storage/db.rs` - SQLite schema + migrations
-- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, floating_widget_hide_requested, floating_widget_reveal_requested)
+- `src-tauri/src/storage/db.rs` - SQLite schema migrations (current schema v3) + pre-migration backup
+- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, notice, floating_widget_hide_requested, floating_widget_reveal_requested)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
+- `src-tauri/src/data_dir_acl.rs` - Windows ACL validation for custom data directories
+- `src-tauri/src/util.rs` - Shared HTTP client, retry/backoff, and atomic file writes
 - `src-tauri/src/error.rs` - Unified AppError with typed ErrorCode
 - `src-tauri/src/injection/mod.rs` - TextInjector trait (clipboard, keystroke, command)
-- `src-tauri/src/active_window.rs` - Win32 foreground process detection
+- `src-tauri/src/active_window.rs` - Win32 foreground process and window detection
 - `src-tauri/src/logging.rs` - tracing init (stderr + file rotation)
 - `tauri.conf.json` - Tauri config, capabilities, windows
 - `vite.config.ts` - Vite + Tailwind + React plugin config
@@ -155,11 +159,12 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `state_changed` | `{ state: "idle"\|"recording"\|"processing"\|"error" }` | Pipeline state transition |
 | `transcription_complete` | `{ id, text, word_count, duration_ms }` | Successful transcription result |
 | `transcription_error` | `{ message, code }` | Transcription failure |
-| `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0–1.0) |
+| `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0 to 1.0) |
 | `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 | `navigate` | `string` | System tray route navigation request for main window |
 | `file_transcription_progress` | `{ stage: "transcribing"\|"formatting", done, total }` | File job progress; `total` is 0 when the file reports no duration |
+| `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
 
 ## Architecture Rules
 1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector

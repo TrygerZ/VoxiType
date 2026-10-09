@@ -133,6 +133,8 @@ export interface KnownSettings {
   onboarding_completed?: boolean;
   mic_device?: string;
   hotkey?: unknown;
+  /** Backend-written: true when the global hotkey failed to register at startup. */
+  hotkey_unavailable?: boolean;
 }
 
 export type Settings = KnownSettings & Record<string, unknown>;

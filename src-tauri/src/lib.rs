@@ -8,6 +8,7 @@ pub mod audio;
 pub mod commands;
 pub mod crypto;
 pub mod data_dir;
+mod data_dir_acl;
 pub mod error;
 pub mod events;
 pub mod export;
@@ -56,6 +57,8 @@ pub struct AppStateInner {
     /// attacker-controlled paths.
     pub last_picker_dirs: std::sync::Mutex<HashMap<String, Vec<PathBuf>>>,
     pub widget_timer: overlay::WidgetTimerState,
+    /// Onboarding microphone level meter, independent of the dictation pipeline.
+    pub mic_meter: crate::audio::MicMeterState,
 }
 
 impl AppStateInner {
@@ -64,7 +67,7 @@ impl AppStateInner {
         let db_path = app_data_dir.join("data").join("voxitype.db");
         tracing::info!("Opening database at '{}'", db_path.display());
         let db = Database::open(&db_path)?;
-        let master_key = crypto::get_master_key(&app_data_dir)?;
+        let master_key = crypto::get_master_key(&app_data_dir, &default_app_data_dir)?;
 
         // Prune old history based on retention days setting
         let settings = SettingsManager::new(&db);
@@ -90,6 +93,7 @@ impl AppStateInner {
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
             widget_timer: overlay::WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
         })
     }
 }
@@ -156,11 +160,14 @@ pub fn run() {
                 .app_data_dir()
                 .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
-            // Initialize logging (stderr + rotating file) once the log dir is known.
-            let log_guard = match logging::init(&default_app_data_dir.join("logs")) {
-                Ok(guard) => Some(guard),
+            // Start stderr logging immediately so bootstrap and data-directory
+            // failures stay visible; the file layer is attached below, once the
+            // active data directory is resolved, so files land in that directory
+            // even after a data-directory move.
+            let log_handle = match logging::init() {
+                Ok(handle) => Some(handle),
                 Err(err) => {
-                    tracing::warn!("Proceeding without file logging: {err}");
+                    tracing::warn!("File logging unavailable this run: {err}");
                     None
                 }
             };
@@ -178,13 +185,21 @@ pub fn run() {
                 fallback_occurred = true;
             }
 
-            // Initialize shared state (DB + pipeline) without moving log_guard.
+            // Initialize shared state (DB + pipeline).
             let (mut state, state_fallback) =
                 init_app_state(app_data_dir, default_app_data_dir)?;
             if state_fallback {
                 fallback_occurred = true;
             }
-            state._log_guard = log_guard;
+
+            // Attach the file layer to the active directory's logs folder. The
+            // guard is kept on state so buffered logs flush on shutdown.
+            if let Some(handle) = log_handle {
+                match logging::attach_file_layer(&handle, &state.app_data_dir.join("logs")) {
+                    Ok(guard) => state._log_guard = Some(guard),
+                    Err(err) => tracing::warn!("Proceeding without file logging: {err}"),
+                }
+            }
 
             let db_path = state.app_data_dir.join("data").join("voxitype.db");
             tracing::info!(
@@ -222,9 +237,21 @@ pub fn run() {
                 tracing::warn!("Tray setup failed: {e}");
             }
 
-            // Global hotkey.
-            if let Err(e) = hotkey::register(handle, &hotkey_cfg) {
-                tracing::warn!("Hotkey registration failed: {e}");
+            // Global hotkey. Persist whether registration succeeded so the
+            // frontend can surface a notice on load: it is usually not listening
+            // yet when setup runs, so an emitted event would be missed.
+            let hotkey_unavailable = match hotkey::register(handle, &hotkey_cfg) {
+                Ok(()) => false,
+                Err(e) => {
+                    tracing::warn!("Hotkey registration failed: {e}");
+                    true
+                }
+            };
+            let state = handle.state::<AppStateInner>();
+            if let Err(e) =
+                SettingsManager::new(&state.db).set("hotkey_unavailable", &hotkey_unavailable)
+            {
+                tracing::warn!("Failed to persist hotkey_unavailable: {e}");
             }
 
             // Floating widget: remember its position across drags and apply the
@@ -272,6 +299,7 @@ pub fn run() {
             commands::get_active_app,
             commands::set_hotkey,
             commands::get_microphones,
+            commands::set_mic_meter,
             commands::get_app_info,
             commands::check_updates,
             commands::open_url,

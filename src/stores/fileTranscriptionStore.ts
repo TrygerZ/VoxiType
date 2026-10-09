@@ -1,6 +1,8 @@
 import { create } from "zustand";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   cancelFileTranscription,
+  errorCode,
   exportTranscripts,
   formatTauriError,
   onEvent,
@@ -8,6 +10,7 @@ import {
   pickExportDirectory,
   transcribeFile,
 } from "../lib/tauri";
+import { toast } from "../components/ui/Toast";
 import { useHistoryStore } from "./historyStore";
 import type {
   FileTranscriptionRequest,
@@ -32,13 +35,6 @@ export interface FileItem {
 }
 
 const CANCELLED_CODE = "Cancelled";
-
-function errorCode(err: unknown): string | null {
-  if (err && typeof err === "object" && "code" in err && typeof err.code === "string") {
-    return err.code;
-  }
-  return null;
-}
 
 const queuedItem = (path: string): FileItem => ({
   path,
@@ -145,15 +141,16 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>(
         const pending = items.filter((item) => item.status !== "done").map((item) => item.path);
         if (!options || picking || isBusy(status) || pending.length === 0) return;
         set({ status: "running", cancelled: false });
-        const unlisten = await onEvent<FileTranscriptionProgressEvent>(
-          "file_transcription_progress",
-          (progress) => {
-            const running = get().items.find((item) => item.status === "running");
-            if (running) patchItem(running.path, { progress });
-          },
-        );
+        let unlisten: UnlistenFn | null = null;
         let stoppedByCancel = false;
         try {
+          unlisten = await onEvent<FileTranscriptionProgressEvent>(
+            "file_transcription_progress",
+            (progress) => {
+              const running = get().items.find((item) => item.status === "running");
+              if (running) patchItem(running.path, { progress });
+            },
+          );
           for (const path of pending) {
             // Checked before each file: the backend clears its cancel flag
             // when a new job begins, so a cancel between files must stop here.
@@ -162,8 +159,10 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>(
               break;
             }
           }
+        } catch (err: unknown) {
+          toast(formatTauriError(err), "error");
         } finally {
-          unlisten();
+          unlisten?.();
           set({ status: "idle", cancelled: stoppedByCancel || get().status === "cancelling" });
           void useHistoryStore.getState().load();
         }

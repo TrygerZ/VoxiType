@@ -16,10 +16,12 @@ pub enum AppState {
     Recording {
         start_time: Instant,
         active_app: Option<String>,
+        active_window_id: Option<isize>,
     },
     Processing {
         start_time: Instant,
         active_app: Option<String>,
+        active_window_id: Option<isize>,
     },
     Error {
         message: String,
@@ -51,31 +53,54 @@ impl AppState {
 /// Events that drive transitions.
 #[derive(Debug, Clone)]
 pub enum StateEvent {
-    StartRecording { active_app: Option<String> },
+    StartRecording {
+        active_app: Option<String>,
+        active_window_id: Option<isize>,
+    },
     StopRecording,
     CancelRecording,
     ProcessingComplete,
-    Error { message: String, code: ErrorCode },
+    Error {
+        message: String,
+        code: ErrorCode,
+    },
 }
 
 impl AppState {
     /// Apply an event, returning the next state or the original state + error.
     pub fn transition(self, event: StateEvent) -> Result<AppState, (AppState, AppError)> {
         match (&self, &event) {
-            (AppState::Idle, StateEvent::StartRecording { active_app })
-            | (AppState::Error { .. }, StateEvent::StartRecording { active_app }) => {
-                Ok(AppState::Recording {
-                    start_time: Instant::now(),
-                    active_app: active_app.clone(),
-                })
-            }
+            (
+                AppState::Idle,
+                StateEvent::StartRecording {
+                    active_app,
+                    active_window_id,
+                },
+            )
+            | (
+                AppState::Error { .. },
+                StateEvent::StartRecording {
+                    active_app,
+                    active_window_id,
+                },
+            ) => Ok(AppState::Recording {
+                start_time: Instant::now(),
+                active_app: active_app.clone(),
+                active_window_id: *active_window_id,
+            }),
 
-            (AppState::Recording { active_app, .. }, StateEvent::StopRecording) => {
-                Ok(AppState::Processing {
-                    start_time: Instant::now(),
-                    active_app: active_app.clone(),
-                })
-            }
+            (
+                AppState::Recording {
+                    active_app,
+                    active_window_id,
+                    ..
+                },
+                StateEvent::StopRecording,
+            ) => Ok(AppState::Processing {
+                start_time: Instant::now(),
+                active_app: active_app.clone(),
+                active_window_id: *active_window_id,
+            }),
 
             (AppState::Recording { .. }, StateEvent::CancelRecording) => Ok(AppState::Idle),
 
@@ -113,7 +138,10 @@ mod tests {
     fn ptt_happy_path() {
         let s = AppState::Idle;
         let s = s
-            .transition(StateEvent::StartRecording { active_app: None })
+            .transition(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         assert_eq!(s.tag(), AppStateTag::Recording);
         let s = s.transition(StateEvent::StopRecording).unwrap();
@@ -125,7 +153,10 @@ mod tests {
     #[test]
     fn cancel_returns_to_idle() {
         let s = AppState::Idle
-            .transition(StateEvent::StartRecording { active_app: None })
+            .transition(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         let s = s.transition(StateEvent::CancelRecording).unwrap();
         assert_eq!(s.tag(), AppStateTag::Idle);
@@ -140,7 +171,10 @@ mod tests {
         let s = s.unwrap();
         assert_eq!(s.tag(), AppStateTag::Error);
         let s = s
-            .transition(StateEvent::StartRecording { active_app: None })
+            .transition(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         assert_eq!(s.tag(), AppStateTag::Recording);
     }
@@ -156,6 +190,7 @@ mod tests {
         let rec = AppState::Recording {
             start_time: Instant::now(),
             active_app: None,
+            active_window_id: None,
         };
         let err_rec = rec.transition(StateEvent::Error {
             message: "rec fail".into(),
@@ -167,6 +202,7 @@ mod tests {
         let proc = AppState::Processing {
             start_time: Instant::now(),
             active_app: None,
+            active_window_id: None,
         };
         let err_proc = proc.transition(StateEvent::Error {
             message: "proc fail".into(),

@@ -219,7 +219,60 @@ describe("GeneralTab data directory settings", () => {
     expect(restartBtn).toBeInTheDocument();
     await user.click(restartBtn);
 
-    expect(tauri.restartApp).toHaveBeenCalledOnce();
+    expect(tauri.restartApp).toHaveBeenCalledWith(false);
+  });
+
+  it("asks for confirmation when restart is refused with WorkInProgress", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: "/pending/restart/dir",
+      lastError: null,
+    });
+    vi.mocked(tauri.restartApp)
+      .mockRejectedValueOnce({ code: "WorkInProgress", message: "busy" })
+      .mockResolvedValueOnce(undefined);
+
+    render(<GeneralTab />);
+
+    const restartBtn = await screen.findByTestId("restart-app-button");
+    await user.click(restartBtn);
+
+    // Inline two-step confirmation appears instead of restarting.
+    expect(
+      await screen.findByTestId("restart-app-confirm-button"),
+    ).toBeInTheDocument();
+    expect(tauri.restartApp).toHaveBeenCalledWith(false);
+
+    await user.click(screen.getByTestId("restart-app-confirm-button"));
+    await waitFor(() => {
+      expect(tauri.restartApp).toHaveBeenCalledWith(true);
+    });
+  });
+
+  it("cancelling the restart confirmation does not restart", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: "/pending/restart/dir",
+      lastError: null,
+    });
+    vi.mocked(tauri.restartApp).mockRejectedValueOnce({
+      code: "WorkInProgress",
+      message: "busy",
+    });
+
+    render(<GeneralTab />);
+
+    await user.click(await screen.findByTestId("restart-app-button"));
+    await screen.findByTestId("restart-app-confirm-button");
+    await user.click(screen.getByTestId("restart-app-cancel-button"));
+
+    expect(screen.queryByTestId("restart-app-confirm-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("restart-app-button")).toBeInTheDocument();
+    expect(tauri.restartApp).toHaveBeenCalledTimes(1);
   });
 });
 

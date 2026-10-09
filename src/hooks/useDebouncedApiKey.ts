@@ -60,7 +60,9 @@ export function useDebouncedApiKey(
 
   useEffect(() => {
     return () => {
-      debouncedPersist.cancel();
+      // Flush, not cancel: a key typed within the debounce window must persist
+      // on unmount instead of being silently dropped.
+      debouncedPersist.flush();
     };
   }, [debouncedPersist]);
 

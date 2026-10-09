@@ -22,7 +22,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useHistoryStore } from "../../stores/historyStore";
 import { useStatsStore } from "../../stores/statsStore";
-import { useT } from "../../lib/i18n";
+import { modeLabel, useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
 import {
@@ -32,6 +32,7 @@ import {
 } from "../../lib/settingsGuards";
 import { Waveform } from "../floating-widget/Waveform";
 import { Button } from "../ui/Button";
+import { toast } from "../ui/Toast";
 
 export function HomeView() {
   const t = useT();
@@ -116,12 +117,17 @@ export function HomeView() {
     return `${m}:${s}`;
   };
 
-  const handleCopy = useCallback((id: string, text: string) => {
+  const handleCopy = useCallback(async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      toast(t("file.copy_failed"), "error");
+      return;
+    }
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    void navigator.clipboard.writeText(text);
     setCopiedId(id);
     copyTimerRef.current = setTimeout(() => setCopiedId(null), 2000);
-  }, []);
+  }, [t]);
 
   const handleReInject = useCallback(async (id: string) => {
     if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
@@ -511,7 +517,7 @@ export function HomeView() {
                         {/* Copy */}
                         <button
                           type="button"
-                          onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
+                          onClick={() => void handleCopy(item.id, item.text_formatted || item.text_raw)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                           title={t("history.copy_tooltip")}
                           aria-label={t("history.copy_tooltip")}
@@ -558,7 +564,7 @@ export function HomeView() {
                     <div className="flex items-center justify-between text-[11px] text-vx-text-dim border-t border-vx-border/20 pt-2">
                       <span className="flex items-center gap-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-vx-accent/60" />
-                        <span className="capitalize">{t(`settings.modes.${item.mode}`)}</span>
+                        <span className="capitalize">{modeLabel(t, item.mode)}</span>
                         {item.word_count > 0 && (
                           <>
                             <span>•</span>

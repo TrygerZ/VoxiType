@@ -1,6 +1,7 @@
 //! Shared runtime helpers for STT/LLM config building and the core
 //! recording → process → inject → persist pipeline.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,8 +23,9 @@ use crate::stt::{GroqSttConfig, SttConfig, SttEngineKind, SttFactory, WhisperCpp
 use crate::util::MutexExt;
 use crate::{events, AppStateInner};
 
-// Maximum recording duration in seconds to prevent runaway recordings
-pub const MAX_RECORDING_DURATION_SECS: u64 = 300;
+// Maximum recording duration in seconds to prevent runaway recordings. Shares
+// the capture module's hard sample cap so the two limits cannot diverge.
+pub const MAX_RECORDING_DURATION_SECS: u64 = crate::audio::MAX_CAPTURE_SECS;
 
 // ---------------------------------------------------------------
 // Settings-derived config builders
@@ -144,12 +146,71 @@ pub fn decrypted_api_key_from_settings(
     decrypt_api_key_str(&raw, &state.master_key)
 }
 
+/// whisper.cpp `-t` thread flag bounds. A stored out-of-range value (legacy
+/// rows written before write-side validation, or a hand-edited DB) is clamped
+/// here, the single place both dictation and file-job engines route through.
+pub(crate) const MIN_WHISPER_THREADS: u32 = 1;
+pub(crate) const MAX_WHISPER_THREADS: u32 = 32;
+const DEFAULT_WHISPER_THREADS: u32 = 4;
+
 fn whisper_cpp_config_from_settings(settings: &SettingsSnapshot) -> WhisperCppConfig {
+    let threads =
+        clamp_whisper_threads(settings.u32("whisper_cpp_threads", DEFAULT_WHISPER_THREADS));
     WhisperCppConfig {
         binary_path: settings.string("whisper_cpp_binary_path", "whisper-cli"),
         model_path: settings.string("whisper_cpp_model_path", ""),
-        threads: settings.u32("whisper_cpp_threads", 4),
+        threads,
     }
+}
+
+/// Clamp a caller-supplied thread count to the supported whisper.cpp range.
+pub(crate) fn clamp_whisper_threads(threads: u32) -> u32 {
+    threads.clamp(MIN_WHISPER_THREADS, MAX_WHISPER_THREADS)
+}
+
+/// Setting key holding the picker-issued token that vouches for the binary path.
+pub const WHISPER_BINARY_TOKEN_KEY: &str = "whisper_cpp_binary_token";
+
+/// User-facing instruction shown when the whisper.cpp binary cannot be trusted.
+const WHISPER_BINARY_RE_SELECT: &str =
+    "Re-select the whisper.cpp binary in Settings to use local transcription";
+
+/// Reject a stored whisper.cpp binary that the picker-issued token does not vouch for.
+///
+/// `set_whisper_cpp_paths` seals the canonical path under the master key; the
+/// engine builder opens that token and requires it to match the stored binary's
+/// canonical path. A missing token (an install configured before this gate) or
+/// any mismatch fails closed with a re-select message. There is no silent
+/// fallback to another engine: falling back would hide a tampered or stale path.
+fn verify_whisper_binary(state: &AppStateInner, config: &WhisperCppConfig) -> Result<()> {
+    let token = SettingsManager::new(&state.db)
+        .get::<String>(WHISPER_BINARY_TOKEN_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if token.trim().is_empty() {
+        return Err(AppError::stt(format!(
+            "whisper.cpp binary was not selected through Settings. {WHISPER_BINARY_RE_SELECT}"
+        )));
+    }
+    let sealed_path = crate::crypto::open_token(&token, &state.master_key).map_err(|_| {
+        AppError::stt(format!(
+            "the stored whisper.cpp binary token is invalid. {WHISPER_BINARY_RE_SELECT}"
+        ))
+    })?;
+    let canonical = Path::new(&config.binary_path)
+        .canonicalize()
+        .map_err(|error| {
+            AppError::stt(format!(
+                "whisper.cpp binary not found: {error}. {WHISPER_BINARY_RE_SELECT}"
+            ))
+        })?;
+    if super::misc::canonical_to_clean_string(&canonical) != sealed_path {
+        return Err(AppError::stt(format!(
+            "the stored whisper.cpp binary path does not match its token. {WHISPER_BINARY_RE_SELECT}"
+        )));
+    }
+    Ok(())
 }
 
 pub fn build_stt(state: &AppStateInner) -> Result<Arc<dyn crate::stt::SttEngine>> {
@@ -187,8 +248,11 @@ pub fn build_stt_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
 ) -> Result<Arc<dyn crate::stt::SttEngine>> {
-    let kind = stt_engine_kind(&settings.string("stt_engine", "groq"));
+    let kind = stt_engine_kind(&settings.string("stt_engine", "groq"))?;
     let (groq, whisper_cpp) = stt_configs_from_settings(state, settings, kind)?;
+    if kind == SttEngineKind::WhisperCpp {
+        verify_whisper_binary(state, &whisper_cpp)?;
+    }
     let cache_key = stt_cache_key(kind, &groq.api_key, &groq.model, &whisper_cpp);
 
     let mut cache = state.stt_engine.lock_recover();
@@ -198,7 +262,7 @@ pub fn build_stt_from_settings(
         }
     }
 
-    let new_engine = SttFactory::create(kind, groq, whisper_cpp);
+    let new_engine = SttFactory::create(kind, groq, whisper_cpp)?;
     *cache = Some((kind, cache_key, new_engine.clone()));
     Ok(new_engine)
 }
@@ -218,19 +282,32 @@ pub fn build_stt_for_kind(
         SttEngineKind::Groq if groq.api_key.trim().is_empty() => {
             return Err(AppError::api_key_missing("Groq API key is not set"))
         }
-        SttEngineKind::WhisperCpp => crate::stt::whisper_cpp::validate_config(&whisper_cpp)?,
+        SttEngineKind::WhisperCpp => {
+            verify_whisper_binary(state, &whisper_cpp)?;
+            crate::stt::whisper_cpp::validate_config(&whisper_cpp)?;
+        }
         SttEngineKind::Groq => {}
     }
-    Ok(SttFactory::create(kind, groq, whisper_cpp))
+    SttFactory::create(kind, groq, whisper_cpp)
 }
 
-fn stt_engine_kind(value: &str) -> SttEngineKind {
+/// Map a stored `stt_engine` string to its engine kind. An unknown value is an
+/// error, never a silent fallback: coercion would hide config corruption and
+/// run a different engine than the user selected.
+fn stt_engine_kind(value: &str) -> Result<SttEngineKind> {
     match value {
-        "whisper_cpp" => SttEngineKind::WhisperCpp,
-        _ => SttEngineKind::Groq,
+        "groq" => Ok(SttEngineKind::Groq),
+        "whisper_cpp" => Ok(SttEngineKind::WhisperCpp),
+        other => Err(AppError::invalid_input(format!(
+            "Unknown stt_engine '{other}'"
+        ))),
     }
 }
 
+/// Cache key for the selected STT engine. The API key is hashed so the raw
+/// secret is never held in a key string (it would otherwise live in memory and
+/// could surface in a panic or debug dump); the digest still changes whenever
+/// the key does, so the engine rebuilds correctly.
 fn stt_cache_key(
     kind: SttEngineKind,
     api_key: &str,
@@ -238,7 +315,7 @@ fn stt_cache_key(
     whisper_cpp: &WhisperCppConfig,
 ) -> String {
     match kind {
-        SttEngineKind::Groq => format!("{}|{}", api_key, model),
+        SttEngineKind::Groq => format!("{}|{}", api_key_digest(api_key), model),
         SttEngineKind::WhisperCpp => format!(
             "{}|{}|{}",
             whisper_cpp.binary_path, whisper_cpp.model_path, whisper_cpp.threads
@@ -246,21 +323,36 @@ fn stt_cache_key(
     }
 }
 
-pub fn build_llm(state: &AppStateInner) -> Arc<dyn crate::llm::LlmFormatter> {
+fn api_key_digest(api_key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(api_key.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn build_llm(state: &AppStateInner) -> Result<Arc<dyn crate::llm::LlmFormatter>> {
     let settings = SettingsSnapshot::load(&state.db).unwrap_or_default();
     build_llm_from_settings(state, &settings)
+}
+
+/// Map a stored `llm_engine` string to its engine kind. An unknown value is an
+/// error, never a silent fallback to Ollama.
+fn llm_engine_kind(value: &str) -> Result<LlmEngineKind> {
+    match value {
+        "off" => Ok(LlmEngineKind::Off),
+        "groq" => Ok(LlmEngineKind::Groq),
+        "rule_based" => Ok(LlmEngineKind::RuleBased),
+        "ollama" => Ok(LlmEngineKind::Ollama),
+        other => Err(AppError::invalid_input(format!(
+            "Unknown llm_engine '{other}'"
+        ))),
+    }
 }
 
 pub fn build_llm_from_settings(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
-) -> Arc<dyn crate::llm::LlmFormatter> {
-    let kind = match settings.string("llm_engine", "ollama").as_str() {
-        "off" => LlmEngineKind::Off,
-        "groq" => LlmEngineKind::Groq,
-        "rule_based" => LlmEngineKind::RuleBased,
-        _ => LlmEngineKind::Ollama,
-    };
+) -> Result<Arc<dyn crate::llm::LlmFormatter>> {
+    let kind = llm_engine_kind(&settings.string("llm_engine", "ollama"))?;
     let (ollama, groq) = llm_configs_from_settings(state, settings);
     LlmFactory::create(kind, ollama, groq, RuleBasedConfig::default())
 }
@@ -357,8 +449,20 @@ pub fn telemetry_enabled(db: &Database) -> bool {
     settings.bool("telemetry", false)
 }
 
+/// Escape a value for CSV: neutralize spreadsheet formula injection, then
+/// quote and flatten newlines. A leading `=`, `+`, `-`, `@`, tab, or CR would
+/// otherwise be interpreted as a formula by Excel/Sheets.
 pub fn csv_escape(s: &str) -> String {
-    s.replace('"', "\"\"").replace('\r', "").replace('\n', " ")
+    let needs_formula_guard = s
+        .chars()
+        .next()
+        .is_some_and(|c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'));
+    let body = s.replace('"', "\"\"").replace('\r', "").replace('\n', " ");
+    if needs_formula_guard {
+        format!("'{body}")
+    } else {
+        body
+    }
 }
 
 pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
@@ -374,13 +478,19 @@ pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
 // ---------------------------------------------------------------
 
 /// Process the captured audio through STT → LLM → injection → persist → emit.
-pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
+///
+/// `session_generation` identifies the recording this audio belongs to.
+/// Completion and failure transitions are ignored when a newer session has
+/// started, so a delayed batch cannot destroy a live recording.
+pub async fn process_audio<R: Runtime>(
+    app: AppHandle<R>,
+    audio: Vec<f32>,
+    session_generation: u64,
+) {
     let state = app.state::<AppStateInner>();
 
     if audio.is_empty() {
-        if let Err(e) = state.pipeline.finish_processing() {
-            tracing::error!("Failed to finish processing on empty audio: {e}");
-        }
+        finish_session(&state.pipeline, session_generation, "empty audio");
         events::emit_state(&app, state.pipeline.state_tag());
         crate::overlay::reset_idle_timer(&state);
         crate::overlay::maybe_hide(&app);
@@ -389,12 +499,12 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
 
     let settings = match SettingsSnapshot::load(&state.db) {
         Ok(s) => s,
-        Err(e) => return fail(&app, &state.pipeline, &e),
+        Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
     };
 
     let stt = match build_stt_from_settings(&state, &settings) {
         Ok(e) => e,
-        Err(e) => return fail(&app, &state.pipeline, &e),
+        Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
     };
     let stt_config = build_stt_config_from_settings(&state.db, &settings);
 
@@ -405,20 +515,29 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
         match stt.transcribe(&audio, &stt_config).await {
             Ok(tr) => {
                 if let Some(cmd) = crate::injection::VoiceCommand::from_phrase(&tr.text) {
-                    let initial_app = state.pipeline.active_app();
-                    let current_app = crate::active_window::foreground_process_name();
+                    let expected_window = state.pipeline.active_window_id();
+                    let current_window = crate::active_window::foreground_window_id();
                     if let Err(e) = crate::injection::command::verify_target_window(
-                        initial_app.as_deref(),
-                        current_app.as_deref(),
+                        expected_window,
+                        current_window,
                     ) {
-                        return fail(&app, &state.pipeline, &e);
+                        return fail_session(&app, &state.pipeline, session_generation, &e);
                     }
-                    if let Err(e) = crate::injection::command::execute(cmd) {
-                        return fail(&app, &state.pipeline, &e);
+                    // enigo drives the OS input queue and must not run on a tokio
+                    // worker thread; offload it to the blocking pool like capture init.
+                    let executed = tokio::task::spawn_blocking(move || {
+                        crate::injection::command::execute(cmd)
+                    })
+                    .await
+                    .unwrap_or_else(|join_err| {
+                        Err(AppError::injection(format!(
+                            "Command execution task failed: {join_err}"
+                        )))
+                    });
+                    if let Err(e) = executed {
+                        return fail_session(&app, &state.pipeline, session_generation, &e);
                     }
-                    if let Err(e) = state.pipeline.finish_processing() {
-                        tracing::error!("Failed to finish processing command: {e}");
-                    }
+                    finish_session(&state.pipeline, session_generation, "command");
                     events::emit_transcription_complete(
                         &app,
                         &Uuid::new_v4().to_string(),
@@ -433,11 +552,14 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 }
                 precomputed = Some(tr);
             }
-            Err(e) => return fail(&app, &state.pipeline, &e),
+            Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
         }
     }
 
-    let llm = build_llm_from_settings(&state, &settings);
+    let llm = match build_llm_from_settings(&state, &settings) {
+        Ok(l) => l,
+        Err(e) => return fail_session(&app, &state.pipeline, session_generation, &e),
+    };
     let active_app = state.pipeline.active_app();
     let mode = active_mode_from_settings(&state.db, &settings, active_app.as_deref());
     let replacements = DictionaryRepository::new(&state.db)
@@ -463,7 +585,6 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
     };
 
     let stt_name = stt.name().to_string();
-    let llm_name = llm.name().to_string();
     let mode_id = mode.id();
 
     let outcome = match precomputed {
@@ -510,8 +631,8 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 },
                 mode: mode_id,
                 stt_engine: stt_name,
-                stt_confidence: Some(out.transcription.confidence),
-                llm_engine: Some(llm_name),
+                stt_confidence: out.transcription.confidence,
+                llm_engine: Some(out.llm_engine.clone()),
                 duration_ms: Some(out.transcription.duration_ms as i64),
                 word_count: word_count as i64,
                 character_count: out.formatted_text.chars().count() as i64,
@@ -534,7 +655,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
                 );
             }
 
-            if let Err(e) = state.pipeline.finish_processing() {
+            if let Err(e) = state.pipeline.finish_processing(session_generation) {
                 tracing::error!("Failed to finish processing transcription: {e}");
             }
             events::emit_transcription_complete(
@@ -552,7 +673,7 @@ pub async fn process_audio<R: Runtime>(app: AppHandle<R>, audio: Vec<f32>) {
             if settings.bool("telemetry", false) {
                 let _ = crate::storage::StatsRepository::new(&state.db).record_error();
             }
-            fail(&app, &state.pipeline, &e)
+            fail_session(&app, &state.pipeline, session_generation, &e)
         }
     }
 }
@@ -565,6 +686,38 @@ pub fn fail<R: Runtime>(app: &AppHandle<R>, pipeline: &PipelineOrchestrator, e: 
     let state = app.state::<AppStateInner>();
     crate::overlay::reset_idle_timer(&state);
     hide_overlay_soon(app.clone());
+}
+
+/// Fail the batch only when it still belongs to the current session.
+///
+/// A stale batch (its session was superseded by a new recording) logs and
+/// returns without emitting an error or changing state, so a late failure
+/// cannot clobber a live recording.
+fn fail_session<R: Runtime>(
+    app: &AppHandle<R>,
+    pipeline: &PipelineOrchestrator,
+    session_generation: u64,
+    e: &AppError,
+) {
+    if pipeline.set_error_if_generation(session_generation, e) {
+        tracing::error!("Pipeline error: {e}");
+        events::emit_transcription_error(app, &e.message, &format!("{:?}", e.code));
+        events::emit_state(app, pipeline.state_tag());
+        let state = app.state::<AppStateInner>();
+        crate::overlay::reset_idle_timer(&state);
+        hide_overlay_soon(app.clone());
+    } else {
+        tracing::debug!("Ignoring stale pipeline error from superseded session: {e}");
+    }
+}
+
+/// Complete processing for the current session, ignoring a stale completion.
+fn finish_session(pipeline: &PipelineOrchestrator, session_generation: u64, context: &str) {
+    match pipeline.finish_processing(session_generation) {
+        Ok(true) => {}
+        Ok(false) => tracing::debug!("Ignoring stale completion for {context}"),
+        Err(e) => tracing::error!("Failed to finish processing ({context}): {e}"),
+    }
 }
 
 pub fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
@@ -586,19 +739,29 @@ pub fn hide_overlay_soon<R: Runtime>(app: AppHandle<R>) {
 pub fn hotkey_start<R: Runtime>(app: &AppHandle<R>) {
     let started_at = Instant::now();
     let state = app.state::<AppStateInner>();
-    let tag = state.pipeline.state_tag();
-    if tag != crate::pipeline::AppStateTag::Idle && tag != crate::pipeline::AppStateTag::Error {
-        return;
-    }
+
+    // A recording must never run beside the onboarding meter: two emitters on
+    // the same `audio_level` event would fight. Stop the meter on entry so an
+    // open device is released early, and again once the transition succeeds:
+    // the second stop bumps the meter generation after the state change, so a
+    // meter that raced its way in while this start was in flight is cancelled
+    // and any later commit is rejected as stale.
+    super::misc::stop_mic_meter(app);
 
     let active_app = crate::active_window::foreground_process_name();
-    let tag = match state
+    // Capture the HWND too: command-mode verification compares the exact window,
+    // not just the process name, so two windows of one app cannot be confused.
+    let active_window_id = crate::active_window::foreground_window_id();
+    // Atomic check-and-start: a concurrent start (hotkey plus IPC) that loses
+    // the race is benign, not a user-facing error.
+    let Some(tag) = state
         .pipeline
-        .apply(crate::pipeline::StateEvent::StartRecording { active_app })
-    {
-        Ok(t) => t,
-        Err(e) => return fail(app, &state.pipeline, &e),
+        .try_start_recording(active_app, active_window_id)
+    else {
+        tracing::debug!("Ignoring duplicate start: pipeline is not startable");
+        return;
     };
+    super::misc::stop_mic_meter(app);
 
     state
         .widget_timer
@@ -693,19 +856,22 @@ fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
 
 pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppStateInner>();
-    if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Recording {
-        return;
-    }
 
-    crate::overlay::reset_idle_timer(&state);
-    let audio = match state.pipeline.stop_recording() {
-        Ok(audio) => audio,
+    // Atomic check-and-stop: a concurrent stop (hotkey plus IPC plus auto-stop)
+    // that loses the race is benign, not a user-facing error.
+    let (audio, session_generation) = match state.pipeline.try_stop_recording() {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            tracing::debug!("Ignoring duplicate stop: pipeline is not recording");
+            return;
+        }
         Err(e) => return fail(app, &state.pipeline, &e),
     };
+    crate::overlay::reset_idle_timer(&state);
 
     // Recordings without sustained voice are taps or clicks, not speech.
     if !has_enough_voice(&audio, TARGET_SAMPLE_RATE) {
-        return discard_silent_recording(app, &state);
+        return discard_silent_recording(app, &state, session_generation);
     }
 
     if sound_cues_enabled(&state.db) {
@@ -714,17 +880,21 @@ pub fn hotkey_stop<R: Runtime>(app: &AppHandle<R>) {
     events::emit_state(app, state.pipeline.state_tag());
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        process_audio(app2, audio).await;
+        process_audio(app2, audio, session_generation).await;
     });
 }
 
 /// Return to idle after discarding audio that holds no usable speech.
-/// Mirrors the cancel path: no STT, no stop cue.
-fn discard_silent_recording<R: Runtime>(app: &AppHandle<R>, state: &AppStateInner) {
+/// Mirrors the cancel path: no STT, no stop cue. Emits a notice so the user
+/// learns the recording was discarded rather than silently lost.
+fn discard_silent_recording<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppStateInner,
+    session_generation: u64,
+) {
     tracing::debug!("Discarding recording without sustained voice");
-    if let Err(e) = state.pipeline.finish_processing() {
-        tracing::error!("Failed to finish processing on discarded audio: {e}");
-    }
+    events::emit_notice(app, "no_speech_detected", "No speech detected");
+    finish_session(&state.pipeline, session_generation, "discarded audio");
     events::emit_state(app, state.pipeline.state_tag());
     crate::overlay::maybe_hide(app);
 }
@@ -747,6 +917,95 @@ mod tests {
     #[test]
     fn empty_hotwords_returns_none() {
         assert_eq!(build_initial_prompt(&[]), None);
+    }
+
+    #[test]
+    fn stt_cache_key_hashes_api_key_and_is_stable() {
+        let whisper = WhisperCppConfig::default();
+        let key_a = stt_cache_key(SttEngineKind::Groq, "secret-a", "model", &whisper);
+        let key_a_again = stt_cache_key(SttEngineKind::Groq, "secret-a", "model", &whisper);
+        let key_b = stt_cache_key(SttEngineKind::Groq, "secret-b", "model", &whisper);
+
+        // Same key -> stable; different key -> different cache key.
+        assert_eq!(key_a, key_a_again);
+        assert_ne!(key_a, key_b);
+        // The raw secret never appears in the cache key.
+        assert!(!key_a.contains("secret-a"));
+        assert!(!key_b.contains("secret-b"));
+    }
+
+    #[test]
+    fn stt_engine_kind_maps_known_and_rejects_unknown() {
+        assert_eq!(stt_engine_kind("groq").unwrap(), SttEngineKind::Groq);
+        assert_eq!(
+            stt_engine_kind("whisper_cpp").unwrap(),
+            SttEngineKind::WhisperCpp
+        );
+        let err = stt_engine_kind("garbage").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn llm_engine_kind_maps_known_and_rejects_unknown() {
+        assert_eq!(llm_engine_kind("off").unwrap(), LlmEngineKind::Off);
+        assert_eq!(llm_engine_kind("ollama").unwrap(), LlmEngineKind::Ollama);
+        assert_eq!(llm_engine_kind("groq").unwrap(), LlmEngineKind::Groq);
+        assert_eq!(
+            llm_engine_kind("rule_based").unwrap(),
+            LlmEngineKind::RuleBased
+        );
+        let err = llm_engine_kind("gpt").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn whisper_threads_are_clamped_to_range() {
+        let snapshot = |threads: u32| {
+            let mut map = serde_json::Map::new();
+            map.insert(
+                "whisper_cpp_threads".to_string(),
+                serde_json::json!(threads),
+            );
+            SettingsSnapshot::new(map)
+        };
+        assert_eq!(whisper_cpp_config_from_settings(&snapshot(0)).threads, 1);
+        assert_eq!(whisper_cpp_config_from_settings(&snapshot(8)).threads, 8);
+        assert_eq!(
+            whisper_cpp_config_from_settings(&snapshot(9999)).threads,
+            32
+        );
+    }
+
+    #[test]
+    fn clamp_whisper_threads_bounds_input() {
+        assert_eq!(clamp_whisper_threads(0), MIN_WHISPER_THREADS);
+        assert_eq!(
+            clamp_whisper_threads(MIN_WHISPER_THREADS),
+            MIN_WHISPER_THREADS
+        );
+        assert_eq!(clamp_whisper_threads(8), 8);
+        assert_eq!(
+            clamp_whisper_threads(MAX_WHISPER_THREADS),
+            MAX_WHISPER_THREADS
+        );
+        assert_eq!(clamp_whisper_threads(u32::MAX), MAX_WHISPER_THREADS);
+    }
+
+    #[test]
+    fn csv_escape_guards_formula_leads_and_normalizes() {
+        // Formula-leading characters get a single-quote prefix.
+        for lead in ["=1+1", "+SUM(A1)", "-2+3", "@cmd", "\ttab", "\rcr"] {
+            assert!(
+                csv_escape(lead).starts_with('\''),
+                "expected guard for {lead:?}"
+            );
+        }
+        // Normal cells are untouched except for quote doubling and newline flattening.
+        assert_eq!(csv_escape("hello"), "hello");
+        assert_eq!(csv_escape("a\"b"), "a\"\"b");
+        assert_eq!(csv_escape("a\nb"), "a b");
+        // A formula char not at the start is not a lead and stays as-is.
+        assert_eq!(csv_escape("a=b"), "a=b");
     }
 
     #[test]
@@ -796,7 +1055,78 @@ mod tests {
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
             widget_timer: WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
         }
+    }
+
+    /// A scratch binary file and its canonical clean-path string.
+    fn scratch_binary(name: &str) -> (PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("voxitype-gate-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("whisper-cli.exe");
+        std::fs::write(&file, b"stub").unwrap();
+        let canonical = file.canonicalize().unwrap();
+        let clean = crate::commands::misc::canonical_to_clean_string(&canonical);
+        (canonical, clean)
+    }
+
+    fn whisper_config(binary_path: String) -> WhisperCppConfig {
+        WhisperCppConfig {
+            binary_path,
+            model_path: "model.bin".to_string(),
+            threads: 4,
+        }
+    }
+
+    #[test]
+    fn whisper_binary_gate_accepts_matching_token() {
+        let state = test_app_state([21u8; 32]);
+        let (_canonical, clean) = scratch_binary("match");
+        let token = crate::crypto::seal_token(&clean, &state.master_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set(WHISPER_BINARY_TOKEN_KEY, &token)
+            .unwrap();
+
+        assert!(verify_whisper_binary(&state, &whisper_config(clean)).is_ok());
+    }
+
+    #[test]
+    fn whisper_binary_gate_rejects_missing_token() {
+        let state = test_app_state([22u8; 32]);
+        let (_canonical, clean) = scratch_binary("missing");
+        let err = verify_whisper_binary(&state, &whisper_config(clean)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttEngineError);
+        assert!(err.message.contains("Settings"));
+    }
+
+    #[test]
+    fn whisper_binary_gate_rejects_tampered_path() {
+        let state = test_app_state([23u8; 32]);
+        let (_canonical, clean) = scratch_binary("tampered");
+        // Token vouches for a different (planted) binary than the stored path.
+        let token =
+            crate::crypto::seal_token("C:\\attacker\\payload.exe", &state.master_key).unwrap();
+        SettingsManager::new(&state.db)
+            .set(WHISPER_BINARY_TOKEN_KEY, &token)
+            .unwrap();
+
+        let err = verify_whisper_binary(&state, &whisper_config(clean)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttEngineError);
+        assert!(err.message.contains("does not match"));
+    }
+
+    #[test]
+    fn whisper_binary_gate_rejects_undecryptable_token() {
+        let state = test_app_state([24u8; 32]);
+        let (_canonical, clean) = scratch_binary("badtoken");
+        let token = crate::crypto::seal_token(&clean, &[99u8; 32]).unwrap();
+        SettingsManager::new(&state.db)
+            .set(WHISPER_BINARY_TOKEN_KEY, &token)
+            .unwrap();
+
+        let err = verify_whisper_binary(&state, &whisper_config(clean)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::SttEngineError);
+        assert!(err.message.contains("token is invalid"));
     }
 
     #[test]
@@ -971,8 +1301,8 @@ mod tests {
             active_mode_from_settings(&state.db, &snapshot, None).id()
         );
         assert_eq!(
-            build_llm(&state).name(),
-            build_llm_from_settings(&state, &snapshot).name()
+            build_llm(&state).unwrap().name(),
+            build_llm_from_settings(&state, &snapshot).unwrap().name()
         );
         assert_eq!(
             decrypted_api_key(&state).unwrap(),
@@ -1033,8 +1363,8 @@ mod tests {
             active_mode_from_settings(&state.db, &snapshot, None).id()
         );
         assert_eq!(
-            build_llm(&state).name(),
-            build_llm_from_settings(&state, &snapshot).name()
+            build_llm(&state).unwrap().name(),
+            build_llm_from_settings(&state, &snapshot).unwrap().name()
         );
     }
 
@@ -1045,13 +1375,21 @@ mod tests {
         let secret_key = "gsk_full_test_key_xyz123";
         let encrypted = crate::crypto::encrypt_api_key(secret_key, &master_key).unwrap();
 
+        // The whisper.cpp engine gate requires a picker-issued token matching
+        // the stored binary's canonical path, so use a real scratch binary.
+        let (_canonical, binary) = scratch_binary("snapshot");
+
         let mgr = SettingsManager::new(&state.db);
         mgr.set("stt_engine", &"whisper_cpp").unwrap();
         mgr.set("stt_model", &"ggml-base.bin").unwrap();
-        mgr.set("whisper_cpp_binary_path", &"/usr/bin/whisper-cli")
-            .unwrap();
+        mgr.set("whisper_cpp_binary_path", &binary).unwrap();
         mgr.set("whisper_cpp_model_path", &"/models/base.bin")
             .unwrap();
+        mgr.set(
+            WHISPER_BINARY_TOKEN_KEY,
+            &crate::crypto::seal_token(&binary, &master_key).unwrap(),
+        )
+        .unwrap();
         mgr.set("whisper_cpp_threads", &6u32).unwrap();
         mgr.set("stt_language", &"en").unwrap();
         mgr.set("command_mode", &true).unwrap();
@@ -1149,7 +1487,7 @@ mod tests {
         );
         assert_eq!(
             snapshot.string("whisper_cpp_binary_path", "whisper-cli"),
-            "/usr/bin/whisper-cli"
+            binary
         );
         assert_eq!(
             snapshot.string("whisper_cpp_model_path", ""),
@@ -1175,8 +1513,8 @@ mod tests {
             active_mode_from_settings(&state.db, &snapshot, None).id()
         );
         assert_eq!(
-            build_llm(&state).name(),
-            build_llm_from_settings(&state, &snapshot).name()
+            build_llm(&state).unwrap().name(),
+            build_llm_from_settings(&state, &snapshot).unwrap().name()
         );
         assert_eq!(
             decrypted_api_key(&state).unwrap(),

@@ -10,6 +10,7 @@ graphify-out
 plan
 dokumen
 SESSION.md
+.supervisor
 
 node_modules
 dist

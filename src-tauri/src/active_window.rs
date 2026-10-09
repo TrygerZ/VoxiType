@@ -11,6 +11,13 @@ pub fn foreground_process_name() -> Option<String> {
     platform::foreground_process_name()
 }
 
+/// The current foreground window handle as a raw `isize`, or `None` when there
+/// is no foreground window or on unsupported platforms. Used to verify that a
+/// command still targets the exact window that was active at recording start.
+pub fn foreground_window_id() -> Option<isize> {
+    platform::foreground_window_id()
+}
+
 /// Normalize a process executable name to the canonical stored form: lowercased
 /// with a trailing `.exe` removed (case-insensitively). Shared by the
 /// foreground detector and the per-app mode store so lookups and inserts always
@@ -22,12 +29,25 @@ pub fn normalize_process_name(name: &str) -> String {
 
 #[cfg(windows)]
 mod platform {
-    use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
+    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    /// Buffer length for `QueryFullProcessImageNameW`. 260 (`MAX_PATH`) truncates
+    /// longer process paths; 1024 covers them and stays well under any limit.
+    pub(super) const PROCESS_PATH_BUF_LEN: usize = 1024;
+
+    /// Raw handle of the current foreground window, or `None` when there is none.
+    pub fn foreground_window_id() -> Option<isize> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd.0.is_null() {
+            return None;
+        }
+        Some(hwnd.0 as isize)
+    }
 
     pub fn foreground_process_name() -> Option<String> {
         unsafe {
@@ -44,7 +64,7 @@ mod platform {
 
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
 
-            let mut buf = [0u16; MAX_PATH as usize];
+            let mut buf = [0u16; PROCESS_PATH_BUF_LEN];
             let mut len = buf.len() as u32;
             let res = QueryFullProcessImageNameW(
                 handle,
@@ -74,12 +94,16 @@ mod platform {
     pub fn foreground_process_name() -> Option<String> {
         None
     }
+
+    pub fn foreground_window_id() -> Option<isize> {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::platform::PROCESS_PATH_BUF_LEN;
     use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::Foundation::MAX_PATH;
     use windows::Win32::System::Threading::OpenProcess;
     use windows::Win32::System::Threading::QueryFullProcessImageNameW;
     use windows::Win32::System::Threading::PROCESS_NAME_FORMAT;
@@ -115,7 +139,7 @@ mod tests {
                 }
             };
 
-            let mut buf = [0u16; MAX_PATH as usize];
+            let mut buf = [0u16; PROCESS_PATH_BUF_LEN];
             let mut len = buf.len() as u32;
             let res = QueryFullProcessImageNameW(
                 handle,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { FolderOpen, RotateCw } from "lucide-react";
 import {
+  errorCode,
   formatTauriError,
   getDataDirectory,
   pickDataDirectory,
@@ -36,6 +37,7 @@ export function GeneralTab() {
   const [dataStatus, setDataStatus] = useState("");
   const [dataError, setDataError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   const widgetEnabled = getBooleanSetting(settings.floating_widget, true);
   const autoHideRaw = getNumberSetting(
@@ -141,14 +143,20 @@ export function GeneralTab() {
     }
   };
 
-  const handleRestart = async () => {
+  const handleRestart = async (force = false) => {
     if (busy) return;
     setBusy(true);
     try {
       setDataError("");
-      await restartApp();
+      await restartApp(force);
+      setConfirmRestart(false);
     } catch (e: unknown) {
-      setDataError(formatTauriError(e));
+      // The backend refuses a restart while work is active; ask first.
+      if (errorCode(e) === "WorkInProgress") {
+        setConfirmRestart(true);
+      } else {
+        setDataError(formatTauriError(e));
+      }
       setBusy(false);
     }
   };
@@ -285,7 +293,7 @@ export function GeneralTab() {
               >
                 {t("data_directory.apply")}
               </Button>
-              {pendingRestart && (
+              {pendingRestart && !confirmRestart && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -297,7 +305,38 @@ export function GeneralTab() {
                   {t("data_directory.restart_now")}
                 </Button>
               )}
+              {pendingRestart && confirmRestart && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() => void handleRestart(true)}
+                    data-testid="restart-app-confirm-button"
+                  >
+                    {t("data_directory.restart_confirm_btn")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setConfirmRestart(false)}
+                    data-testid="restart-app-cancel-button"
+                  >
+                    {t("data_directory.restart_cancel")}
+                  </Button>
+                </>
+              )}
             </div>
+            {confirmRestart && (
+              <span
+                role="alert"
+                className="max-w-xs text-right text-xs text-vx-error"
+                data-testid="restart-app-confirm-message"
+              >
+                {t("data_directory.restart_confirm")}
+              </span>
+            )}
             {selectedDirectory && (
               <span
                 className="max-w-xs break-all text-right font-mono text-[11px] text-vx-text-primary"

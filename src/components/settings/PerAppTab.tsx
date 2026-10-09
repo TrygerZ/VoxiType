@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Trash2, Crosshair } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { useT } from "../../lib/i18n";
+import { modeLabel, useT } from "../../lib/i18n";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -177,7 +177,7 @@ export function PerAppTab() {
                     {m.app_process_name}
                   </span>
                   <span className="text-xs text-vx-text-dim capitalize">
-                    {t("settings.app_rules.applies_mode", { mode: t(`settings.modes.${m.mode_id}`) })}
+                    {t("settings.app_rules.applies_mode", { mode: modeLabel(t, m.mode_id) })}
                   </span>
                 </div>
                 <button

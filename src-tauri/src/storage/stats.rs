@@ -39,7 +39,7 @@ impl<'a> StatsRepository<'a> {
         Self { db }
     }
 
-    /// Record one successful transcription against today's row (UTC date).
+    /// Record one successful transcription against today's row (local date).
     pub fn record_transcription(
         &self,
         words: i64,
@@ -60,7 +60,7 @@ impl<'a> StatsRepository<'a> {
                 "INSERT INTO usage_stats
                    (date, transcription_count, total_words, total_duration_ms,
                     stt_local_count, stt_cloud_count, llm_local_count, llm_cloud_count)
-                 VALUES (date('now'), 1, ?1, ?2, ?3, ?4, ?5, ?6)
+                 VALUES (date('now','localtime'), 1, ?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(date) DO UPDATE SET
                    transcription_count = transcription_count + 1,
                    total_words = total_words + ?1,
@@ -87,7 +87,7 @@ impl<'a> StatsRepository<'a> {
         self.db.with_conn(|c| {
             c.execute(
                 "INSERT INTO usage_stats (date, error_count)
-                 VALUES (date('now'), 1)
+                 VALUES (date('now','localtime'), 1)
                  ON CONFLICT(date) DO UPDATE SET error_count = error_count + 1",
                 [],
             )?;
@@ -95,16 +95,20 @@ impl<'a> StatsRepository<'a> {
         })
     }
 
-    /// Return the most recent `days` of stats, newest first.
+    /// Return stats for the trailing `days`-day window (including today), by
+    /// calendar date rather than by counting active rows, newest first.
     pub fn recent(&self, days: u32) -> Result<Vec<DailyStats>> {
         self.db.with_conn(|c| {
             let mut stmt = c.prepare(
                 "SELECT date, transcription_count, total_words, total_duration_ms,
                         stt_local_count, stt_cloud_count, llm_local_count, llm_cloud_count,
                         error_count
-                 FROM usage_stats ORDER BY date DESC LIMIT ?1",
+                 FROM usage_stats
+                 WHERE date >= date('now','localtime', ?1)
+                 ORDER BY date DESC",
             )?;
-            let rows = stmt.query_map([days], |r| {
+            let range = format!("-{days} days");
+            let rows = stmt.query_map([range], |r| {
                 Ok(DailyStats {
                     date: r.get(0)?,
                     transcription_count: r.get(1)?,
@@ -145,5 +149,46 @@ mod tests {
         assert_eq!(today.stt_cloud_count, 2);
         assert_eq!(today.llm_local_count, 2);
         assert_eq!(today.error_count, 1);
+    }
+
+    #[test]
+    fn record_transcription_buckets_by_local_date() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = StatsRepository::new(&db);
+        repo.record_transcription(1, 100, EngineKind::Cloud, EngineKind::Local)
+            .unwrap();
+
+        // Compare against the database's own local-date expression so the test
+        // stays valid in any timezone without a chrono dependency.
+        let (stored, local_today): (String, String) = db
+            .with_conn(|c| {
+                Ok(c.query_row(
+                    "SELECT (SELECT date FROM usage_stats LIMIT 1), date('now','localtime')",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(stored, local_today);
+    }
+
+    #[test]
+    fn recent_filters_by_calendar_range() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = StatsRepository::new(&db);
+        db.with_conn(|c| {
+            c.execute(
+                "INSERT INTO usage_stats (date, transcription_count)
+                 VALUES (date('now','localtime','-30 days'), 7),
+                        (date('now','localtime'), 3)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let recent = repo.recent(7).unwrap();
+        assert_eq!(recent.len(), 1, "only the current row is within 7 days");
+        assert_eq!(recent[0].transcription_count, 3);
     }
 }

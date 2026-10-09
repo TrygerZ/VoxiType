@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.6.0** - Open-source voice-to-text for every app.
+**Version 0.6.11** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
@@ -15,7 +15,7 @@ VoxiType is a desktop voice dictation application for Windows. Press a global ho
 | Platform | Status |
 |----------|--------|
 | Windows 10/11 | Fully supported, verified in CI |
-| macOS | Experimental (builds configured but not CI-tested) |
+| macOS | Not supported (no release bundle configured) |
 | Linux | Not supported |
 
 Releases are unsigned. Windows users will see a SmartScreen warning on first install.
@@ -38,7 +38,7 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 - **Translation Pipeline** - Automatic LLM-based translation to target language
 - **Configurable Transcription Language** - Set transcription language via `stt_language` setting (Whisper-backed)
 - **Encrypted API Key Storage** - API keys encrypted with AES-256-GCM at rest
-- **First-Run Onboarding** - Guided setup for Groq or offline whisper.cpp, microphone, hotkey, and smoke test
+- **First-Run Onboarding** - Guided setup for Groq or offline whisper.cpp, with a live microphone level meter, hotkey, and smoke test
 - **Sound Cues** - Optional audio feedback when starting/stopping recording
 - **Usage Stats** - Local lifetime totals and opt-in telemetry, never sent anywhere
 - **Configurable Data Directory** - Choose storage location with validated migration (DB + master key + logs)
@@ -143,7 +143,7 @@ User presses hotkey
 
 ### IPC Surface
 
-VoxiType exposes **48 Tauri commands** organized into 9 modules:
+VoxiType exposes **49 Tauri commands** organized into 9 modules:
 
 | Module | Commands |
 |--------|----------|
@@ -153,7 +153,7 @@ VoxiType exposes **48 Tauri commands** organized into 9 modules:
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app`, `set_mic_meter` |
 | `stats` | `get_usage_stats` |
 | `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
@@ -169,6 +169,7 @@ VoxiType exposes **48 Tauri commands** organized into 9 modules:
 | `floating_widget_reveal_requested` | `{ id }` | Overlay requests animated reveal after window show |
 | `navigate` | `string` | System tray route navigation request for main window |
 | `file_transcription_progress` | `{ stage: "transcribing"\|"formatting", done, total }` | File job progress; `total` is 0 when the file reports no duration |
+| `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
 
 ## Project Structure
 
@@ -193,32 +194,33 @@ src/                  # React frontend
 src-tauri/src/        # Rust backend
 ├── active_window.rs  # Per-app mode detection via Win32 API
 ├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD + file decode (symphonia)
-├── commands/         # Tauri IPC handlers (48 commands across 9 modules + runtime helpers)
+├── commands/         # Tauri IPC handlers (49 commands across 9 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
+├── data_dir_acl.rs   # Windows ACL validation for custom data directories
 ├── error.rs          # Unified AppError + typed ErrorCode
 ├── events.rs         # Tauri event emitters (state_changed, audio_level, etc.)
 ├── export.rs         # Transcript export writers (TXT, DOCX, PDF)
 ├── hotkey/           # Global hotkey registration + rebind
 ├── injection/        # Text injection (keystroke, clipboard, hybrid, command mode)
 ├── llm/              # LLM formatting (Ollama, Groq, rule-based, fallback chain)
-├── logging.rs        # tracing to stderr + rotating file
+├── logging.rs        # tracing to stderr + daily files (14-file retention, attached after data directory resolution)
 ├── main.rs           # Tauri entry point
 ├── overlay.rs        # Floating widget window control + position persistence
 ├── pipeline/         # State machine orchestrator + batch processing + file transcription job
 ├── sound.rs          # Optional recording sound cues (start/stop tones)
 ├── storage/          # SQLite database
-│   ├── db.rs         # Database open + migrations
+│   ├── db.rs         # Database open + migrations + pre-migration backup
 │   ├── settings.rs   # SettingsManager (key-value JSON)
 │   ├── history.rs    # HistoryRepository (CRUD + FTS5 search)
 │   ├── dictionary.rs # DictionaryRepository (word-bounded replacements, hotword boosting)
 │   ├── snippets.rs   # SnippetRepository (trigger expansion)
 │   ├── per_app_modes.rs # PerAppModeRepository
-│   └── stats.rs      # StatsRepository (local usage totals)
+│   └── stats.rs      # StatsRepository (local-date usage totals)
 ├── stt/              # Speech-to-text (Groq Whisper + whisper.cpp)
 ├── tray/             # System tray icon + context menu
 ├── updater.rs        # GitHub Releases version checker
-└── util.rs           # Shared HTTP client + retry/backoff helpers
+└── util.rs           # Shared HTTP client, retry/backoff, and atomic file writes
 ```
 
 ## Configuration
@@ -253,7 +255,7 @@ Settings are stored as key-value pairs in SQLite, JSON-encoded. Key settings:
 | `auto_start` | bool | Launch VoxiType at Windows sign-in |
 | `auto_update` | bool | Check for updates automatically |
 
-Data directory selection uses a marker file (`data_dir.txt`) in the default app-data directory. On first use, migration copies the active previous directory's DB, `master.key`, and logs. DB and key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. Selected directory takes effect after restart.
+Data directory selection uses a marker file (`data_dir.txt`) in the default app-data directory. On first use, migration copies the active previous directory's DB, `master.key`, and logs. DB and key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. Custom directories must not grant other local accounts read, write, or control access; rejected directories report the offending account. Legacy unencrypted `master.key` files are accepted only in the default directory. Log files retain 14 daily files under the active data directory. Selected directory takes effect after restart.
 
 ## Offline STT Setup
 

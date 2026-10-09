@@ -35,6 +35,7 @@ pub fn add_dictionary_word(
 }
 
 fn validate_entry(entry: &DictionaryEntry) -> std::result::Result<(), AppError> {
+    super::check_non_empty("dictionary word", &entry.word)?;
     if entry.word.len() > MAX_WORD_LEN {
         return Err(AppError::internal(format!(
             "dictionary word exceeds {MAX_WORD_LEN} chars"
@@ -46,6 +47,19 @@ fn validate_entry(entry: &DictionaryEntry) -> std::result::Result<(), AppError> 
                 "dictionary replacement exceeds {MAX_WORD_LEN} chars"
             )));
         }
+    }
+    super::check_len(
+        "dictionary category",
+        &entry.category,
+        super::MAX_IDENTIFIER_LEN,
+    )?;
+    super::check_len(
+        "dictionary language",
+        &entry.language,
+        super::MAX_IDENTIFIER_LEN,
+    )?;
+    if let Some(p) = entry.pronunciation.as_deref() {
+        super::check_len("dictionary pronunciation", p, super::MAX_IDENTIFIER_LEN)?;
     }
     Ok(())
 }
@@ -93,41 +107,14 @@ pub fn import_dictionary(
     for entry in &entries {
         validate_entry(entry)?;
     }
-    let mut count = 0u32;
-    state.db.with_conn(|c| {
-        let tx = c.unchecked_transaction()?;
-        {
-            let mut stmt = tx.prepare(
-                "INSERT INTO dictionary_entries
-                   (id, word, pronunciation, category, replacement, language, usage_count, is_active)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
-                 ON CONFLICT(word, language) DO UPDATE SET
-                   pronunciation=excluded.pronunciation,
-                   category=excluded.category,
-                   replacement=excluded.replacement,
-                   is_active=excluded.is_active,
-                   updated_at=datetime('now')",
-            )?;
-            for entry in &mut entries {
-                if entry.id.is_empty() {
-                    entry.id = Uuid::new_v4().to_string();
-                }
-                stmt.execute(rusqlite::params![
-                    entry.id,
-                    entry.word,
-                    entry.pronunciation,
-                    entry.category,
-                    entry.replacement,
-                    entry.language,
-                    entry.usage_count,
-                    entry.is_active as i32,
-                ])?;
-                count += 1;
-            }
+    for entry in &mut entries {
+        if entry.id.is_empty() {
+            entry.id = Uuid::new_v4().to_string();
         }
-        tx.commit()?;
-        Ok(count)
-    })
+    }
+    // Route through the repository so imports share the NOCASE conflict target
+    // with single writes; casing variants within one import collapse.
+    DictionaryRepository::new(&state.db).upsert_many(&entries)
 }
 
 #[cfg(test)]
@@ -150,6 +137,30 @@ mod tests {
     #[test]
     fn allows_normal_entry() {
         assert!(validate_entry(&entry("hello", Some("hai"))).is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_word() {
+        let err = validate_entry(&entry("", None)).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+        let blank = validate_entry(&entry("   ", None)).unwrap_err();
+        assert_eq!(blank.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn rejects_oversized_identifier_fields() {
+        let big = "a".repeat(super::super::MAX_IDENTIFIER_LEN + 1);
+        let mut e = entry("ok", None);
+        e.category = big.clone();
+        assert!(validate_entry(&e).is_err());
+
+        let mut e = entry("ok", None);
+        e.language = big.clone();
+        assert!(validate_entry(&e).is_err());
+
+        let mut e = entry("ok", None);
+        e.pronunciation = Some(big);
+        assert!(validate_entry(&e).is_err());
     }
 
     #[test]

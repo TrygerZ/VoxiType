@@ -44,6 +44,24 @@ describe("useDebouncedApiKey", () => {
     expect(result.current.localKey).toBe("gsk_typed_key_more");
   });
 
+  it("persists a key typed within the debounce window when the hook unmounts", () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    const { result, unmount } = renderHook(
+      ({ storeValue }) => useDebouncedApiKey(storeValue, update, "Saved"),
+      { initialProps: { storeValue: "gsk_initial" } },
+    );
+
+    act(() => {
+      result.current.onKeyChange("gsk_typed_then_left");
+    });
+    expect(update).not.toHaveBeenCalled();
+
+    // Unmount before the 600 ms window elapses must persist, not drop.
+    unmount();
+
+    expect(update).toHaveBeenCalledWith("groq_api_key", "gsk_typed_then_left");
+  });
+
   it("resyncs localKey when storeValue changes from an external source", () => {
     const update = vi.fn().mockResolvedValue(undefined);
     const { result, rerender } = renderHook(

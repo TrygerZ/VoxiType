@@ -1,6 +1,7 @@
 //! Small shared helpers used across modules.
 
 use std::future::Future;
+use std::path::Path;
 use std::sync::{MutexGuard, OnceLock};
 use std::time::Duration;
 
@@ -19,6 +20,43 @@ impl<T> MutexExt<T> for std::sync::Mutex<T> {
     }
 }
 
+/// Write `content` to `destination` atomically: a temp file in the same
+/// directory is written, synced, and renamed over the target, so a crash
+/// mid-write never leaves a truncated or half-written file behind.
+pub fn write_atomic(destination: &Path, content: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let file_stem = destination
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    let temporary = parent.join(format!(".{file_stem}.tmp-{}-{}", std::process::id(), nonce));
+    let result = (|| {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(content)?;
+        file.sync_all()?;
+        // Close before rename (Windows refuses to rename an open file).
+        drop(file);
+        // Carry the destination's mode across the replace so an atomic rewrite
+        // never loosens an existing file's permissions (for example a 0600
+        // master.key on Unix).
+        if let Ok(metadata) = std::fs::metadata(destination) {
+            let _ = std::fs::set_permissions(&temporary, metadata.permissions());
+        }
+        std::fs::rename(&temporary, destination)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 /// Default connect timeout for all outbound HTTP requests.
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -29,18 +67,20 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// Reusing one client (and its connection pool / TLS state) across requests
 /// avoids the cost of rebuilding it for every recording. Cloning a `Client` is
-/// cheap (it is an `Arc` internally).
-pub fn http_client() -> reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+/// cheap (it is an `Arc` internally). A build failure is cached and returned as
+/// an error on every call instead of panicking.
+pub fn http_client() -> crate::error::Result<reqwest::Client> {
+    static CLIENT: OnceLock<std::result::Result<reqwest::Client, String>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
             reqwest::Client::builder()
                 .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
                 .timeout(DEFAULT_REQUEST_TIMEOUT)
                 .build()
-                .unwrap_or_default()
+                .map_err(|e| e.to_string())
         })
         .clone()
+        .map_err(|e| AppError::internal(format!("Failed to build HTTP client: {e}")))
 }
 
 /// Maximum length of upstream error-body text kept in an error message.
@@ -150,11 +190,58 @@ where
     retry_with_backoff_in_context(max_retries, base_delay, RetryContext::Standard, op).await
 }
 
+/// Upper bound on a server-requested `Retry-After` delay. A hostile or buggy
+/// server must not stall the pipeline for minutes.
+pub const RETRY_AFTER_MAX_SECS: u64 = 60;
+
+/// Parse a `Retry-After` response header as integer seconds. HTTP-date form is
+/// not handled (Groq sends seconds); unparseable values are ignored.
+pub fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+}
+
+/// Exponential backoff cap as a multiple of `base_delay`.
+const BACKOFF_CAP_MULTIPLIER: u32 = 8;
+
+/// Deterministic retry delay for one attempt.
+///
+/// When the server requested a `Retry-After`, honor it (clamped to
+/// [`RETRY_AFTER_MAX_SECS`]) with no jitter. Otherwise use exponential backoff
+/// `base * 2^attempt` capped at `8 * base`.
+fn retry_delay(base: Duration, attempt: u32, retry_after: Option<u64>) -> Duration {
+    if let Some(secs) = retry_after {
+        return Duration::from_secs(secs.min(RETRY_AFTER_MAX_SECS));
+    }
+    base * (1u32 << attempt).min(BACKOFF_CAP_MULTIPLIER)
+}
+
+/// Apply jitter to `delay`, spreading it over `[delay / 2, delay]` so a fleet
+/// of clients does not retry in lockstep. The server-requested `Retry-After`
+/// path is left unjittered by the caller.
+fn jitter(delay: Duration) -> Duration {
+    use rand::Rng;
+    if delay.is_zero() {
+        return delay;
+    }
+    let half = delay / 2;
+    let span = delay.as_nanos() - half.as_nanos();
+    let extra = rand::thread_rng().gen_range(0..=span);
+    half + Duration::from_nanos(extra as u64)
+}
+
 /// Run an async operation with exponential backoff and context-aware retry classification.
 ///
-/// Retries up to `max_retries` times (so `max_retries + 1` total attempts),
-/// sleeping `base_delay * 2^attempt` between retries, capped at `8 * base_delay`.
-/// Only retryable errors for `ctx` trigger a retry; everything else fails fast.
+/// Retries up to `max_retries` times (so `max_retries + 1` total attempts).
+/// A server-provided `Retry-After` is honored exactly (clamped); otherwise the
+/// delay is jittered exponential backoff (`base * 2^attempt`, capped at
+/// `8 * base`, spread over `[d / 2, d]`). Only retryable errors for `ctx`
+/// trigger a retry; everything else fails fast.
 pub async fn retry_with_backoff_in_context<T, F, Fut>(
     max_retries: u32,
     base_delay: Duration,
@@ -173,7 +260,14 @@ where
                 if attempt >= max_retries || !is_retryable_in_context(&e, ctx) {
                     return Err(e);
                 }
-                let delay = base_delay * (1u32 << attempt).min(8);
+                let deterministic = retry_delay(base_delay, attempt, e.retry_after_secs);
+                // Honor a server-requested delay verbatim; jitter only the
+                // exponential backoff we chose ourselves.
+                let delay = if e.retry_after_secs.is_some() {
+                    deterministic
+                } else {
+                    jitter(deterministic)
+                };
                 tracing::warn!(
                     "Attempt {} failed ({e}); retrying in {:?}",
                     attempt + 1,
@@ -338,6 +432,70 @@ mod tests {
             .await;
         assert_eq!(result.unwrap(), 100);
         assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retry_delay_uses_exponential_backoff() {
+        let base = Duration::from_millis(100);
+        assert_eq!(retry_delay(base, 0, None), Duration::from_millis(100));
+        assert_eq!(retry_delay(base, 1, None), Duration::from_millis(200));
+        assert_eq!(retry_delay(base, 2, None), Duration::from_millis(400));
+    }
+
+    #[test]
+    fn retry_delay_caps_at_eight_times_base() {
+        let base = Duration::from_millis(100);
+        assert_eq!(retry_delay(base, 3, None), Duration::from_millis(800));
+        assert_eq!(retry_delay(base, 10, None), Duration::from_millis(800));
+    }
+
+    #[test]
+    fn retry_delay_honors_retry_after() {
+        let base = Duration::from_millis(100);
+        assert_eq!(retry_delay(base, 0, Some(5)), Duration::from_secs(5));
+    }
+
+    #[test]
+    fn retry_delay_clamps_retry_after_to_max() {
+        let base = Duration::from_millis(100);
+        assert_eq!(
+            retry_delay(base, 0, Some(600)),
+            Duration::from_secs(RETRY_AFTER_MAX_SECS)
+        );
+    }
+
+    #[test]
+    fn jitter_stays_within_half_to_full_delay() {
+        let delay = Duration::from_millis(1000);
+        for _ in 0..200 {
+            let jittered = jitter(delay);
+            assert!(
+                jittered >= delay / 2 && jittered <= delay,
+                "jitter {jittered:?} out of [500ms, 1000ms]"
+            );
+        }
+        // Zero delay stays zero (no panic on the span computation).
+        assert_eq!(jitter(Duration::ZERO), Duration::ZERO);
+    }
+
+    #[test]
+    fn retry_after_secs_parses_integer_header() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::RETRY_AFTER, "42".parse().unwrap());
+        assert_eq!(retry_after_secs(&headers), Some(42));
+        assert_eq!(retry_after_secs(&reqwest::header::HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn http_client_builds_and_clones_share_cached_instance() {
+        // A build failure is not injectable without refactoring the cache, so
+        // this asserts the happy path only: repeated calls return a usable
+        // client (the cached one, cloned). Manual check: if the builder ever
+        // fails, every call returns AppError::internal instead of panicking.
+        let first = http_client().expect("client builds");
+        let second = http_client().expect("client builds");
+        // Both clones are usable (the cached client is returned by value).
+        drop((first, second));
     }
 
     #[test]

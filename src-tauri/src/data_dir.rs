@@ -44,7 +44,7 @@ pub fn read_error(default_dir: &Path) -> Option<String> {
 /// Records a data directory failure diagnostic message.
 pub fn record_error(default_dir: &Path, message: &str) {
     let error_path = default_dir.join(DATA_DIR_ERROR_FILE);
-    let _ = write_atomic(&error_path, message.as_bytes());
+    let _ = crate::util::write_atomic(&error_path, message.as_bytes());
 }
 
 /// Clears any recorded data directory failure diagnostic.
@@ -124,20 +124,34 @@ fn read_marker_target(marker_path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Resolve the directory to copy existing data from when switching to `target_dir`.
+///
+/// The source is the directory that was active before the switch, recorded as
+/// `current` in the marker. For a pending marker `current` is the previous
+/// active directory; for a graduated marker (the steady state after a
+/// successful switch) `current` is the custom directory itself, so a
+/// re-migration is a no-op rather than copying from a bogus path.
 pub fn migration_source(default_dir: &Path, target_dir: &Path) -> PathBuf {
     if target_dir == default_dir {
         return default_dir.to_path_buf();
     }
-    std::fs::read_to_string(default_dir.join(DATA_DIR_MARKER_FILE))
-        .ok()
-        .and_then(|contents| serde_json::from_str::<DataDirMarker>(&contents).ok())
-        .and_then(|marker| marker.pending.map(|_| marker.current))
-        .or_else(|| {
-            std::fs::read_to_string(default_dir.join(DATA_DIR_MARKER_FILE))
-                .ok()
-                .map(|contents| PathBuf::from(contents.trim()))
-        })
-        .unwrap_or_else(|| default_dir.to_path_buf())
+    match std::fs::read_to_string(default_dir.join(DATA_DIR_MARKER_FILE)) {
+        Ok(contents) => parse_marker_source(&contents).unwrap_or_else(|| default_dir.to_path_buf()),
+        Err(_) => default_dir.to_path_buf(),
+    }
+}
+
+/// Extract the source directory from marker contents.
+///
+/// A JSON marker (pending or graduated) yields its `current` path. A plain-text
+/// legacy marker yields the trimmed path. Only when JSON parsing fails is the
+/// raw text treated as a path, so a JSON marker is never mistaken for one.
+fn parse_marker_source(contents: &str) -> Option<PathBuf> {
+    if let Ok(marker) = serde_json::from_str::<DataDirMarker>(contents) {
+        return Some(marker.current);
+    }
+    let trimmed = contents.trim();
+    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
 }
 
 /// Completes the first-use copy into a marker-selected directory.
@@ -173,7 +187,7 @@ pub(crate) fn graduate_marker(default_dir: &Path, target_dir: &Path) -> Result<(
         current: target_dir.to_path_buf(),
         pending: None,
     };
-    write_atomic(&marker_path, &serde_json::to_vec(&marker)?).map_err(|error| {
+    crate::util::write_atomic(&marker_path, &serde_json::to_vec(&marker)?).map_err(|error| {
         AppError::data_directory(format!("failed to graduate data directory marker: {error}"))
     })?;
     Ok(())
@@ -246,6 +260,10 @@ fn copy_database_files(
             copy_verified(&source_shm, &sidecar_path(target_db, "-shm"))?;
         }
         copy_verified(source_key, target_key)?;
+        // A legitimate pre-DPAPI install may still hold a raw key. Re-wrap it at
+        // the custom destination so migration keeps working; the load-time gate
+        // rejects a raw key left in a custom directory (M-4).
+        crate::crypto::rewrap_legacy_key_if_raw(target_key)?;
         Ok(())
     };
     if let Err(error) = copy_sidecars_and_key() {
@@ -355,28 +373,6 @@ fn copy_logs_best_effort(source_dir: &Path, target_dir: &Path) {
     }
 }
 
-fn write_atomic(destination: &Path, content: &[u8]) -> std::io::Result<()> {
-    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    let file_stem = destination
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
-    let temporary = parent.join(format!(".{file_stem}.tmp-{}-{}", std::process::id(), nonce));
-    let result = (|| {
-        std::fs::write(&temporary, content)?;
-        std::fs::rename(&temporary, destination)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
-}
-
 fn resolve_custom_dir(default_dir: &Path) -> Result<Option<PathBuf>> {
     let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
     let marker = match std::fs::read_to_string(&marker_path) {
@@ -411,18 +407,23 @@ fn resolve_custom_dir(default_dir: &Path) -> Result<Option<PathBuf>> {
     }
 
     validate_data_dir(&custom_dir)?;
+    // Custom directories are shared-location candidates; the default app-data
+    // directory is trusted and skips the ACL check so a misconfigured profile
+    // ACL cannot brick startup.
+    crate::data_dir_acl::validate_custom_dir_acl(&custom_dir)?;
     Ok(Some(custom_dir))
 }
 
 pub(crate) fn write_marker(default_dir: &Path, current: &Path, pending: &Path) -> Result<()> {
     validate_data_dir(pending)?;
+    crate::data_dir_acl::validate_custom_dir_acl(pending)?;
     let marker = DataDirMarker {
         current: current.to_path_buf(),
         pending: Some(pending.to_path_buf()),
     };
     let marker_path = default_dir.join(DATA_DIR_MARKER_FILE);
     let bytes = serde_json::to_vec(&marker)?;
-    write_atomic(&marker_path, &bytes).map_err(|error| {
+    crate::util::write_atomic(&marker_path, &bytes).map_err(|error| {
         AppError::data_directory(format!("failed to write data directory marker: {error}"))
     })
 }
@@ -538,9 +539,31 @@ mod tests {
                 .unwrap_or_default();
             let path = std::env::temp_dir().join(format!("voxitype-data-dir-{nonce}"));
             std::fs::create_dir_all(&path).expect("test temp directory should be creatable");
+            restrict_to_current_user(&path);
             Self(path)
         }
     }
+
+    /// Custom directories used in tests must satisfy the H-2 ACL check. Some
+    /// environments (CI containers, shared temp roots) inherit a DACL that
+    /// grants write to a group, so pin the test directory to the current user.
+    /// Best effort: on non-Windows, or when ACL editing is refused, the base
+    /// ACL is left as-is.
+    #[cfg(windows)]
+    fn restrict_to_current_user(path: &Path) {
+        let Ok(sid) = crate::data_dir_acl::current_user_sid_string() else {
+            return;
+        };
+        let _ = std::process::Command::new("icacls")
+            .arg(path)
+            .arg("/inheritance:r")
+            .arg("/grant:r")
+            .arg(format!("*{sid}:(OI)(CI)F"))
+            .status();
+    }
+
+    #[cfg(not(windows))]
+    fn restrict_to_current_user(_path: &Path) {}
 
     impl Drop for TempDir {
         fn drop(&mut self) {
@@ -728,6 +751,50 @@ mod tests {
     }
 
     #[test]
+    fn migration_source_returns_custom_path_for_graduated_marker() {
+        let default_dir = TempDir::new();
+        let custom_dir = TempDir::new();
+        // Graduated marker: the steady state after a successful switch.
+        let marker = serde_json::json!({ "current": custom_dir.0, "pending": null });
+        std::fs::write(
+            default_dir.0.join(DATA_DIR_MARKER_FILE),
+            serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            migration_source(&default_dir.0, &custom_dir.0),
+            custom_dir.0
+        );
+    }
+
+    #[test]
+    fn migration_source_falls_back_to_plain_path_for_legacy_marker() {
+        let default_dir = TempDir::new();
+        let custom_dir = TempDir::new();
+        std::fs::write(
+            default_dir.0.join(DATA_DIR_MARKER_FILE),
+            custom_dir.0.to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            migration_source(&default_dir.0, &custom_dir.0),
+            custom_dir.0
+        );
+    }
+
+    #[test]
+    fn migration_source_returns_current_for_pending_marker() {
+        let default_dir = TempDir::new();
+        let first = TempDir::new();
+        let second = TempDir::new();
+        write_marker(&default_dir.0, &first.0, &second.0).unwrap();
+
+        assert_eq!(migration_source(&default_dir.0, &second.0), first.0);
+    }
+
+    #[test]
     fn migration_uses_previous_active_directory() {
         let default_dir = TempDir::new();
         let first = TempDir::new();
@@ -768,9 +835,14 @@ mod tests {
         std::fs::write(target.0.join("data/voxitype.db"), b"SQLite format 3\0stale").unwrap();
 
         assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        // Migration preserves the key value. A distinct "default" dir is passed
+        // so the load path treats `target` as a custom dir: on Windows the raw
+        // source key must have been re-wrapped during migration (M-4), else this
+        // load would fail closed.
+        let default_dir = TempDir::new();
         assert_eq!(
-            std::fs::read(target.0.join("master.key")).unwrap(),
-            vec![7u8; 32]
+            crate::crypto::get_master_key(&target.0, &default_dir.0).unwrap(),
+            [7u8; 32]
         );
     }
 
@@ -788,9 +860,11 @@ mod tests {
             std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
             std::fs::read(source.0.join("data/voxitype.db")).unwrap()
         );
+        // Value preserved; re-wrapped at the custom destination on Windows (M-4).
+        let default_dir = TempDir::new();
         assert_eq!(
-            std::fs::read(target.0.join("master.key")).unwrap(),
-            vec![7u8; 32]
+            crate::crypto::get_master_key(&target.0, &default_dir.0).unwrap(),
+            [7u8; 32]
         );
     }
 

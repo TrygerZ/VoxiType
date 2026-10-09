@@ -66,19 +66,26 @@ impl VoiceCommand {
 }
 
 /// Verify that the current foreground window matches the window that was active
-/// when capture started. If the window changed, abort to prevent executing
-/// editing macros in the wrong application.
-pub fn verify_target_window(expected: Option<&str>, current: Option<&str>) -> Result<()> {
-    if let Some(initial) = expected {
-        if current != Some(initial) {
-            let current_display = current.unwrap_or("none");
-            tracing::warn!(
-                "Foreground window changed from {initial} to {current_display}; aborting command injection"
-            );
-            return Err(AppError::injection(format!(
-                "Command aborted: target window changed from {initial} to {current_display}"
-            )));
-        }
+/// when capture started. Fails closed: an unverifiable start (no window handle
+/// was captured) aborts, and a changed window aborts, so editing macros never
+/// run in the wrong application.
+pub fn verify_target_window(expected: Option<isize>, current: Option<isize>) -> Result<()> {
+    let Some(expected) = expected else {
+        tracing::warn!("No target window captured at recording start; aborting command injection");
+        return Err(AppError::injection(
+            "Command aborted: target window could not be verified",
+        ));
+    };
+    if current != Some(expected) {
+        let current_display = current
+            .map(|h| h.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        tracing::warn!(
+            "Foreground window changed from {expected} to {current_display}; aborting command injection"
+        );
+        return Err(AppError::injection(format!(
+            "Command aborted: target window changed from {expected} to {current_display}"
+        )));
     }
     Ok(())
 }
@@ -119,13 +126,13 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
                 .key(Key::Backspace, Direction::Click)
                 .map_err(map_err)?;
         }
-        VoiceCommand::SelectAll => combo(&mut enigo, 'a', map_err)?,
-        VoiceCommand::Copy => combo(&mut enigo, 'c', map_err)?,
-        VoiceCommand::Paste => combo(&mut enigo, 'v', map_err)?,
-        VoiceCommand::Cut => combo(&mut enigo, 'x', map_err)?,
-        VoiceCommand::Undo => combo(&mut enigo, 'z', map_err)?,
-        VoiceCommand::Redo => combo(&mut enigo, 'y', map_err)?,
-        VoiceCommand::Save => combo(&mut enigo, 's', map_err)?,
+        VoiceCommand::SelectAll
+        | VoiceCommand::Copy
+        | VoiceCommand::Paste
+        | VoiceCommand::Cut
+        | VoiceCommand::Undo
+        | VoiceCommand::Redo
+        | VoiceCommand::Save => combo(&mut enigo, command, map_err)?,
         VoiceCommand::Escape => {
             enigo.key(Key::Escape, Direction::Click).map_err(map_err)?;
         }
@@ -133,22 +140,39 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
     Ok(())
 }
 
+/// Named, layout-independent key for a Ctrl/Cmd combo command.
+///
+/// `Key::Unicode(letter)` resolves through `VkKeyScanW`, which fails on
+/// non-Latin keyboard layouts; named letter keys are positional and work
+/// regardless of layout. Returns `None` for commands that are not combos.
+fn combo_key(command: VoiceCommand) -> Option<Key> {
+    match command {
+        VoiceCommand::SelectAll => Some(Key::A),
+        VoiceCommand::Copy => Some(Key::C),
+        VoiceCommand::Paste => Some(Key::V),
+        VoiceCommand::Cut => Some(Key::X),
+        VoiceCommand::Undo => Some(Key::Z),
+        VoiceCommand::Redo => Some(Key::Y),
+        VoiceCommand::Save => Some(Key::S),
+        _ => None,
+    }
+}
+
 /// Simulate Ctrl+<key> on Windows/Linux or Cmd+<key> on macOS.
 fn combo(
     enigo: &mut Enigo,
-    key: char,
+    command: VoiceCommand,
     map_err: impl Fn(enigo::InputError) -> AppError,
 ) -> Result<()> {
+    let key = combo_key(command)
+        .ok_or_else(|| AppError::injection(format!("{command:?} is not a combo command")))?;
     let modifier = modifier_key();
     enigo.key(modifier, Direction::Press).map_err(&map_err)?;
     let _guard = KeyGuard {
         enigo,
         key: modifier,
     };
-    _guard
-        .enigo
-        .key(Key::Unicode(key), Direction::Click)
-        .map_err(&map_err)?;
+    _guard.enigo.key(key, Direction::Click).map_err(&map_err)?;
     Ok(())
 }
 
@@ -183,15 +207,41 @@ mod tests {
     }
 
     #[test]
-    fn verifies_target_window_matches() {
-        assert!(verify_target_window(Some("code"), Some("code")).is_ok());
-        assert!(verify_target_window(None, Some("code")).is_ok());
-        assert!(verify_target_window(None, None).is_ok());
+    fn combo_commands_map_to_named_layout_independent_keys() {
+        assert_eq!(combo_key(VoiceCommand::SelectAll), Some(Key::A));
+        assert_eq!(combo_key(VoiceCommand::Copy), Some(Key::C));
+        assert_eq!(combo_key(VoiceCommand::Paste), Some(Key::V));
+        assert_eq!(combo_key(VoiceCommand::Cut), Some(Key::X));
+        assert_eq!(combo_key(VoiceCommand::Undo), Some(Key::Z));
+        assert_eq!(combo_key(VoiceCommand::Redo), Some(Key::Y));
+        assert_eq!(combo_key(VoiceCommand::Save), Some(Key::S));
+    }
 
-        let err_diff = verify_target_window(Some("code"), Some("chrome")).unwrap_err();
+    #[test]
+    fn non_combo_commands_have_no_combo_key() {
+        assert_eq!(combo_key(VoiceCommand::NewLine), None);
+        assert_eq!(combo_key(VoiceCommand::Tab), None);
+        assert_eq!(combo_key(VoiceCommand::Escape), None);
+    }
+
+    #[test]
+    fn verifies_target_window_matches() {
+        assert!(verify_target_window(Some(100), Some(100)).is_ok());
+
+        let err_diff = verify_target_window(Some(100), Some(200)).unwrap_err();
         assert_eq!(err_diff.code, crate::error::ErrorCode::InjectionFailed);
 
-        let err_lost = verify_target_window(Some("code"), None).unwrap_err();
+        let err_lost = verify_target_window(Some(100), None).unwrap_err();
         assert_eq!(err_lost.code, crate::error::ErrorCode::InjectionFailed);
+    }
+
+    #[test]
+    fn verifies_target_window_fails_closed_when_unverifiable() {
+        // No window handle captured at start: verification is impossible, so abort.
+        let err_unknown = verify_target_window(None, Some(100)).unwrap_err();
+        assert_eq!(err_unknown.code, crate::error::ErrorCode::InjectionFailed);
+
+        let err_both_none = verify_target_window(None, None).unwrap_err();
+        assert_eq!(err_both_none.code, crate::error::ErrorCode::InjectionFailed);
     }
 }

@@ -167,6 +167,86 @@ describe("historyStore", () => {
     expect(state.loading).toBe(false);
   });
 
+  it("does not resurrect a removed item when a stale fetch resolves late", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    const removed = createMockItem("h-remove", "to be removed");
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+
+    useHistoryStore.setState({ items: [removed] });
+    vi.mocked(tauri.deleteHistory).mockResolvedValueOnce(undefined);
+    await useHistoryStore.getState().remove("h-remove");
+
+    expect(useHistoryStore.getState().items).toEqual([]);
+
+    // The stale fetch still carries the deleted row; it must be discarded.
+    resolveStale([removed]);
+    await load;
+
+    expect(useHistoryStore.getState().items).toEqual([]);
+  });
+
+  it("clears loading when remove invalidates an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteHistory).mockResolvedValueOnce(undefined);
+    await useHistoryStore.getState().remove("h1");
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when clear invalidates an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.clearHistory).mockResolvedValueOnce(0);
+    await useHistoryStore.getState().clear();
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when togglePin invalidates an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.pinHistory).mockResolvedValueOnce(undefined);
+    await useHistoryStore.getState().togglePin("h1", true);
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
   it("ignores stale rejection when a newer request has already completed", async () => {
     let rejectStale!: (err: Error) => void;
     const stalePromise = new Promise<TranscriptionEntry[]>((_, reject) => {

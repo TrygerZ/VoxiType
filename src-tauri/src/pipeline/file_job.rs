@@ -52,10 +52,13 @@ pub struct StageIssue {
     pub reason: String,
 }
 
+#[derive(Debug)]
 pub struct RawTranscript {
     pub text: String,
     pub language: String,
     pub duration_ms: u64,
+    /// Chunks transcribed before an STT or decode failure stopped the job.
+    pub chunks_done: u32,
     pub stt_issue: Option<StageIssue>,
 }
 
@@ -141,6 +144,7 @@ pub async fn transcribe_chunks(
         text: parts.join(" "),
         language,
         duration_ms,
+        chunks_done: done,
         stt_issue,
     })
 }
@@ -358,6 +362,7 @@ mod tests {
             text: text.to_string(),
             language: "en".to_string(),
             duration_ms: 0,
+            chunks_done: 0,
             stt_issue: None,
         }
     }
@@ -391,6 +396,7 @@ mod tests {
         assert_eq!(out.text, "chunk3 chunk5");
         assert_eq!(out.language, "id");
         assert_eq!(out.duration_ms, 8);
+        assert_eq!(out.chunks_done, 2);
         assert!(out.stt_issue.is_none());
         assert_eq!(
             progress.lock().unwrap().last(),

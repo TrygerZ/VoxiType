@@ -6,12 +6,151 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-10-07
+
+### Fixed
+- Opened external URLs through `open::that_detached` so Windows uses ShellExecuteW as intended, instead of the `cmd /c start` path.
+- Closed a race where the onboarding microphone meter could start beside an active recording. The meter now refuses to install a capture once recording has begun, and stopping the meter is always allowed.
+- Clamped the `test_whisper_cpp` thread count to the supported range, matching the setting used during transcription.
+- Routed dictionary import through the shared case-insensitive conflict target, so imported words differing only by letter case collapse into one entry.
+- Guarded dictionary and snippet deletion against a stale list reload, so a late-resolving load no longer resurrects a removed entry.
+
+## [0.6.10] - 2026-10-06
+
+### Changed
+- Preserved supported audio formats while adapting file decoding to symphonia 0.6.1. Files with a default audio track now select it preferentially.
+- Upgraded rusqlite from 0.32 to 0.40.2 and bundled SQLite from 3.46.0 to 3.53.2. Existing storage behavior remained unchanged.
+- Completed the final dependency upgrade in the 0.6.x remediation plan.
+
+### Removed
+- Removed the unused `@tauri-apps/plugin-log` package.
+
+## [0.6.9] - 2026-10-06
+
+### Fixed
+- Fixed dictionary words differing only by letter case coexisting and one silently shadowing the other within the same language. The schema now keeps the most-used entry for each case-insensitive word and language, then enforces a matching unique index. Each transactional migration step now writes its schema version in the same transaction.
+- Fixed history pages duplicating or skipping rows with the same timestamp. Pagination now breaks ties by ID.
+- Fixed usage statistics assigning daily totals by UTC instead of the user's local date. Daily buckets now use local dates, and recent statistics cover a calendar range.
+
+### Changed
+- Checkpointed the write-ahead log before creating the pre-migration backup, preserving committed rows left by an unclean previous session. Remaining sidecars are copied best-effort.
+
+## [0.6.8] - 2026-10-06
+
+### Added
+- Added a `set_mic_meter` command, increasing the IPC command count from 48 to 49.
+
+### Fixed
+- Fixed the onboarding microphone level meter staying at zero because audio levels were only emitted during recording. The selected device now streams levels while the onboarding step is open.
+- Fixed onboarding meter emitters remaining active after a rapid device change. Generation checks stop superseded emitters and cancel stale captures.
+
+## [0.6.7] - 2026-10-06
+
+### Fixed
+- Fixed API keys typed shortly before leaving Settings being dropped within the debounce window. The pending value is now saved on unmount.
+- Fixed file-transcription batches remaining locked in the running state when progress-listener subscription failed. The failure now resets the batch state and shows an error.
+- Fixed history rows reverting to stale data when an in-flight fetch completed after a delete, clear, or pin action. History mutations now invalidate older fetches, and dictionary and snippet stores reject out-of-order load results.
+- Fixed list loading indicators remaining active after successful mutations invalidated an in-flight fetch. Mutations now clear the loading state.
+- Fixed waveform listener failures producing unhandled promise rejections.
+- Fixed unknown mode IDs displaying raw translation keys. External IDs now display as readable labels.
+- Fixed onboarding language-save failures providing no user feedback.
+- Fixed copy buttons showing a success indicator when the clipboard write failed.
+
+### Changed
+- Kept error toasts visible for 8 seconds and announced them to screen readers. Success and info toasts remain visible for 3 seconds.
+- Delayed downloaded file cleanup by one second so WebView2 can commit the download.
+- Consolidated six local error-code helpers into one shared helper, removing duplicate code and type casts.
+- Removed unused audio-level state and the waveform level prop.
+
+## [0.6.6] - 2026-10-06
+
+### Fixed
+- Fixed mid-file audio decode failures discarding completed transcript text. Non-empty partial transcripts are now retained, with the decode reason reported unless an earlier STT issue already explains the incomplete result. Failures before any text is transcribed still return the decode error.
+- Fixed history insert failures discarding completed file transcripts. The failure is logged, and the result is still returned.
+- Fixed the resampler flush appending raw interleaved samples from an incomplete frame to mono audio. The incomplete frame is now dropped.
+- Fixed PDF exports replacing 18 defined CP1252 WinAnsi characters with question marks. The mapping now covers all defined characters in the 0x80-0x9F range; undefined positions still export as question marks.
+
+## [0.6.5] - 2026-10-06
+
+### Fixed
+- Fixed clipboard restoration replacing content copied while dictated text was on the clipboard. Restoration now skips when the clipboard no longer contains the dictated text.
+- Fixed quiet speech passing the noise gate only to be discarded by the voice threshold without notice. The gate now derives from the voice threshold, and discarded no-speech recordings show an informational notice.
+- Fixed captured audio growing without bound if the level-emitter task failed. A 300-second sample cap now bounds the capture ring independently; resampler flush can add at most one block beyond the cap.
+- Fixed command-mode verification accepting an unknown recording target or confusing two windows in the same process. It now checks the exact window handle and fails closed when verification is unavailable.
+- Fixed command-mode keystrokes running on an asynchronous runtime worker. Command execution now runs on the blocking pool.
+- Fixed startup hotkey conflicts leaving the app without a working hotkey or user-visible feedback. The failure is persisted and shown once as an error toast; rebinding clears it only after registration succeeds.
+- Fixed process paths longer than the 260-character buffer disabling per-app mode detection. The process path buffer now supports up to 1024 UTF-16 units.
+
+### Changed
+- Logged sound cue playback and stream failures at warn level instead of debug.
+- Renamed the tray item to "Toggle Recording" to reflect that it toggles recording.
+
+## [0.6.4] - 2026-10-06
+
+### Fixed
+- Fixed the rule-based cleaner inserting spaces inside numbers, times, and web addresses. `3.14` became `3. 14`, `12:30` became `12: 30`, and `example.com` became `example. Com`.
+- Fixed the default filler list removing the legitimate words "like" and "you know" from dictated text.
+- Fixed long dictations silently falling back to the rule-based cleaner because the Groq completion limit was fixed at 500 tokens. The limit now scales with the input length up to 8192 tokens.
+- Fixed an empty whisper.cpp transcription being saved as an empty history entry instead of reporting an error.
+- Fixed history and telemetry crediting the selected engine when the rule-based fallback actually produced the text.
+- Fixed missing confidence data from Groq silently skipping the English verification pass. Unknown confidence now triggers verification.
+- Fixed whisper.cpp failure output reaching logs and the UI unsanitized.
+
+### Security
+- Redacted Groq API keys from debug output and stored a SHA-256 hash instead of the raw key in the speech-to-text engine cache key.
+
+### Changed
+- Honored server Retry-After headers on Groq rate limits and added jitter to exponential retry backoff.
+- Added an explicit 30-second timeout to Groq LLM requests.
+- Returned an error instead of panicking when building the shared HTTP client fails.
+
+## [0.6.3] - 2026-10-06
+
+### Fixed
+- Fixed unknown engine, language, and hotkey mode values being silently accepted or coerced. Settings are now validated when written and when read; an unrecognized value is rejected instead of falling back to a different engine.
+- Fixed whisper.cpp thread counts above 32 being persisted. Thread counts are now clamped to 1 through 32 in both the settings inputs and the backend.
+- Fixed `re_inject` inserting text while a dictation was still recording or processing. Re-injection is now rejected unless the pipeline is idle or in the error state.
+- Fixed restarting the app while a recording or file transcription was active. Restart now asks for confirmation before interrupting the work.
+- Fixed concurrent file dialogs opening twice on rapid double-click. The export directory and data directory pickers now share the same single-dialog guard as the audio picker.
+- Added length limits to all IPC inputs that previously accepted unbounded text, including dictionary, snippet, per-app, settings, search, and export fields.
+
+### Security
+- Escaped leading `=`, `+`, `-`, `@`, tab, and carriage return characters in exported CSV history, preventing spreadsheet formula injection.
+- Restricted the update release link to `https://github.com/` URLs; other schemes and hosts are discarded.
+- Opened external URLs through ShellExecuteW instead of `cmd /c start`, removing the command-line percent-expansion surface.
+
+## [0.6.2] - 2026-10-04
+
+### Fixed
+- Fixed data-directory recovery treating a graduated JSON marker as a filesystem path, which could replace a valid database with an empty one when the target master key was missing. Migration now uses the marker's active directory as its source.
+- Fixed interrupted master key writes corrupting `master.key` and making stored API keys unreadable. Key files are now written atomically.
+
+### Security
+- Rejected custom data directories whose ACL grants write or control rights to an unapproved principal. Common read grants are also rejected when they overlap those rights. The error identifies the offending account; allowed principals are the current user, SYSTEM, Administrators, CREATOR OWNER, and OWNER RIGHTS.
+- Required the whisper.cpp binary path to match a token written when the binary is selected in Settings. Existing whisper.cpp setups must re-select the binary once after updating.
+- Restricted legacy unencrypted `master.key` files to the default data directory. A raw key in a custom directory now fails closed and requires the API key to be entered again in Settings; migration re-wraps legitimate legacy keys.
+
+### Changed
+- Limited log retention to 14 daily files and stored logs under the active data directory.
+
+## [0.6.1] - 2026-10-04
+
+### Fixed
+- Fixed dictated text going to the floating widget instead of the target app after the widget reappeared. The widget window no longer takes keyboard focus.
+- Fixed duplicate start or stop requests causing an "Invalid state transition" error. The losing request is now ignored.
+- Fixed a late result from an earlier dictation forcing a newer recording into the error state. Results from older sessions are now ignored.
+- Fixed the keystroke fallback cutting text at the first line break. Multi-line text is now typed in full, and the recorded character count matches the injected text.
+- Fixed paste and voice command shortcuts failing on non-Latin keyboard layouts. Shortcuts now use layout-independent keys.
+
+### Security
+- Restricted the Content Security Policy `connect-src` directive to the app's own origin. The UI makes no direct network calls, so the Groq and Ollama endpoints were removed.
+
 ## [0.6.0] - 2026-10-03
 
 ### Added
-- Added file transcription for MP3, WAV, M4A, AAC, FLAC, and OGG files up to 60 minutes. Users choose Groq Whisper or whisper.cpp and the audio language per job, can toggle LLM cleanup with a selectable engine and dictionary replacements, and can cancel a running job. A failure partway through keeps the finished part of the transcript and reports what was skipped. Results are saved to History under the File mode. Dictation keeps working while a file is processed.
+- Added file transcription for MP3, WAV, M4A, AAC, FLAC, and OGG files up to 60 minutes. Users choose Groq Whisper or whisper.cpp and the audio language per job, can toggle LLM cleanup with a selectable engine and dictionary replacements, and can cancel a running job. An STT failure partway through keeps the finished part of the transcript and reports what was skipped. Results are saved to History under the File mode. Dictation keeps working while a file is processed.
 - Added bulk file transcription: up to 20 files per batch, processed one at a time. A failed file is reported and the batch continues; cancel stops the remaining files. Each file shows a live processing timer and its final duration.
-- Added transcript export as TXT, Word (DOCX), or PDF, one file per audio file, named after the audio and never overwriting existing files. PDF uses a built-in Latin font; characters outside Latin-1 print as `?`.
+- Added transcript export as TXT, Word (DOCX), or PDF, one file per audio file, named after the audio and never overwriting existing files. PDF uses a built-in Latin font; characters outside the supported WinAnsi set print as `?`.
 
 ### Changed
 - whisper.cpp process timeout now scales with audio length (minimum 300 s) instead of a fixed 300 s.
@@ -292,7 +431,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Overlay positioning improvements
 - I18n reactivity
 
-[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/TrygerZ/VoxiType/compare/v0.6.11...HEAD
+[0.6.11]: https://github.com/TrygerZ/VoxiType/compare/v0.6.10...v0.6.11
+[0.6.10]: https://github.com/TrygerZ/VoxiType/compare/v0.6.9...v0.6.10
+[0.6.9]: https://github.com/TrygerZ/VoxiType/compare/v0.6.8...v0.6.9
+[0.6.8]: https://github.com/TrygerZ/VoxiType/compare/v0.6.7...v0.6.8
+[0.6.7]: https://github.com/TrygerZ/VoxiType/compare/v0.6.6...v0.6.7
+[0.6.6]: https://github.com/TrygerZ/VoxiType/compare/v0.6.5...v0.6.6
+[0.6.5]: https://github.com/TrygerZ/VoxiType/compare/v0.6.4...v0.6.5
+[0.6.4]: https://github.com/TrygerZ/VoxiType/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/TrygerZ/VoxiType/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/TrygerZ/VoxiType/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/TrygerZ/VoxiType/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/TrygerZ/VoxiType/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/TrygerZ/VoxiType/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TrygerZ/VoxiType/compare/v0.5.0...v0.5.1

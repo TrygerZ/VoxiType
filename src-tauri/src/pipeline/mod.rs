@@ -67,22 +67,104 @@ impl PipelineOrchestrator {
         }
     }
 
+    /// Foreground window handle captured at recording start, if any.
+    pub fn active_window_id(&self) -> Option<isize> {
+        let guard = self.state.lock_recover();
+        match &*guard {
+            AppState::Recording {
+                active_window_id, ..
+            } => *active_window_id,
+            AppState::Processing {
+                active_window_id, ..
+            } => *active_window_id,
+            _ => None,
+        }
+    }
+
     /// Apply a state event, mutating the stored state in place.
     pub fn apply(&self, event: StateEvent) -> Result<AppStateTag> {
         let mut guard = self.state.lock_recover();
-        let current = std::mem::replace(&mut *guard, AppState::Idle);
+        self.transition_locked(&mut guard, event)
+    }
+
+    /// Transition `state` in place and advance the generation on success.
+    ///
+    /// Callers must already hold the state lock so the read-check-write of a
+    /// transition is atomic with respect to other transitions.
+    fn transition_locked(&self, state: &mut AppState, event: StateEvent) -> Result<AppStateTag> {
+        let current = std::mem::replace(state, AppState::Idle);
         match current.transition(event) {
             Ok(next) => {
                 let tag = next.tag();
-                *guard = next;
+                *state = next;
                 self.generation.fetch_add(1, Ordering::SeqCst);
                 Ok(tag)
             }
             Err((original, e)) => {
-                *guard = original;
+                *state = original;
                 Err(e)
             }
         }
+    }
+
+    /// Start recording only when the current state allows it, as one atomic
+    /// check-and-transition.
+    ///
+    /// Returns the new tag on success, or `None` when a concurrent transition
+    /// already moved the pipeline out of a startable state (Idle or Error).
+    /// This closes the check-then-act race where two starts both pass a
+    /// separate `state_tag()` check.
+    pub fn try_start_recording(
+        &self,
+        active_app: Option<String>,
+        active_window_id: Option<isize>,
+    ) -> Option<AppStateTag> {
+        let mut guard = self.state.lock_recover();
+        if !matches!(*guard, AppState::Idle | AppState::Error { .. }) {
+            return None;
+        }
+        self.transition_locked(
+            &mut guard,
+            StateEvent::StartRecording {
+                active_app,
+                active_window_id,
+            },
+        )
+        .ok()
+    }
+
+    /// Stop capturing only when the pipeline is Recording, as one atomic
+    /// check-and-transition, then return the captured samples plus the
+    /// generation that identifies this processing session.
+    ///
+    /// Returns `Ok(None)` when a concurrent transition already ended the
+    /// recording, so only the winning caller touches the microphone stream.
+    pub fn try_stop_recording(&self) -> Result<Option<(Vec<f32>, u64)>> {
+        let session_generation = {
+            let mut guard = self.state.lock_recover();
+            if !matches!(*guard, AppState::Recording { .. }) {
+                return Ok(None);
+            }
+            self.transition_locked(&mut guard, StateEvent::StopRecording)?;
+            self.generation.load(Ordering::SeqCst)
+        };
+        let samples = self.audio.lock_recover().stop()?;
+        Ok(Some((samples, session_generation)))
+    }
+
+    /// Apply an event only when the session generation still matches.
+    ///
+    /// Returns `true` when the transition was applied, `false` when a newer
+    /// session has since started so the completion is stale and must be
+    /// ignored. Prevents a delayed batch result from destroying a live
+    /// recording.
+    fn apply_if_generation(&self, session_generation: u64, event: StateEvent) -> Result<bool> {
+        let mut guard = self.state.lock_recover();
+        if self.generation.load(Ordering::SeqCst) != session_generation {
+            return Ok(false);
+        }
+        self.transition_locked(&mut guard, event)?;
+        Ok(true)
     }
 
     fn verify_session(&self, target_gen: u64) -> bool {
@@ -173,18 +255,38 @@ impl PipelineOrchestrator {
         Ok(())
     }
 
-    /// Mark processing as finished.
-    pub fn finish_processing(&self) -> Result<()> {
-        self.apply(StateEvent::ProcessingComplete)?;
-        Ok(())
+    /// Mark processing as finished for the given session.
+    ///
+    /// No-op returning `Ok(false)` when a newer session has started, so a
+    /// delayed batch cannot end a live recording.
+    pub fn finish_processing(&self, session_generation: u64) -> Result<bool> {
+        self.apply_if_generation(session_generation, StateEvent::ProcessingComplete)
     }
 
-    /// Move to error state.
+    /// Move to error state unconditionally.
+    ///
+    /// Used for failures that belong to no tracked batch, such as a capture
+    /// that never started.
     pub fn set_error(&self, err: &AppError) {
         let _ = self.apply(StateEvent::Error {
             message: err.message.clone(),
             code: err.code,
         });
+    }
+
+    /// Move to error state only for the given session.
+    ///
+    /// Returns `false` when a newer session has started, so a stale batch
+    /// failure is ignored instead of clobbering a live recording.
+    pub fn set_error_if_generation(&self, session_generation: u64, err: &AppError) -> bool {
+        self.apply_if_generation(
+            session_generation,
+            StateEvent::Error {
+                message: err.message.clone(),
+                code: err.code,
+            },
+        )
+        .unwrap_or(false)
     }
 }
 
@@ -210,7 +312,10 @@ mod tests {
     fn capture_start_skipped_when_processing() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         // Pure state transition; no live capture session is touched.
         pipeline.apply(StateEvent::StopRecording).unwrap();
@@ -226,7 +331,10 @@ mod tests {
     fn capture_start_skipped_after_cancel() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         pipeline.cancel_recording().unwrap();
 
@@ -253,7 +361,10 @@ mod tests {
     fn cancel_then_error_allows_retry() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
 
@@ -267,7 +378,10 @@ mod tests {
 
         // Retry: Recording -> Error -> Recording succeeds
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
     }
@@ -278,22 +392,158 @@ mod tests {
         assert_eq!(pipeline.current_generation(), 0);
 
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         assert_eq!(pipeline.current_generation(), 1);
 
         pipeline.apply(StateEvent::StopRecording).unwrap();
         assert_eq!(pipeline.current_generation(), 2);
 
-        pipeline.finish_processing().unwrap();
+        let session_gen = pipeline.current_generation();
+        pipeline.finish_processing(session_gen).unwrap();
         assert_eq!(pipeline.current_generation(), 3);
+    }
+
+    #[test]
+    fn try_start_recording_rejects_when_already_recording() {
+        let pipeline = PipelineOrchestrator::new();
+        assert_eq!(
+            pipeline.try_start_recording(None, None),
+            Some(AppStateTag::Recording)
+        );
+
+        // A second start must not turn the healthy recording into an error.
+        assert_eq!(pipeline.try_start_recording(None, None), None);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn try_start_recording_allows_retry_from_error() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline.set_error(&AppError::internal("boom"));
+
+        assert_eq!(
+            pipeline.try_start_recording(None, None),
+            Some(AppStateTag::Recording)
+        );
+    }
+
+    #[test]
+    fn try_stop_recording_skips_when_not_recording() {
+        let pipeline = PipelineOrchestrator::new();
+        assert!(pipeline.try_stop_recording().unwrap().is_none());
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
+    }
+
+    #[test]
+    fn race_double_stop_produces_one_winner_and_no_error() {
+        use std::sync::Arc;
+
+        for _ in 0..50 {
+            let pipeline = Arc::new(PipelineOrchestrator::new());
+            pipeline
+                .apply(StateEvent::StartRecording {
+                    active_app: None,
+                    active_window_id: None,
+                })
+                .unwrap();
+
+            let p1 = pipeline.clone();
+            let h1 = std::thread::spawn(move || p1.try_stop_recording().unwrap().is_some());
+            let p2 = pipeline.clone();
+            let h2 = std::thread::spawn(move || p2.try_stop_recording().unwrap().is_some());
+
+            let winners = [h1.join().unwrap(), h2.join().unwrap()]
+                .into_iter()
+                .filter(|won| *won)
+                .count();
+
+            assert_eq!(winners, 1, "exactly one stop must win");
+            assert_eq!(pipeline.state_tag(), AppStateTag::Processing);
+        }
+    }
+
+    #[test]
+    fn stale_finish_processing_is_ignored_after_new_session() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        let stale_generation = pipeline.current_generation();
+
+        // A concurrent failure moved Processing -> Error and the user retried,
+        // starting a new recording before the old batch finished.
+        pipeline.set_error(&AppError::internal("concurrent failure"));
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+
+        let applied = pipeline.finish_processing(stale_generation).unwrap();
+        assert!(!applied);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn stale_set_error_is_ignored_after_new_session() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        let stale_generation = pipeline.current_generation();
+
+        pipeline.set_error(&AppError::internal("concurrent failure"));
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+
+        let applied =
+            pipeline.set_error_if_generation(stale_generation, &AppError::internal("late"));
+        assert!(!applied);
+        assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn matching_generation_still_applies_completion() {
+        let pipeline = PipelineOrchestrator::new();
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        let session_generation = pipeline.current_generation();
+
+        assert!(pipeline.finish_processing(session_generation).unwrap());
+        assert_eq!(pipeline.state_tag(), AppStateTag::Idle);
     }
 
     #[test]
     fn session_aborted_when_generation_changes() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         let target_gen = pipeline.current_generation();
         assert!(pipeline.verify_session(target_gen));
@@ -306,7 +556,10 @@ mod tests {
     fn commit_capture_aborted_when_session_cancelled() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         let target_gen = pipeline.current_generation();
 
@@ -325,7 +578,10 @@ mod tests {
     fn commit_capture_aborted_when_session_stopped() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         let target_gen = pipeline.current_generation();
 
@@ -344,7 +600,10 @@ mod tests {
     fn commit_capture_succeeds_when_session_active() {
         let pipeline = PipelineOrchestrator::new();
         pipeline
-            .apply(StateEvent::StartRecording { active_app: None })
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
             .unwrap();
         let target_gen = pipeline.current_generation();
 
@@ -369,7 +628,10 @@ mod tests {
         for _ in 0..50 {
             let pipeline = Arc::new(PipelineOrchestrator::new());
             pipeline
-                .apply(StateEvent::StartRecording { active_app: None })
+                .apply(StateEvent::StartRecording {
+                    active_app: None,
+                    active_window_id: None,
+                })
                 .unwrap();
             let target_gen = pipeline.current_generation();
 
@@ -396,7 +658,10 @@ mod tests {
         for _ in 0..50 {
             let pipeline = Arc::new(PipelineOrchestrator::new());
             pipeline
-                .apply(StateEvent::StartRecording { active_app: None })
+                .apply(StateEvent::StartRecording {
+                    active_app: None,
+                    active_window_id: None,
+                })
                 .unwrap();
             let target_gen = pipeline.current_generation();
 

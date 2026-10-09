@@ -2,6 +2,13 @@
 //!
 //! Uses the non-streaming `/api/generate` endpoint for simplicity (the whole
 //! formatted output is short). Falls back paths are handled by the factory.
+//!
+//! Trust assumption (L-33): dictated text is sent unauthenticated to
+//! `http://localhost:11434`. A local process that binds that port while Ollama
+//! is absent would receive the text and could return arbitrary formatted
+//! output, which can only become literal injected text (never key macros).
+//! This is accepted for a local-first tool; a per-install shared secret is the
+//! upgrade path if that threat matters.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -18,11 +25,11 @@ pub struct OllamaFormatter {
 }
 
 impl OllamaFormatter {
-    pub fn new(config: OllamaConfig) -> Self {
-        Self {
-            client: crate::util::http_client(),
+    pub fn new(config: OllamaConfig) -> Result<Self> {
+        Ok(Self {
+            client: crate::util::http_client()?,
             config,
-        }
+        })
     }
 
     async fn generate(&self, system: &str, prompt: &str) -> Result<String> {

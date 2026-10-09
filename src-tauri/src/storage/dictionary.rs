@@ -43,35 +43,61 @@ pub struct DictionaryRepository<'a> {
     db: &'a Database,
 }
 
+/// Bind the shared upsert parameters and run the statement. Kept as an
+/// execute helper rather than a `Params` factory so the borrow of the
+/// `is_active` conversion stays within the call.
+fn execute_upsert(stmt: &mut rusqlite::Statement<'_>, e: &DictionaryEntry) -> Result<()> {
+    stmt.execute(rusqlite::params![
+        e.id,
+        e.word,
+        e.pronunciation,
+        e.category,
+        e.replacement,
+        e.language,
+        e.usage_count,
+        e.is_active as i32,
+    ])?;
+    Ok(())
+}
+
 impl<'a> DictionaryRepository<'a> {
     pub fn new(db: &'a Database) -> Self {
         Self { db }
     }
 
-    pub fn upsert(&self, e: &DictionaryEntry) -> Result<()> {
-        self.db.with_conn(|c| {
-            c.execute(
-                "INSERT INTO dictionary_entries
+    /// Upsert statement shared by single and batch writes. The conflict target
+    /// must match the NOCASE unique index so casing variants collapse into one
+    /// row.
+    const UPSERT_SQL: &'static str = "INSERT INTO dictionary_entries
                    (id, word, pronunciation, category, replacement, language, usage_count, is_active)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
-                 ON CONFLICT(word, language) DO UPDATE SET
+                 ON CONFLICT(word COLLATE NOCASE, language) DO UPDATE SET
                    pronunciation=excluded.pronunciation,
                    category=excluded.category,
                    replacement=excluded.replacement,
                    is_active=excluded.is_active,
-                   updated_at=datetime('now')",
-                rusqlite::params![
-                    e.id,
-                    e.word,
-                    e.pronunciation,
-                    e.category,
-                    e.replacement,
-                    e.language,
-                    e.usage_count,
-                    e.is_active as i32,
-                ],
-            )?;
-            Ok(())
+                   updated_at=datetime('now')";
+
+    pub fn upsert(&self, e: &DictionaryEntry) -> Result<()> {
+        self.db.with_conn(|c| {
+            let mut stmt = c.prepare(Self::UPSERT_SQL)?;
+            execute_upsert(&mut stmt, e)
+        })
+    }
+
+    /// Upsert a batch of entries in a single transaction. Returns the number
+    /// of rows processed (duplicates within the batch collapse).
+    pub fn upsert_many(&self, entries: &[DictionaryEntry]) -> Result<u32> {
+        self.db.with_conn(|c| {
+            let tx = c.unchecked_transaction()?;
+            {
+                let mut stmt = tx.prepare(Self::UPSERT_SQL)?;
+                for entry in entries {
+                    execute_upsert(&mut stmt, entry)?;
+                }
+            }
+            tx.commit()?;
+            Ok(entries.len() as u32)
         })
     }
 
@@ -331,6 +357,68 @@ mod tests {
         assert_eq!(repo.get_hotwords_by_language("id").unwrap(), vec!["halo"]);
         assert_eq!(repo.get_hotwords_by_language("en").unwrap(), vec!["hello"]);
         assert!(repo.get_hotwords_by_language("fr").unwrap().is_empty());
+    }
+
+    #[test]
+    fn upsert_many_dedupes_case_insensitively_in_one_batch() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        let first = DictionaryEntry {
+            id: "1".into(),
+            word: "js".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("JavaScript".into()),
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        };
+        let second = DictionaryEntry {
+            id: "2".into(),
+            word: "JS".into(),
+            replacement: Some("JavaScript ES2020".into()),
+            ..first.clone()
+        };
+
+        assert_eq!(repo.upsert_many(&[first, second]).unwrap(), 2);
+
+        let all = repo.get_all(&DictFilter::default()).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].word, "js");
+        assert_eq!(all[0].replacement.as_deref(), Some("JavaScript ES2020"));
+    }
+
+    #[test]
+    fn upsert_same_word_different_case_updates_existing() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        repo.upsert(&DictionaryEntry {
+            id: "1".into(),
+            word: "js".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("JavaScript".into()),
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+        repo.upsert(&DictionaryEntry {
+            id: "2".into(),
+            word: "JS".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("JavaScript ES2020".into()),
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+
+        let all = repo.get_all(&DictFilter::default()).unwrap();
+        assert_eq!(all.len(), 1, "casing variants must collapse to one row");
+        // The second upsert updated the existing row (original word kept).
+        assert_eq!(all[0].replacement.as_deref(), Some("JavaScript ES2020"));
     }
 
     #[test]

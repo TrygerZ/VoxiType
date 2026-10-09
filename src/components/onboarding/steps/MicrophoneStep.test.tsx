@@ -11,6 +11,7 @@ vi.mock("../../../lib/tauri", async (importOriginal) => {
   return {
     ...actual,
     getMicrophones: vi.fn(),
+    setMicMeter: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -87,5 +88,48 @@ describe("MicrophoneStep", () => {
     });
 
     expect(onDeviceChange).toHaveBeenCalledWith("default-mic");
+  });
+
+  it("starts the meter with the selected device and stops it on unmount", async () => {
+    vi.mocked(tauri.getMicrophones).mockResolvedValueOnce([]);
+
+    const { unmount } = render(
+      <MicrophoneStep
+        {...defaultProps}
+        selectedDevice="chosen-mic"
+        onDeviceChange={vi.fn()}
+      />,
+    );
+
+    expect(tauri.setMicMeter).toHaveBeenCalledWith(true, "chosen-mic");
+
+    unmount();
+
+    expect(tauri.setMicMeter).toHaveBeenCalledWith(false, null);
+  });
+
+  it("re-issues the meter when the selected device changes", async () => {
+    vi.mocked(tauri.getMicrophones).mockResolvedValueOnce([]);
+
+    const { rerender } = render(
+      <MicrophoneStep
+        {...defaultProps}
+        selectedDevice="first-mic"
+        onDeviceChange={vi.fn()}
+      />,
+    );
+    expect(tauri.setMicMeter).toHaveBeenCalledWith(true, "first-mic");
+
+    rerender(
+      <MicrophoneStep
+        {...defaultProps}
+        selectedDevice="second-mic"
+        onDeviceChange={vi.fn()}
+      />,
+    );
+
+    // Old device stopped, new device started.
+    expect(tauri.setMicMeter).toHaveBeenCalledWith(false, null);
+    expect(tauri.setMicMeter).toHaveBeenCalledWith(true, "second-mic");
   });
 });

@@ -1,5 +1,7 @@
 // ponytail: in-memory DOM blob download; upgrade to tauri save dialog if exporting large multi-megabyte datasets
-const CLEANUP_DELAY_MS = 0;
+// WebView2 commits the download asynchronously; revoking the object URL too
+// early (same tick) can abort it, so keep a real delay before cleanup.
+const CLEANUP_DELAY_MS = 1000;
 
 /**
  * Initiates a browser download for given content via an ephemeral anchor element.

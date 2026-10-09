@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionResult {
     pub text: String,
-    pub confidence: f32,
+    /// Confidence in `[0.0, 1.0]`, or `None` when the provider reported no
+    /// signal (missing `avg_logprob` schema drift, or an engine without one).
+    pub confidence: Option<f32>,
     /// Detected language: "id", "en", "unknown".
     pub language: String,
     pub duration_ms: u64,
@@ -18,7 +20,7 @@ impl TranscriptionResult {
     pub fn text_only(text: impl Into<String>, language: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            confidence: 1.0,
+            confidence: None,
             language: language.into(),
             duration_ms: 0,
             raw_response: None,
@@ -56,12 +58,26 @@ impl Default for SttConfig {
 }
 
 /// Groq Whisper REST configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// The API key is never printed: the manual `Debug` below redacts it so a
+/// stray `{:?}` in a log cannot leak the key.
+#[derive(Clone)]
 pub struct GroqSttConfig {
     pub api_key: String,
     pub model: String,
     pub language: String,
     pub temperature: f32,
+}
+
+impl std::fmt::Debug for GroqSttConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GroqSttConfig")
+            .field("api_key", &"<redacted>")
+            .field("model", &self.model)
+            .field("language", &self.language)
+            .field("temperature", &self.temperature)
+            .finish()
+    }
 }
 
 impl Default for GroqSttConfig {
@@ -90,5 +106,22 @@ impl Default for WhisperCppConfig {
             model_path: String::new(),
             threads: 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groq_stt_config_debug_redacts_api_key() {
+        let config = GroqSttConfig {
+            api_key: "super-secret-key".to_string(),
+            ..Default::default()
+        };
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains("super-secret-key"));
+        assert!(rendered.contains("<redacted>"));
+        assert!(rendered.contains("whisper-large-v3-turbo"));
     }
 }

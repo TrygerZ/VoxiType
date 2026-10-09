@@ -45,12 +45,12 @@ impl LlmFactory {
         Arc::new(RuleBasedFormatter::new(config))
     }
 
-    pub fn ollama(config: OllamaConfig) -> Arc<dyn LlmFormatter> {
-        Arc::new(OllamaFormatter::new(config))
+    pub fn ollama(config: OllamaConfig) -> Result<Arc<dyn LlmFormatter>> {
+        Ok(Arc::new(OllamaFormatter::new(config)?))
     }
 
-    pub fn groq(config: GroqLlmConfig) -> Arc<dyn LlmFormatter> {
-        Arc::new(GroqLlmFormatter::new(config))
+    pub fn groq(config: GroqLlmConfig) -> Result<Arc<dyn LlmFormatter>> {
+        Ok(Arc::new(GroqLlmFormatter::new(config)?))
     }
 
     /// Build a formatter for the selected engine.
@@ -64,18 +64,18 @@ impl LlmFactory {
         ollama: OllamaConfig,
         groq: GroqLlmConfig,
         rule_based: RuleBasedConfig,
-    ) -> Arc<dyn LlmFormatter> {
+    ) -> Result<Arc<dyn LlmFormatter>> {
         match kind {
-            LlmEngineKind::Off => Self::off(),
-            LlmEngineKind::RuleBased => Self::rule_based(rule_based),
-            LlmEngineKind::Ollama => Arc::new(FallbackFormatter::new(
-                Self::ollama(ollama),
+            LlmEngineKind::Off => Ok(Self::off()),
+            LlmEngineKind::RuleBased => Ok(Self::rule_based(rule_based)),
+            LlmEngineKind::Ollama => Ok(Arc::new(FallbackFormatter::new(
+                Self::ollama(ollama)?,
                 Self::rule_based(rule_based),
-            )),
-            LlmEngineKind::Groq => Arc::new(FallbackFormatter::new(
-                Self::groq(groq),
+            ))),
+            LlmEngineKind::Groq => Ok(Arc::new(FallbackFormatter::new(
+                Self::groq(groq)?,
                 Self::rule_based(rule_based),
-            )),
+            ))),
         }
     }
 }
@@ -92,7 +92,8 @@ mod tests {
             OllamaConfig::default(),
             GroqLlmConfig::default(),
             RuleBasedConfig::default(),
-        );
+        )
+        .unwrap();
 
         let out = formatter
             .format("um halo dunia", &LlmMode::Dictation, "id")

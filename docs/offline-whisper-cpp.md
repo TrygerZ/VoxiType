@@ -1,6 +1,6 @@
 # Offline Dictation with whisper.cpp
 
-This guide configures VoxiType 0.5.0 to transcribe with a local
+This guide configures VoxiType 0.6.2 to transcribe with a local
 `whisper-cli` binary and a local GGML model file. Groq is not used for
 speech-to-text in this mode.
 
@@ -26,7 +26,9 @@ VoxiType needs two local paths:
 | `Model path` | A GGML model file such as `ggml-base.bin` |
 
 Use the `Browse` buttons in onboarding or `Settings -> STT` whenever possible.
-They open the native file picker and reduce path typing mistakes.
+They open the native file picker and reduce path typing mistakes. VoxiType verifies
+the selected binary against a protected token, so installs already configured for
+whisper.cpp must re-select the binary in Settings once after updating.
 
 ## 1. Install whisper.cpp
 

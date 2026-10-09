@@ -6,7 +6,7 @@ use std::process::Command;
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::audio::DeviceInfo;
+use crate::audio::{AudioConfig, DeviceInfo};
 pub use crate::data_dir::DataDirectoryStatus;
 use crate::error::AppError;
 use crate::hotkey;
@@ -25,16 +25,115 @@ pub fn get_microphones() -> std::result::Result<Vec<DeviceInfo>, AppError> {
     crate::audio::device::list_input_devices()
 }
 
+/// Emit interval for the onboarding meter. The frontend re-renders on each
+/// `audio_level` event, so throttling to ten per second keeps it smooth.
+const MIC_METER_INTERVAL_MS: u64 = 100;
+
+/// Start or stop the onboarding microphone level meter.
+///
+/// The meter runs outside the Recording state so the onboarding step can show
+/// a live level. It must never coexist with a recording: two emitters on
+/// `audio_level` would fight, so a start is refused while the pipeline is
+/// Recording or Processing. A stop is always allowed: it only reduces
+/// activity, and refusing it could strand a meter that raced a recording.
+#[tauri::command]
+pub async fn set_mic_meter<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+    device: Option<String>,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    if !enabled {
+        stop_mic_meter(&app);
+        return Ok(());
+    }
+    if matches!(
+        state.pipeline.state_tag(),
+        crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
+    ) {
+        return Err(AppError::work_in_progress(
+            "Cannot start the microphone meter while recording",
+        ));
+    }
+    enable_mic_meter(&app, device).await
+}
+
+/// Open the meter capture and start its emitter. A failed open stops the meter;
+/// a commit rejected as superseded or blocked by a recording is not an error.
+async fn enable_mic_meter<R: Runtime>(
+    app: &AppHandle<R>,
+    device: Option<String>,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    let device = device
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| "default".to_string());
+    super::check_len("mic meter device", &device, super::MAX_IDENTIFIER_LEN)?;
+
+    let gen = state.mic_meter.begin_start();
+    let config = AudioConfig {
+        mic_device: device,
+        ..Default::default()
+    };
+    // Device initialization is blocking; keep it off the async worker threads.
+    let opened =
+        tokio::task::spawn_blocking(move || crate::audio::AudioCaptureImpl::open_stream(&config))
+            .await
+            .map_err(|e| AppError::audio(format!("Mic meter open task failed: {e}")))?;
+    let capture = match opened {
+        Ok(capture) => capture,
+        Err(e) => {
+            state.mic_meter.stop();
+            return Err(e);
+        }
+    };
+    // Read the pipeline state immediately before committing: a recording may
+    // have started while the device was opening, in which case the capture
+    // must not be installed beside it.
+    let recording_active = matches!(
+        state.pipeline.state_tag(),
+        crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
+    );
+    // A rejected commit means the request was superseded, stopped, or blocked
+    // by a recording in the meantime; that is not an error.
+    if state.mic_meter.commit(gen, capture, recording_active) {
+        spawn_mic_meter_emitter(app.clone(), gen);
+    }
+    Ok(())
+}
+
+/// Stop the onboarding microphone meter if one is running. Called before a
+/// recording starts so the two never emit `audio_level` at the same time.
+pub fn stop_mic_meter<R: Runtime>(app: &AppHandle<R>) {
+    app.state::<AppStateInner>().mic_meter.stop();
+}
+
+/// Stream the meter's level until it is stopped, throttled to
+/// [`MIC_METER_INTERVAL_MS`]. `my_generation` is the start request this emitter
+/// belongs to: a superseded emitter exits on the generation change even when a
+/// fast stop-then-start flipped `is_active()` back to true before it woke.
+fn spawn_mic_meter_emitter<R: Runtime>(app: AppHandle<R>, my_generation: u64) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            {
+                let state = app.state::<AppStateInner>();
+                if state.mic_meter.generation() != my_generation || !state.mic_meter.is_active() {
+                    break;
+                }
+                crate::events::emit_audio_level(&app, state.mic_meter.level());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(MIC_METER_INTERVAL_MS)).await;
+        }
+    });
+}
+
 #[tauri::command]
 pub fn set_hotkey<R: Runtime>(
     app: AppHandle<R>,
     key: String,
     mode: String,
 ) -> std::result::Result<(), AppError> {
-    let hk_mode = match mode.as_str() {
-        "toggle" => hotkey::HotkeyMode::Toggle,
-        _ => hotkey::HotkeyMode::Ptt,
-    };
+    let hk_mode = parse_hotkey_mode(&mode)?;
     let new_cfg = hotkey::HotkeyConfig { key, mode: hk_mode };
     let state = app.state::<AppStateInner>();
     let old_cfg = SettingsManager::new(&state.db)
@@ -44,7 +143,27 @@ pub fn set_hotkey<R: Runtime>(
 
     hotkey::rebind(&app, &new_cfg, old_cfg.as_ref(), || {
         SettingsManager::new(&state.db).set("hotkey", &new_cfg)
-    })
+    })?;
+
+    // `rebind` returning Ok is not proof the accelerator is registered: the
+    // identical-accelerator path is a no-op that registers nothing. Clear the
+    // startup-unavailable flag only when the plugin confirms registration.
+    if hotkey::is_registered(&app, &new_cfg.key) {
+        SettingsManager::new(&state.db).set("hotkey_unavailable", &false)?;
+    }
+    Ok(())
+}
+
+/// Parse a hotkey mode id from the frontend. An unknown value is rejected
+/// rather than silently coerced to push-to-talk.
+fn parse_hotkey_mode(mode: &str) -> std::result::Result<hotkey::HotkeyMode, AppError> {
+    match mode {
+        "ptt" => Ok(hotkey::HotkeyMode::Ptt),
+        "toggle" => Ok(hotkey::HotkeyMode::Toggle),
+        other => Err(AppError::invalid_input(format!(
+            "Unknown hotkey mode '{other}'"
+        ))),
+    }
 }
 
 #[tauri::command]
@@ -71,13 +190,18 @@ pub async fn check_updates<R: Runtime>(
 #[tauri::command]
 pub fn open_url(url: String) -> std::result::Result<(), AppError> {
     let url = validate_open_url(&url)?;
-    open::that(&url).map_err(|e| AppError::internal(format!("Failed to open URL: {e}")))?;
+    // `that_detached` is the only entry point that honors the crate's
+    // `shellexecute-on-windows` feature, which routes through ShellExecuteExW
+    // instead of `cmd /c start` (removing the command-line percent-expansion
+    // surface). `open::that` always builds the cmd command line.
+    open::that_detached(&url)
+        .map_err(|e| AppError::internal(format!("Failed to open URL: {e}")))?;
     Ok(())
 }
 
-/// Only allow http(s) URLs to a fixed host allowlist. `open::that` dispatches
-/// via the OS shell handler, which honors `file://`, `smb://`, and bare local
-/// paths — rejecting those prevents launching arbitrary executables.
+/// Only allow http(s) URLs to a fixed host allowlist. The OS shell handler
+/// honors `file://`, `smb://`, and bare local paths, so rejecting those
+/// prevents launching arbitrary executables.
 /// ponytail: hand-rolled parse instead of the `url` crate to avoid a new dep;
 /// upgrade to `url::Url` if query/fragment/auth validation ever matters.
 fn validate_open_url(url: &str) -> std::result::Result<String, AppError> {
@@ -261,7 +385,13 @@ pub(crate) fn ensure_picker_backed_path(
 #[tauri::command]
 pub async fn pick_data_directory(
     state: State<'_, AppStateInner>,
+    jobs: State<'_, super::file_transcription::FileJobState>,
 ) -> std::result::Result<Option<String>, AppError> {
+    // One native dialog at a time: a rapid second click returns no folder
+    // instead of stacking another explorer window.
+    let Some(_picking) = jobs.begin_picking() else {
+        return Ok(None);
+    };
     let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(DATA_DIRECTORY_TITLE))
         .await
         .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
@@ -300,8 +430,39 @@ pub fn get_data_directory(state: State<'_, AppStateInner>) -> crate::data_dir::D
     crate::data_dir::get_status(&state.default_app_data_dir, &state.app_data_dir)
 }
 
+/// Refuse a restart while work would be lost, unless `force` is set.
+///
+/// A file-transcription job or a dictation that is recording/processing both
+/// lose partial work on restart. Returning `WorkInProgress` lets the frontend
+/// ask for confirmation and retry with `force = true`.
+fn ensure_restartable(
+    pipeline: &crate::pipeline::PipelineOrchestrator,
+    jobs: &super::file_transcription::FileJobState,
+    force: bool,
+) -> std::result::Result<(), AppError> {
+    if force {
+        return Ok(());
+    }
+    let recording = matches!(
+        pipeline.state_tag(),
+        crate::pipeline::AppStateTag::Recording | crate::pipeline::AppStateTag::Processing
+    );
+    if jobs.is_running() || recording {
+        return Err(AppError::work_in_progress(
+            "A transcription or recording is in progress. Restart anyway?",
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub fn restart_app(app: AppHandle) {
+pub fn restart_app(
+    app: AppHandle,
+    jobs: State<'_, super::file_transcription::FileJobState>,
+    force: Option<bool>,
+) -> std::result::Result<(), AppError> {
+    let state = app.state::<AppStateInner>();
+    ensure_restartable(&state.pipeline, &jobs, force.unwrap_or(false))?;
     tracing::info!("Restarting application via restart_app command");
     app.restart();
 }
@@ -381,6 +542,20 @@ pub fn set_whisper_cpp_paths(
         None
     };
 
+    store_whisper_paths(state.inner(), canonical_binary, canonical_model)
+}
+
+/// Persist the canonical whisper.cpp paths, sealing the binary path into a
+/// picker-issued token under the master key.
+///
+/// The token is written only here (never through `update_setting`) so the
+/// engine builder can later confirm the stored binary is the one the user
+/// picked. A missing binary leaves any prior token untouched.
+fn store_whisper_paths(
+    state: &AppStateInner,
+    canonical_binary: Option<String>,
+    canonical_model: Option<String>,
+) -> std::result::Result<(), AppError> {
     let binary_json = canonical_binary
         .as_ref()
         .map(serde_json::to_string)
@@ -389,13 +564,22 @@ pub fn set_whisper_cpp_paths(
         .as_ref()
         .map(serde_json::to_string)
         .transpose()?;
+    let token_json = canonical_binary
+        .as_ref()
+        .map(|path| crate::crypto::seal_token(path, &state.master_key))
+        .transpose()?
+        .map(|token| serde_json::to_string(&token))
+        .transpose()?;
 
-    let mut entries = Vec::with_capacity(2);
+    let mut entries = Vec::with_capacity(3);
     if let Some(ref val) = binary_json {
         entries.push(("whisper_cpp_binary_path", val.as_str()));
     }
     if let Some(ref val) = model_json {
         entries.push(("whisper_cpp_model_path", val.as_str()));
+    }
+    if let Some(ref val) = token_json {
+        entries.push((super::runtime::WHISPER_BINARY_TOKEN_KEY, val.as_str()));
     }
 
     SettingsManager::new(&state.db).set_raw_batch(&entries)?;
@@ -492,7 +676,7 @@ pub async fn test_groq_api(
 ) -> std::result::Result<(), AppError> {
     let api_key = resolve_test_api_key(&state, api_key)?;
 
-    let client = crate::util::http_client();
+    let client = crate::util::http_client()?;
     let resp = client
         .get("https://api.groq.com/openai/v1/models")
         .bearer_auth(api_key.trim())
@@ -536,7 +720,7 @@ pub async fn test_whisper_cpp(
     let engine = crate::stt::whisper_cpp::WhisperCppEngine::new(WhisperCppConfig {
         binary_path: canonical_to_clean_string(&canonical_binary),
         model_path: canonical_to_clean_string(&canonical_model),
-        threads: threads.max(1),
+        threads: super::runtime::clamp_whisper_threads(threads),
     });
     let config = SttConfig {
         language,
@@ -550,6 +734,48 @@ pub async fn test_whisper_cpp(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_hotkey_mode_accepts_known_and_rejects_unknown() {
+        assert_eq!(parse_hotkey_mode("ptt").unwrap(), hotkey::HotkeyMode::Ptt);
+        assert_eq!(
+            parse_hotkey_mode("toggle").unwrap(),
+            hotkey::HotkeyMode::Toggle
+        );
+        let err = parse_hotkey_mode("hold").unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn ensure_restartable_refuses_when_recording_and_force_overrides() {
+        let pipeline = crate::pipeline::PipelineOrchestrator::new();
+        let jobs = crate::commands::FileJobState::default();
+        // Idle pipeline, no job: restart allowed.
+        assert!(ensure_restartable(&pipeline, &jobs, false).is_ok());
+
+        pipeline
+            .apply(crate::pipeline::StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        let err = ensure_restartable(&pipeline, &jobs, false).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::WorkInProgress);
+        // force bypasses the guard.
+        assert!(ensure_restartable(&pipeline, &jobs, true).is_ok());
+    }
+
+    #[test]
+    fn ensure_restartable_refuses_when_file_job_running() {
+        let pipeline = crate::pipeline::PipelineOrchestrator::new();
+        let jobs = crate::commands::FileJobState::default();
+        let _guard = jobs.begin_picking(); // does not set running
+        assert!(ensure_restartable(&pipeline, &jobs, false).is_ok());
+        // begin() marks a job running.
+        let _job = jobs.begin().unwrap();
+        let err = ensure_restartable(&pipeline, &jobs, false).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::WorkInProgress);
+    }
 
     #[test]
     fn allows_allowed_https_hosts() {
@@ -681,7 +907,45 @@ mod tests {
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(std::collections::HashMap::new()),
             widget_timer: crate::overlay::WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
         }
+    }
+
+    #[test]
+    fn store_whisper_paths_writes_matching_token() {
+        let state = test_app_state([7u8; 32]);
+        let (_canonical, binary) = scratch_dir_with_file("store-token");
+        let model = binary.clone();
+
+        store_whisper_paths(&state, Some(binary.clone()), Some(model)).unwrap();
+
+        let stored = SettingsManager::new(&state.db)
+            .get::<String>(super::super::runtime::WHISPER_BINARY_TOKEN_KEY)
+            .unwrap()
+            .expect("token must be written");
+        let opened = crate::crypto::open_token(&stored, &state.master_key).unwrap();
+        assert_eq!(
+            opened, binary,
+            "token must vouch for the stored binary path"
+        );
+    }
+
+    #[test]
+    fn store_whisper_paths_without_binary_leaves_token_untouched() {
+        let state = test_app_state([8u8; 32]);
+        let (_canonical, binary) = scratch_dir_with_file("store-token-keep");
+        store_whisper_paths(&state, Some(binary.clone()), None).unwrap();
+
+        // A later model-only update must not clear the binary's token.
+        store_whisper_paths(&state, None, Some("C:\\models\\base.bin".to_string())).unwrap();
+        let stored = SettingsManager::new(&state.db)
+            .get::<String>(super::super::runtime::WHISPER_BINARY_TOKEN_KEY)
+            .unwrap()
+            .expect("token must survive a model-only update");
+        assert_eq!(
+            crate::crypto::open_token(&stored, &state.master_key).unwrap(),
+            binary
+        );
     }
 
     #[test]

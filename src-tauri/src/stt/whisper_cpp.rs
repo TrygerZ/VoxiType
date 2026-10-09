@@ -56,7 +56,8 @@ impl SttEngine for WhisperCppEngine {
 
         Ok(TranscriptionResult {
             text,
-            confidence: 1.0,
+            // whisper.cpp CLI does not expose a confidence signal.
+            confidence: None,
             language: normalize_language(&config.language),
             duration_ms,
             raw_response: None,
@@ -141,7 +142,8 @@ fn run_whisper(run: WhisperRun) -> Result<String> {
 
     let status = wait_child_bounded(child, process_timeout(run.audio.len()))?;
     if !status.success() {
-        let err_msg = read_command_error(&stderr_path, &stdout_path);
+        let err_msg =
+            crate::util::sanitize_error_body(&read_command_error(&stderr_path, &stdout_path));
         return Err(AppError::stt(format!("whisper.cpp failed: {err_msg}")));
     }
 
@@ -274,13 +276,25 @@ fn read_command_error(stderr_path: &Path, stdout_path: &Path) -> String {
 
 fn read_transcription_output(output_prefix: &Path, stdout_path: &Path) -> Result<String> {
     let txt_path = output_prefix.with_extension("txt");
-    match fs::read_to_string(&txt_path) {
-        Ok(text) => Ok(clean_text(&text)),
-        Err(_) => {
-            let bytes = fs::read(stdout_path).unwrap_or_default();
-            Ok(clean_text(&String::from_utf8_lossy(&bytes)))
-        }
+    let txt = fs::read_to_string(&txt_path)
+        .map(|text| clean_text(&text))
+        .unwrap_or_default();
+    // Fall back to stdout only when the txt output is missing or empty.
+    let text = if txt.is_empty() {
+        clean_text(&String::from_utf8_lossy(&read_stdout(stdout_path)))
+    } else {
+        txt
+    };
+    if text.is_empty() {
+        return Err(AppError::stt(
+            "whisper.cpp produced no transcription output",
+        ));
     }
+    Ok(text)
+}
+
+fn read_stdout(stdout_path: &Path) -> Vec<u8> {
+    fs::read(stdout_path).unwrap_or_default()
 }
 
 fn clean_text(text: &str) -> String {
@@ -451,6 +465,139 @@ goto loop
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).unwrap();
         path
+    }
+
+    /// A CLI that writes a long stderr body (with a control character) and
+    /// exits non-zero, so the sanitization path is exercised.
+    #[cfg(windows)]
+    fn fake_failing_cli(dir: &Path) -> PathBuf {
+        let path = dir.join("fake-failing.cmd");
+        // 400 chars of body plus a control char (\x01) via a raw byte.
+        let body = "E".repeat(400);
+        fs::write(
+            &path,
+            format!("@echo off\r\n>&2 echo \x01{body}\r\nexit /b 1\r\n"),
+        )
+        .unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn fake_failing_cli(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = dir.join("fake-failing");
+        let body = "E".repeat(400);
+        // Print a control char (\x01) then the long body to stderr, exit 1.
+        fs::write(
+            &path,
+            format!("#!/bin/sh\nprintf '\\001{body}\\n' >&2\nexit 1\n"),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    /// A CLI that exits 0 and writes an empty txt output file.
+    #[cfg(windows)]
+    fn fake_empty_cli(dir: &Path) -> PathBuf {
+        let path = dir.join("fake-empty.cmd");
+        fs::write(
+            &path,
+            r#"@echo off
+set out=
+:loop
+if "%~1"=="" goto done
+if "%~1"=="-of" (
+  set out=%~2
+  shift
+)
+shift
+goto loop
+:done
+type nul > "%out%.txt"
+exit /b 0
+"#,
+        )
+        .unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn fake_empty_cli(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = dir.join("fake-empty");
+        fs::write(
+            &path,
+            r#"#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-of" ]; then
+    out="$2"
+    shift
+  fi
+  shift
+done
+: > "$out.txt"
+"#,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    fn engine_with_binary(binary_path: &Path, model_path: &Path) -> WhisperCppEngine {
+        WhisperCppEngine::new(WhisperCppConfig {
+            binary_path: binary_path.to_string_lossy().into_owned(),
+            model_path: model_path.to_string_lossy().into_owned(),
+            threads: 1,
+        })
+    }
+
+    fn silence_config() -> SttConfig {
+        SttConfig {
+            language: "id".to_string(),
+            initial_prompt: None,
+            temperature: 0.0,
+        }
+    }
+
+    #[tokio::test]
+    async fn failing_cli_error_body_is_sanitized_and_capped() {
+        let dir = TempRunDir::new().unwrap();
+        let model_path = dir.path.join("model.bin");
+        fs::write(&model_path, "dummy").unwrap();
+        let engine = engine_with_binary(&fake_failing_cli(&dir.path), &model_path);
+
+        let err = engine
+            .transcribe(&[0.0; 16_000], &silence_config())
+            .await
+            .unwrap_err();
+
+        assert!(err.message.contains("whisper.cpp failed"));
+        // Body longer than the 300-char cap is truncated and marked.
+        assert!(err.message.contains("(truncated)"));
+        assert!(!err.message.contains('\u{1}'));
+    }
+
+    #[tokio::test]
+    async fn empty_output_is_an_error() {
+        let dir = TempRunDir::new().unwrap();
+        let model_path = dir.path.join("model.bin");
+        fs::write(&model_path, "dummy").unwrap();
+        let engine = engine_with_binary(&fake_empty_cli(&dir.path), &model_path);
+
+        let result = engine.transcribe(&[0.0; 16_000], &silence_config()).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .message
+            .contains("no transcription output"));
     }
 
     #[test]

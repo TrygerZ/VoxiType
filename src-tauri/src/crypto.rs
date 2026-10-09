@@ -91,6 +91,28 @@ fn encode_dpapi_key_file(blob: &[u8]) -> String {
 const MAX_READ_ATTEMPTS: u32 = 10;
 const RETRY_DELAY_MS: u64 = 10;
 
+/// Whether the legacy raw (unwrapped) master.key format is accepted for a directory.
+///
+/// The raw format exists only for pre-DPAPI installs, whose key lived in the
+/// default per-user app-data directory. A custom directory may be writable by
+/// another local user, so a planted raw key there would silently become the key
+/// every API key is later encrypted under (M-4). Only the default directory may
+/// hold a raw key; a custom directory fails closed instead.
+///
+/// Non-Windows platforms never wrap the key, so raw is the only format and is
+/// always accepted there.
+pub fn legacy_raw_allowed(app_data_dir: &Path, default_app_data_dir: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        app_data_dir == default_app_data_dir
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app_data_dir, default_app_data_dir);
+        true
+    }
+}
+
 /// Load or create the 32-byte master key under `app_data_dir`.
 ///
 /// If the key file exists but cannot be read, is not exactly 32 legacy bytes,
@@ -98,11 +120,17 @@ const RETRY_DELAY_MS: u64 = 10;
 /// overwriting it. Silently regenerating would permanently orphan every
 /// already-encrypted API key, so a corrupt/locked key file must surface as a
 /// failure the user can act on (e.g. restore a backup).
-pub fn get_master_key(app_data_dir: &Path) -> Result<[u8; 32]> {
+///
+/// `default_app_data_dir` is compared against `app_data_dir` to decide whether
+/// the legacy raw format is acceptable here (see [`legacy_raw_allowed`]).
+pub fn get_master_key(app_data_dir: &Path, default_app_data_dir: &Path) -> Result<[u8; 32]> {
     let path = key_path(app_data_dir);
+    let allow_legacy_raw = legacy_raw_allowed(app_data_dir, default_app_data_dir);
     match std::fs::read(&path) {
-        Ok(bytes) => parse_and_migrate_key(&path, &bytes),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => generate_master_key(&path),
+        Ok(bytes) => parse_and_migrate_key(&path, &bytes, allow_legacy_raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            generate_master_key(&path, allow_legacy_raw)
+        }
         Err(e) => Err(AppError::internal(format!(
             "failed to read master.key: {e}"
         ))),
@@ -110,9 +138,16 @@ pub fn get_master_key(app_data_dir: &Path) -> Result<[u8; 32]> {
 }
 
 /// Parse stored key bytes and migrate legacy unprotected keys if encountered.
-fn parse_and_migrate_key(path: &Path, bytes: &[u8]) -> Result<[u8; 32]> {
+///
+/// A legacy raw key is migrated to the wrapped format only when the directory
+/// allows it; otherwise it is rejected fail-closed, and never silently
+/// regenerated (which would orphan every already-encrypted API key).
+fn parse_and_migrate_key(path: &Path, bytes: &[u8], allow_legacy_raw: bool) -> Result<[u8; 32]> {
     match parse_stored_key_file(bytes)? {
         StoredKeyFile::LegacyRaw(key) => {
+            if !allow_legacy_raw {
+                return Err(legacy_raw_in_custom_dir_error());
+            }
             tracing::info!(
                 "master.key uses the legacy unprotected format; \
                  migrating to the DPAPI-wrapped format"
@@ -124,18 +159,43 @@ fn parse_and_migrate_key(path: &Path, bytes: &[u8]) -> Result<[u8; 32]> {
     }
 }
 
+/// Error for a raw master.key found in a custom data directory.
+///
+/// Instructs the user to re-enter the API key rather than offering a re-wrap:
+/// re-wrapping a planted key would trust attacker-supplied key material.
+fn legacy_raw_in_custom_dir_error() -> AppError {
+    AppError::api_key_decrypt_failed(
+        "master.key in the custom data directory uses an untrusted legacy format; \
+         re-enter the API key in Settings",
+    )
+}
+
+/// Rewrap a legacy raw master.key at `path` with DPAPI, leaving other formats alone.
+///
+/// Called only by data-directory migration when copying a key from a trusted
+/// source into a custom directory, so a legitimate pre-DPAPI install keeps
+/// working after the move. A raw key found later at load time is still rejected
+/// (see [`legacy_raw_allowed`]); this does not run on the load path.
+pub fn rewrap_legacy_key_if_raw(path: &Path) -> Result<()> {
+    let bytes = std::fs::read(path)?;
+    if let Ok(StoredKeyFile::LegacyRaw(key)) = parse_stored_key_file(&bytes) {
+        write_key_file(path, &key)?;
+    }
+    Ok(())
+}
+
 /// Read existing master key file from disk.
-fn read_existing_key(path: &Path) -> Result<[u8; 32]> {
+fn read_existing_key(path: &Path, allow_legacy_raw: bool) -> Result<[u8; 32]> {
     let bytes = std::fs::read(path)
         .map_err(|e| AppError::internal(format!("failed to read master.key: {e}")))?;
-    parse_and_migrate_key(path, &bytes)
+    parse_and_migrate_key(path, &bytes, allow_legacy_raw)
 }
 
 /// Retry reading key file with backoff when losing a creation race.
-fn read_existing_key_with_retry(path: &Path) -> Result<[u8; 32]> {
+fn read_existing_key_with_retry(path: &Path, allow_legacy_raw: bool) -> Result<[u8; 32]> {
     let mut last_err = None;
     for _ in 0..MAX_READ_ATTEMPTS {
-        match read_existing_key(path) {
+        match read_existing_key(path, allow_legacy_raw) {
             Ok(key) => return Ok(key),
             Err(e) => {
                 last_err = Some(e);
@@ -149,7 +209,7 @@ fn read_existing_key_with_retry(path: &Path) -> Result<[u8; 32]> {
 }
 
 /// Generate, persist exclusively, and return a fresh 32-byte master key at `path`.
-fn generate_master_key(path: &Path) -> Result<[u8; 32]> {
+fn generate_master_key(path: &Path, allow_legacy_raw: bool) -> Result<[u8; 32]> {
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     if let Some(parent) = path.parent() {
@@ -159,7 +219,7 @@ fn generate_master_key(path: &Path) -> Result<[u8; 32]> {
         Ok(()) => Ok(key),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             // Another instance won the race to create the key file.
-            read_existing_key_with_retry(path)
+            read_existing_key_with_retry(path, allow_legacy_raw)
         }
         Err(e) => Err(AppError::internal(format!(
             "failed to create master.key: {e}"
@@ -222,26 +282,25 @@ fn load_protected_key(blob: &[u8]) -> Result<[u8; MASTER_KEY_LEN]> {
     }
 }
 
-#[cfg(unix)]
+/// Rewrite `master.key` atomically so a crash mid-write cannot truncate it and
+/// orphan every encrypted API key. Uses the shared temp-file + rename helper.
 fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let payload = serialize_master_key(key)?;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(&payload)?;
-    file.sync_all()?;
+    crate::util::write_atomic(path, &payload)?;
+    restrict_key_file_permissions(path)
+}
+
+/// Keep `master.key` readable only by its owner on Unix. On Windows the payload
+/// is DPAPI-wrapped, so file permissions add nothing.
+#[cfg(unix)]
+fn restrict_key_file_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn write_key_file(path: &Path, key: &[u8; 32]) -> Result<()> {
-    let payload = serialize_master_key(key)?;
-    std::fs::write(path, payload)?;
+fn restrict_key_file_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -419,6 +478,21 @@ pub fn decrypt_api_key(stored: &str, master_key: &[u8; 32]) -> Result<String> {
     String::from_utf8(plaintext).map_err(|e| AppError::internal(format!("utf8 error: {e}")))
 }
 
+/// Seal a short trusted string (for example a picker-issued binary path)
+/// under the master key, reusing the API-key envelope format.
+pub fn seal_token(plaintext: &str, master_key: &[u8; 32]) -> Result<String> {
+    encrypt_api_key(plaintext, master_key)
+}
+
+/// Open a token produced by [`seal_token`].
+///
+/// Fails on tampering, a wrong master key, or a value that is not a sealed
+/// token, so a caller can treat any error as "the token does not vouch for
+/// this value".
+pub fn open_token(token: &str, master_key: &[u8; 32]) -> Result<String> {
+    decrypt_api_key(token, master_key)
+}
+
 /// One-shot upgrade of a legacy plaintext API key to the encrypted envelope.
 ///
 /// Returns `Ok(Some(encrypted))` when `stored` is a non-empty plaintext value,
@@ -503,12 +577,27 @@ mod tests {
     }
 
     #[test]
+    fn token_seal_roundtrips() {
+        let key = [13u8; 32];
+        let path = r"C:\Program Files\whisper\whisper-cli.exe";
+        let token = seal_token(path, &key).unwrap();
+        assert!(is_encrypted(&token));
+        assert_eq!(open_token(&token, &key).unwrap(), path);
+    }
+
+    #[test]
+    fn token_open_fails_with_wrong_key() {
+        let token = seal_token("C:\\whisper.exe", &[14u8; 32]).unwrap();
+        assert!(open_token(&token, &[15u8; 32]).is_err());
+    }
+
+    #[test]
     fn generates_then_reloads_same_key() {
         let dir = std::env::temp_dir().join(format!("voxitype_key_ok_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let first = get_master_key(&dir).unwrap();
+        let first = get_master_key(&dir, &dir).unwrap();
         // Second call must load the persisted key, not regenerate a new one.
-        let second = get_master_key(&dir).unwrap();
+        let second = get_master_key(&dir, &dir).unwrap();
         assert_eq!(first, second);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -517,9 +606,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("voxitype_key_race_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = key_path(&dir);
-        let first = get_master_key(&dir).unwrap();
+        let first = get_master_key(&dir, &dir).unwrap();
         // Direct generation on existing file must re-read rather than recreate.
-        let second = generate_master_key(&path).unwrap();
+        let second = generate_master_key(&path, true).unwrap();
         assert_eq!(first, second);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -531,10 +620,52 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // Write a too-short key file: must NOT be silently regenerated.
         std::fs::write(key_path(&dir), [1u8; 16]).unwrap();
-        assert!(get_master_key(&dir).is_err());
+        assert!(get_master_key(&dir, &dir).is_err());
         // The corrupt file is left intact for recovery.
         assert_eq!(std::fs::read(key_path(&dir)).unwrap().len(), 16);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_raw_allowed_only_in_default_dir() {
+        let default_dir = std::env::temp_dir().join("voxitype-default");
+        let custom_dir = std::env::temp_dir().join("voxitype-custom");
+        #[cfg(windows)]
+        {
+            assert!(legacy_raw_allowed(&default_dir, &default_dir));
+            assert!(!legacy_raw_allowed(&custom_dir, &default_dir));
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(legacy_raw_allowed(&custom_dir, &default_dir));
+        }
+    }
+
+    /// A raw key in a custom dir must fail closed; a wrapped key works anywhere.
+    #[cfg(windows)]
+    #[test]
+    fn raw_key_rejected_in_custom_dir_but_wrapped_accepted() {
+        let default_dir = std::env::temp_dir().join(format!("voxitype_def_{}", std::process::id()));
+        let custom_dir = std::env::temp_dir().join(format!("voxitype_cus_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&default_dir);
+        let _ = std::fs::remove_dir_all(&custom_dir);
+        std::fs::create_dir_all(&custom_dir).unwrap();
+
+        // Plant a raw key in the custom dir: rejected, and not overwritten.
+        std::fs::write(key_path(&custom_dir), [42u8; MASTER_KEY_LEN]).unwrap();
+        assert!(get_master_key(&custom_dir, &default_dir).is_err());
+        assert_eq!(
+            std::fs::read(key_path(&custom_dir)).unwrap(),
+            [42u8; MASTER_KEY_LEN]
+        );
+
+        // A wrapped key (written by rewrap) loads fine in the same custom dir.
+        rewrap_legacy_key_if_raw(&key_path(&custom_dir)).unwrap();
+        assert_eq!(
+            get_master_key(&custom_dir, &default_dir).unwrap(),
+            [42u8; MASTER_KEY_LEN]
+        );
+        let _ = std::fs::remove_dir_all(&custom_dir);
     }
 
     // --- master.key file-format logic (pure, platform-independent) ---
@@ -605,5 +736,34 @@ mod tests {
             decode_raw_key(&[5u8; MASTER_KEY_LEN]).unwrap(),
             [5u8; MASTER_KEY_LEN]
         );
+    }
+
+    #[test]
+    fn write_key_file_writes_content_without_leaving_temp_files() {
+        let dir = std::env::temp_dir().join(format!("voxitype_key_atomic_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = key_path(&dir);
+        // Seed an existing key so the rewrite must replace it atomically.
+        write_key_file(&path, &[1u8; MASTER_KEY_LEN]).unwrap();
+        write_key_file(&path, &[2u8; MASTER_KEY_LEN]).unwrap();
+
+        // The DPAPI blob is non-deterministic, so compare the unwrapped key.
+        match parse_stored_key_file(&std::fs::read(&path).unwrap()).unwrap() {
+            StoredKeyFile::LegacyRaw(key) => assert_eq!(key, [2u8; MASTER_KEY_LEN]),
+            StoredKeyFile::DpapiWrapped(blob) => {
+                assert_eq!(load_protected_key(&blob).unwrap(), [2u8; MASTER_KEY_LEN])
+            }
+        }
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "atomic write must not leave temp files"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

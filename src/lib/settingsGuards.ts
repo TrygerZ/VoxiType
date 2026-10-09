@@ -38,6 +38,16 @@ export function getNumberSetting(value: unknown, fallback: number): number {
   return typeof value === "number" && !Number.isNaN(value) ? value : fallback;
 }
 
+/** whisper.cpp thread count bounds; matches the backend clamp (L-27). */
+export const MIN_WHISPER_THREADS = 1;
+export const MAX_WHISPER_THREADS = 32;
+
+/** Clamp a typed thread count to 1..=32 so a typed 9999 persists as 32. */
+export function clampWhisperThreads(raw: string | number): number {
+  const parsed = Math.floor(Number(raw) || MIN_WHISPER_THREADS);
+  return Math.min(MAX_WHISPER_THREADS, Math.max(MIN_WHISPER_THREADS, parsed));
+}
+
 export function getHotkeySetting(
   value: unknown,
   fallback: HotkeyConfig,

@@ -38,7 +38,7 @@ struct GitHubRelease {
 
 /// Check GitHub for a newer release. `current` is the running app version.
 pub async fn check(current: &str) -> Result<UpdateInfo> {
-    let client = crate::util::http_client();
+    let client = crate::util::http_client()?;
     let resp = client
         .get(format!(
             "https://api.github.com/repos/{REPO}/releases/latest"
@@ -89,8 +89,21 @@ fn interpret(status: u16, body: &str, current: &str) -> Result<UpdateInfo> {
         current_version: current.to_string(),
         latest_version: latest,
         notes: release.body,
-        url: release.html_url,
+        url: sanitize_release_url(&release.html_url),
     })
+}
+
+/// The GitHub API supplies `html_url`, which the frontend renders into an
+/// `href`. Only trust it when it points at `https://github.com/`; anything
+/// else (wrong host, `http:`, `javascript:`, empty) becomes an empty string so
+/// a compromised or spoofed API response cannot inject a hostile link.
+fn sanitize_release_url(html_url: &str) -> String {
+    const GITHUB_PREFIX: &str = "https://github.com/";
+    if html_url.starts_with(GITHUB_PREFIX) {
+        html_url.to_string()
+    } else {
+        String::new()
+    }
 }
 
 /// Compare dotted numeric versions: is `latest` strictly newer than `current`?
@@ -143,12 +156,28 @@ mod tests {
 
     #[test]
     fn interpret_200_parses_release() {
-        let body = r#"{"tag_name":"v0.5.0","body":"notes","html_url":"https://x","draft":false,"prerelease":false}"#;
+        let body = r#"{"tag_name":"v0.5.0","body":"notes","html_url":"https://github.com/TrygerZ/VoxiType/releases/tag/v0.5.0","draft":false,"prerelease":false}"#;
         let info = interpret(200, body, "0.4.2").unwrap();
         assert!(info.available);
         assert_eq!(info.latest_version, "0.5.0");
-        assert_eq!(info.url, "https://x");
+        assert_eq!(
+            info.url,
+            "https://github.com/TrygerZ/VoxiType/releases/tag/v0.5.0"
+        );
         assert_eq!(info.notes, "notes");
+    }
+
+    #[test]
+    fn sanitize_release_url_accepts_only_github_https() {
+        assert_eq!(
+            sanitize_release_url("https://github.com/a/b"),
+            "https://github.com/a/b"
+        );
+        // Wrong host, http scheme, script scheme, and empty all rejected.
+        assert_eq!(sanitize_release_url("https://evil.com/x"), "");
+        assert_eq!(sanitize_release_url("http://github.com/a"), "");
+        assert_eq!(sanitize_release_url("javascript:alert(1)"), "");
+        assert_eq!(sanitize_release_url(""), "");
     }
 
     #[test]

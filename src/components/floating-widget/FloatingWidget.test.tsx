@@ -22,7 +22,6 @@ describe("FloatingWidget", () => {
 
     useAppStore.setState({
       state: "idle",
-      audioLevel: 0,
       durationSec: 0,
       wordCount: null,
       errorMessage: null,

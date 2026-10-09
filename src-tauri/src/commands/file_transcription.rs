@@ -51,7 +51,7 @@ pub struct FileJobState {
 
 /// Holds a busy flag and clears it on every exit path, including panics
 /// and early returns.
-struct FlagGuard<'a>(&'a AtomicBool);
+pub(crate) struct FlagGuard<'a>(&'a AtomicBool);
 
 impl<'a> FlagGuard<'a> {
     fn acquire(flag: &'a AtomicBool) -> Option<Self> {
@@ -68,11 +68,22 @@ impl Drop for FlagGuard<'_> {
 }
 
 impl FileJobState {
-    fn begin(&self) -> Result<FlagGuard<'_>> {
+    pub(crate) fn begin(&self) -> Result<FlagGuard<'_>> {
         let guard = FlagGuard::acquire(&self.running)
             .ok_or_else(|| AppError::invalid_input("A file transcription is already running"))?;
         self.cancel.store(false, Ordering::SeqCst);
         Ok(guard)
+    }
+
+    /// Acquire the shared picker flag so only one native dialog opens at a
+    /// time. `None` means another picker is already open.
+    pub(crate) fn begin_picking(&self) -> Option<FlagGuard<'_>> {
+        FlagGuard::acquire(&self.picking)
+    }
+
+    /// Whether a file-transcription job currently holds the running flag.
+    pub(crate) fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
     }
 }
 
@@ -108,7 +119,7 @@ pub async fn pick_audio_files(
     state: State<'_, AppStateInner>,
     jobs: State<'_, FileJobState>,
 ) -> std::result::Result<Vec<String>, AppError> {
-    let Some(_picking) = FlagGuard::acquire(&jobs.picking) else {
+    let Some(_picking) = jobs.begin_picking() else {
         return Ok(Vec::new());
     };
     pick_gated_files(&state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
@@ -119,7 +130,13 @@ const EXPORT_DIRECTORY_TITLE: &str = "Select a folder for the exported transcrip
 #[tauri::command]
 pub async fn pick_export_directory(
     state: State<'_, AppStateInner>,
+    jobs: State<'_, FileJobState>,
 ) -> std::result::Result<Option<String>, AppError> {
+    // One native dialog at a time: a rapid second click returns no folder
+    // instead of stacking another explorer window.
+    let Some(_picking) = jobs.begin_picking() else {
+        return Ok(None);
+    };
     let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(EXPORT_DIRECTORY_TITLE))
         .await
         .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
@@ -155,6 +172,14 @@ pub fn export_transcripts(
         return Err(AppError::invalid_input(format!(
             "Export at most {MAX_BATCH_FILES} transcripts at a time"
         )));
+    }
+    for item in &items {
+        super::check_len("export item text", &item.text, super::MAX_TEXT_BLOB_LEN)?;
+        super::check_len(
+            "export item source path",
+            &item.source_path,
+            super::MAX_IDENTIFIER_LEN,
+        )?;
     }
     let dir = Path::new(&directory);
     items
@@ -195,14 +220,14 @@ fn build_file_formatter(
     state: &AppStateInner,
     settings: &SettingsSnapshot,
     kind: LlmEngineKind,
-) -> Arc<dyn LlmFormatter> {
+) -> Result<Arc<dyn LlmFormatter>> {
     let (mut ollama, groq) = llm_configs_from_settings(state, settings);
     ollama.request_timeout = FILE_OLLAMA_TIMEOUT;
     match kind {
         LlmEngineKind::Ollama => LlmFactory::ollama(ollama),
         LlmEngineKind::Groq => LlmFactory::groq(groq),
-        LlmEngineKind::RuleBased => LlmFactory::rule_based(RuleBasedConfig::default()),
-        LlmEngineKind::Off => LlmFactory::off(),
+        LlmEngineKind::RuleBased => Ok(LlmFactory::rule_based(RuleBasedConfig::default())),
+        LlmEngineKind::Off => Ok(LlmFactory::off()),
     }
 }
 
@@ -243,7 +268,8 @@ async fn run_job<R: Runtime>(
     let stt = build_stt_for_kind(state, &settings, request.stt_engine)?;
     let formatter = request
         .llm_engine
-        .map(|kind| build_file_formatter(state, &settings, kind));
+        .map(|kind| build_file_formatter(state, &settings, kind))
+        .transpose()?;
     let stt_config = build_stt_config_for_language(&state.db, request.language.clone());
     let report = |p| crate::events::emit_file_transcription_progress(app, p);
 
@@ -276,7 +302,9 @@ async fn run_job<R: Runtime>(
         stt.name(),
         formatter.map(|f| f.name()),
     );
-    HistoryRepository::new(&state.db).insert(&entry)?;
+    if let Err(e) = HistoryRepository::new(&state.db).insert(&entry) {
+        tracing::error!("Failed to insert file transcription into history: {e}");
+    }
     Ok(FileTranscriptionResult {
         id: entry.id,
         word_count: entry.word_count as u32,
@@ -310,11 +338,41 @@ async fn transcribe_path(
     let (tx, rx) = mpsc::channel(1);
     let decode = tokio::task::spawn_blocking(move || decode_into_chunks(file, tx));
     let transcript =
-        file_job::transcribe_chunks(rx, stt, config, cancel, total_chunks, report).await;
-    decode
+        file_job::transcribe_chunks(rx, stt, config, cancel, total_chunks, report).await?;
+    let decoded = decode
         .await
-        .map_err(|e| AppError::internal(format!("Audio decode task failed: {e}")))??;
-    transcript
+        .map_err(|e| AppError::internal(format!("Audio decode task failed: {e}")));
+    match decoded {
+        Ok(Ok(())) => Ok(transcript),
+        Ok(Err(e)) | Err(e) => merge_decode_failure(transcript, total_chunks, e),
+    }
+}
+
+/// Keep a partial transcript when a decode failure interrupts the job. The
+/// decode error is only worth reporting as the whole result when nothing was
+/// transcribed: an empty transcript would surface as "No speech detected",
+/// masking the corrupt-file cause.
+fn merge_decode_failure(
+    mut transcript: RawTranscript,
+    total_chunks: u32,
+    decode_error: AppError,
+) -> Result<RawTranscript> {
+    if transcript.text.trim().is_empty() {
+        return Err(decode_error);
+    }
+    tracing::warn!(
+        "Audio decode failed after {} chunks: {decode_error}",
+        transcript.chunks_done
+    );
+    if transcript.stt_issue.is_none() {
+        let done = transcript.chunks_done;
+        transcript.stt_issue = Some(StageIssue {
+            count: done,
+            total: total_chunks.max(done + 1),
+            reason: decode_error.message,
+        });
+    }
+    Ok(transcript)
 }
 
 fn decode_into_chunks(file: AudioFile, tx: mpsc::Sender<Vec<f32>>) -> Result<()> {
@@ -430,5 +488,55 @@ mod tests {
         const GROQ_UPLOAD_LIMIT_BYTES: usize = 25 * 1024 * 1024;
         let wav_bytes = 44 + CHUNK_SECS * TARGET_SAMPLE_RATE as usize * 2;
         assert!(wav_bytes < GROQ_UPLOAD_LIMIT_BYTES);
+    }
+
+    fn partial(chunks_done: u32, stt_issue: Option<StageIssue>) -> RawTranscript {
+        RawTranscript {
+            text: "some transcribed text".to_string(),
+            language: "id".to_string(),
+            duration_ms: 1000,
+            chunks_done,
+            stt_issue,
+        }
+    }
+
+    #[test]
+    fn decode_failure_keeps_partial_transcript_and_reports_issue() {
+        let out =
+            merge_decode_failure(partial(2, None), 5, AppError::internal("corrupt frame")).unwrap();
+        assert_eq!(out.text, "some transcribed text");
+        let issue = out.stt_issue.unwrap();
+        assert_eq!((issue.count, issue.total), (2, 5));
+        assert_eq!(issue.reason, "corrupt frame");
+    }
+
+    #[test]
+    fn decode_failure_total_covers_done_chunks_when_duration_unknown() {
+        let out = merge_decode_failure(partial(2, None), 0, AppError::internal("bad")).unwrap();
+        assert_eq!(out.stt_issue.unwrap().total, 3);
+    }
+
+    #[test]
+    fn decode_failure_keeps_existing_stt_issue() {
+        let existing = StageIssue {
+            count: 1,
+            total: 3,
+            reason: "stt failed first".to_string(),
+        };
+        let out = merge_decode_failure(
+            partial(1, Some(existing.clone())),
+            3,
+            AppError::internal("corrupt frame"),
+        )
+        .unwrap();
+        assert_eq!(out.stt_issue, Some(existing));
+    }
+
+    #[test]
+    fn decode_failure_without_text_returns_decode_error() {
+        let mut empty = partial(0, None);
+        empty.text = "   ".to_string();
+        let err = merge_decode_failure(empty, 2, AppError::internal("corrupt frame")).unwrap_err();
+        assert_eq!(err.message, "corrupt frame");
     }
 }

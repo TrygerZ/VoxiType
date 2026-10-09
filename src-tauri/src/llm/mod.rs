@@ -26,5 +26,9 @@ pub trait LlmFormatter: Send + Sync {
     async fn format(&self, text: &str, mode: &LlmMode, language: &str) -> Result<String>;
     /// Translate text between languages (used by translation mode).
     async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String>;
+    /// Name of the engine that produced the last completed `format`/`translate`
+    /// output. A wrapper such as [`FallbackFormatter`] reports whichever engine
+    /// actually won, so history and telemetry are not misattributed. Before any
+    /// call it reports the default (primary) engine.
     fn name(&self) -> &'static str;
 }

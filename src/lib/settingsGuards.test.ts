@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampWhisperThreads,
   getBooleanSetting,
   getHotkeySetting,
   getNumberSetting,
@@ -51,6 +52,17 @@ describe("settingsGuards", () => {
     expect(getNumberSetting(undefined, 3)).toBe(3);
     expect(getNumberSetting(NaN, 3)).toBe(3);
     expect(getNumberSetting("10", 3)).toBe(3);
+  });
+
+  it("clamps whisper thread counts to 1..=32", () => {
+    expect(clampWhisperThreads(9999)).toBe(32);
+    expect(clampWhisperThreads("9999")).toBe(32);
+    expect(clampWhisperThreads(0)).toBe(1);
+    expect(clampWhisperThreads(-5)).toBe(1);
+    expect(clampWhisperThreads("")).toBe(1);
+    expect(clampWhisperThreads("abc")).toBe(1);
+    expect(clampWhisperThreads(8)).toBe(8);
+    expect(clampWhisperThreads("16.9")).toBe(16);
   });
 
   it("provides fallback for hotkey settings", () => {

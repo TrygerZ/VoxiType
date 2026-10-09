@@ -5,7 +5,7 @@ import { useDebouncedApiKey } from "../../hooks/useDebouncedApiKey";
 import { Select } from "../ui/Select";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
-import { testGroqApi, formatTauriError } from "../../lib/tauri";
+import { testGroqApi, formatTauriError, errorCode } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
 import { getBooleanSetting, getStringSetting } from "../../lib/settingsGuards";
 import { toast } from "../ui/Toast";
@@ -43,7 +43,7 @@ export function LLMTab() {
       setTestStatus("ok");
       toast(t("settings.llm.connected"));
     } catch (e: unknown) {
-      const code = (e as { code?: string })?.code;
+      const code = errorCode(e);
       if (code === "LlmApiKeyInvalid" || code === "SttApiKeyInvalid") {
         setTestStatus("fail");
         toast(t("settings.llm.invalid_key"), "error");

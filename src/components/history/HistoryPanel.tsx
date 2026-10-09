@@ -11,10 +11,11 @@ import {
 } from "lucide-react";
 
 import { useHistoryStore } from "../../stores/historyStore";
-import { useT } from "../../lib/i18n";
+import { modeLabel, useT } from "../../lib/i18n";
 import { exportHistory, reInject } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
 import { downloadBlob } from "../../lib/downloadBlob";
+import { toast } from "../ui/Toast";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { PanelHeader } from "../common/PanelHeader";
@@ -72,8 +73,13 @@ export function HistoryPanel() {
     });
   };
 
-  const handleCopy = (id: string, text: string) => {
-    void navigator.clipboard.writeText(text);
+  const handleCopy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      toast(t("file.copy_failed"), "error");
+      return;
+    }
     if (copyTimerRef.current) {
       clearTimeout(copyTimerRef.current);
       copyTimerRef.current = null;
@@ -211,7 +217,7 @@ export function HistoryPanel() {
                   </p>
                   <div className="mt-1.5 flex items-center gap-2 text-xs text-vx-text-dim">
                     <span className="rounded-full bg-vx-bg-tertiary px-2 py-0.5 capitalize">
-                      {t(`settings.modes.${item.mode}`)}
+                      {modeLabel(t, item.mode)}
                     </span>
                     <span>{t("history.words_suffix", { count: item.word_count })}</span>
                     <span>&middot;</span>
@@ -235,7 +241,7 @@ export function HistoryPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleCopy(item.id, item.text_formatted || item.text_raw)}
+                    onClick={() => void handleCopy(item.id, item.text_formatted || item.text_raw)}
                     className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       copied === item.id
                         ? "bg-vx-success/15 text-vx-success"

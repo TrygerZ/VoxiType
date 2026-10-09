@@ -1,19 +1,28 @@
 //! Application logging / lightweight error tracking.
 //!
-//! Logs to both stderr (dev) and a daily-rotated file under the app log dir
-//! (`{app_data_dir}/logs/voxitype.log.<date>`). This is the open-source,
-//! self-hosted alternative to a paid crash-reporting service: a user can attach
-//! the log file to a bug report.
+//! Logs to both stderr (dev) and a daily-rotated file under the active data
+//! directory's `logs/` folder. This is the open-source, self-hosted alternative
+//! to a paid crash-reporting service: a user can attach the log file to a bug
+//! report.
+//!
+//! Stderr logging starts first, before the data directory is resolved, so
+//! bootstrap and data-directory failures stay visible. The file layer is
+//! attached afterwards (see [`attach_file_layer`]) so files land in the active
+//! directory even after a data-directory move.
 
 use std::path::Path;
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::Registry;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{fmt, reload, EnvFilter};
 
 const LOG_FILE_NAME: &str = "voxitype.log";
 const DEFAULT_LOG_FILTER: &str = "info,voxitype_lib=debug";
+
+/// Number of daily log files kept before the oldest are pruned.
+const MAX_LOG_FILES: usize = 14;
 
 /// Error initializing file logging.
 #[derive(Debug)]
@@ -46,7 +55,20 @@ fn default_filter() -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER))
 }
 
-/// Creates a non-blocking daily rolling file writer in `log_dir`.
+/// The file layer type wrapped in the reload handle: present once the active
+/// data directory is known, absent before that (stderr only).
+type FileLayer = fmt::Layer<
+    Registry,
+    fmt::format::DefaultFields,
+    fmt::format::Format,
+    tracing_appender::non_blocking::NonBlocking,
+>;
+
+/// Handle used to attach the file layer after the active data directory is known.
+pub type FileLayerHandle = reload::Handle<Option<FileLayer>, Registry>;
+
+/// Creates a non-blocking daily rolling file writer in `log_dir`, retaining
+/// only the most recent [`MAX_LOG_FILES`] daily files.
 pub fn create_file_writer(
     log_dir: &Path,
 ) -> Result<(tracing_appender::non_blocking::NonBlocking, WorkerGuard), LogInitError> {
@@ -54,48 +76,56 @@ pub fn create_file_writer(
         return Err(LogInitError::WriterFailed(err));
     }
 
-    let file_appender = tracing_appender::rolling::daily(log_dir, LOG_FILE_NAME);
+    let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix(LOG_FILE_NAME)
+        .max_log_files(MAX_LOG_FILES)
+        .build(log_dir)
+        .map_err(|err| LogInitError::WriterFailed(std::io::Error::other(err.to_string())))?;
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
     Ok((file_writer, guard))
 }
 
-/// Initialize tracing with both stderr and daily-rotated file logging.
+/// Initialize tracing with stderr logging only, returning a handle used to
+/// attach the file layer later via [`attach_file_layer`].
 ///
-/// Returns a [`WorkerGuard`] that must be kept alive for the lifetime of
-/// the application so buffered file logs are flushed on shutdown.
-pub fn init(log_dir: &Path) -> Result<WorkerGuard, LogInitError> {
-    let (file_writer, guard) = match create_file_writer(log_dir) {
-        Ok(pair) => pair,
-        Err(err) => {
-            // Fall back to stderr subscriber so console logs still work when file logging fails.
-            let _ = tracing_subscriber::registry()
-                .with(default_filter())
-                .with(fmt::layer().with_target(false))
-                .try_init();
-            return Err(err);
-        }
-    };
-
+/// Starting stderr-only keeps bootstrap diagnostics visible before the data
+/// directory (and thus the log directory) is known. The reload layer is added
+/// first so its subscriber type parameter is `Registry`.
+pub fn init() -> Result<FileLayerHandle, LogInitError> {
+    let (file_layer, handle) = reload::Layer::<Option<FileLayer>, Registry>::new(None);
     match tracing_subscriber::registry()
+        .with(file_layer)
         .with(default_filter())
         .with(fmt::layer().with_target(false))
-        .with(
-            fmt::layer()
-                .with_ansi(false)
-                .with_target(false)
-                .with_writer(file_writer),
-        )
         .try_init()
     {
-        Ok(()) => {
-            tracing::info!("Logging initialized at {}", log_dir.display());
-            Ok(guard)
-        }
+        Ok(()) => Ok(handle),
         Err(_) => {
             tracing::warn!("Tracing subscriber already initialized; new subscriber ignored");
             Err(LogInitError::AlreadyInitialized)
         }
     }
+}
+
+/// Attach the daily-rotated file layer for `log_dir` to the running subscriber.
+///
+/// Returns a [`WorkerGuard`] that must be kept alive for the lifetime of the
+/// application so buffered file logs are flushed on shutdown.
+pub fn attach_file_layer(
+    handle: &FileLayerHandle,
+    log_dir: &Path,
+) -> Result<WorkerGuard, LogInitError> {
+    let (file_writer, guard) = create_file_writer(log_dir)?;
+    let layer = fmt::layer()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(file_writer);
+    handle
+        .reload(Some(layer))
+        .map_err(|err| LogInitError::WriterFailed(std::io::Error::other(err.to_string())))?;
+    tracing::info!("File logging initialized at {}", log_dir.display());
+    Ok(guard)
 }
 
 #[cfg(test)]
@@ -104,12 +134,10 @@ mod tests {
 
     #[test]
     fn test_init_distinguishes_already_initialized() {
-        let dir = std::env::temp_dir().join(format!("voxitype_test_logs_{}", uuid::Uuid::new_v4()));
-        let _guard1 = init(&dir);
+        let _handle = init();
         // Second call must return AlreadyInitialized error, not panic or fail silently.
-        let result2 = init(&dir);
+        let result2 = init();
         assert!(matches!(result2, Err(LogInitError::AlreadyInitialized)));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -144,19 +172,48 @@ mod tests {
         // Drop guard to flush the non-blocking worker thread.
         drop(guard);
 
-        let entries = std::fs::read_dir(&dir).expect("failed to read log dir");
-        let mut found = false;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                let content = std::fs::read_to_string(&path).unwrap_or_default();
-                if content.contains(test_message) {
-                    found = true;
-                    break;
-                }
-            }
-        }
+        assert!(dir_contains(&dir, test_message));
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(found, "Log file did not contain expected message");
+    }
+
+    /// The file layer attached after startup (the L-6 reload path) must receive
+    /// events logged after the attach.
+    #[test]
+    fn test_attach_file_layer_receives_events_after_reload() {
+        let dir =
+            std::env::temp_dir().join(format!("voxitype_test_reload_{}", uuid::Uuid::new_v4()));
+        let (file_layer, handle) = reload::Layer::<Option<FileLayer>, Registry>::new(None);
+        let subscriber = tracing_subscriber::registry()
+            .with(file_layer)
+            .with(default_filter())
+            .with(fmt::layer().with_target(false));
+
+        let test_message = "reload attach: file logging entry after startup";
+        let guard = tracing::subscriber::with_default(subscriber, || {
+            let guard = attach_file_layer(&handle, &dir).expect("attach file layer");
+            tracing::error!("{test_message}");
+            guard
+        });
+
+        // Drop guard to flush the non-blocking worker thread.
+        drop(guard);
+
+        assert!(
+            dir_contains(&dir, test_message),
+            "events logged after attach must reach the file"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn dir_contains(dir: &Path, needle: &str) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|entry| {
+            entry.path().is_file()
+                && std::fs::read_to_string(entry.path())
+                    .unwrap_or_default()
+                    .contains(needle)
+        })
     }
 }

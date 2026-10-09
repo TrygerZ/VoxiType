@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Mic } from "lucide-react";
 
-import { formatTauriError, getMicrophones, onEvent } from "../../../lib/tauri";
+import {
+  formatTauriError,
+  getMicrophones,
+  onEvent,
+  setMicMeter,
+} from "../../../lib/tauri";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
 import { StepShell } from "../shared/StepShell";
@@ -56,6 +61,18 @@ export function MicrophoneStep(props: MicrophoneStepProps) {
       unlisten?.();
     };
   }, []);
+
+  // The backend only emits `audio_level` during Recording, so ask it to stream
+  // the selected device's level for as long as this step shows a meter.
+  // Failures are swallowed: enumeration already surfaces device errors, and a
+  // dead meter must not block onboarding.
+  useEffect(() => {
+    if (!props.selectedDevice) return;
+    setMicMeter(true, props.selectedDevice).catch(() => {});
+    return () => {
+      setMicMeter(false, null).catch(() => {});
+    };
+  }, [props.selectedDevice]);
 
   const options = devices.map((device) => ({
     value: device.id,
