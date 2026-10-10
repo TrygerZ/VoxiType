@@ -402,7 +402,7 @@ fn decode_into_chunks(file: AudioFile, tx: mpsc::Sender<Vec<f32>>) -> Result<()>
         CHUNK_EXTEND_SECS * rate,
     );
     let decoded = file.decode_16k_mono(MAX_FILE_DURATION_SECS, |samples| {
-        for chunk in splitter.push(&samples) {
+        for chunk in splitter.push(samples) {
             tx.blocking_send(chunk).map_err(|_| consumer_gone())?;
         }
         Ok(())

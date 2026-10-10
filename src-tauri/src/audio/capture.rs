@@ -69,6 +69,9 @@ impl Default for AudioConfig {
 struct Shared {
     ring: Mutex<Vec<f32>>,
     resampler: Mutex<Resampler>,
+    /// Scratch buffer for converting the callback's samples to `f32`, reused
+    /// across callbacks so the audio hot path allocates nothing after warmup.
+    convert: Mutex<Vec<f32>>,
     level: AtomicU32,
     gain: f32,
     noise_gate: f32,
@@ -124,22 +127,26 @@ fn build_stream(
     let stream = match supported.sample_format() {
         SampleFormat::F32 => device.build_input_stream(
             &stream_config,
-            move |data: &[f32], _| process_samples(&shared, data),
+            move |data: &[f32], _| {
+                let mut convert = shared.convert.lock_recover();
+                convert.clear();
+                convert.extend_from_slice(data);
+                process_samples(&shared, &mut convert)
+            },
             err_fn,
             None,
         ),
         SampleFormat::I16 => device.build_input_stream(
             &stream_config,
             move |data: &[i16], _| {
-                let floats: Vec<f32> = data
-                    .iter()
-                    .map(|&s| {
-                        // Use i16::MAX + 1 to make the range symmetric: both
-                        // i16::MIN and i16::MAX map to exactly ±1.0.
-                        s as f32 / (i16::MAX as f32 + 1.0)
-                    })
-                    .collect();
-                process_samples(&shared, &floats)
+                let mut convert = shared.convert.lock_recover();
+                convert.clear();
+                convert.extend(data.iter().map(|&s| {
+                    // Use i16::MAX + 1 to make the range symmetric: both
+                    // i16::MIN and i16::MAX map to exactly ±1.0.
+                    s as f32 / (i16::MAX as f32 + 1.0)
+                }));
+                process_samples(&shared, &mut convert)
             },
             err_fn,
             None,
@@ -147,11 +154,13 @@ fn build_stream(
         SampleFormat::U16 => device.build_input_stream(
             &stream_config,
             move |data: &[u16], _| {
-                let floats: Vec<f32> = data
-                    .iter()
-                    .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0)
-                    .collect();
-                process_samples(&shared, &floats)
+                let mut convert = shared.convert.lock_recover();
+                convert.clear();
+                convert.extend(
+                    data.iter()
+                        .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0),
+                );
+                process_samples(&shared, &mut convert)
             },
             err_fn,
             None,
@@ -168,10 +177,15 @@ fn build_stream(
 }
 
 /// Process a callback's worth of interleaved samples into the ring buffer.
-fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
+///
+/// `data` is transformed in place: the peak is measured over the gain-applied
+/// values, then the block is either zeroed (noise gate) or has gain applied and
+/// clamped element-wise. Lock order is `convert -> resampler -> ring`; no other
+/// path takes `convert`, so this cannot deadlock.
+fn process_samples(shared: &Arc<Shared>, data: &mut [f32]) {
     // Compute the peak of the gain-applied block for both metering and gating.
     let mut peak = 0.0f32;
-    for &s in data {
+    for &s in data.iter() {
         let a = (s * shared.gain).abs();
         if a > peak {
             peak = a;
@@ -194,20 +208,21 @@ fn process_samples(shared: &Arc<Shared>, data: &[f32]) {
     // signal and garbles transcription.
     let block_is_silent = peak < shared.noise_gate;
 
-    let processed: Vec<f32> = if block_is_silent {
-        vec![0.0; data.len()]
+    if block_is_silent {
+        data.fill(0.0);
     } else {
-        data.iter()
-            .map(|&s| (s * shared.gain).clamp(-1.0, 1.0))
-            .collect()
-    };
+        for s in data.iter_mut() {
+            *s = (*s * shared.gain).clamp(-1.0, 1.0);
+        }
+    }
 
     let mut resampler = shared.resampler.lock_recover();
-    match resampler.process(&processed) {
+    // The resampler output borrows the guard, so append while it is held. Lock
+    // order `convert -> resampler -> ring` makes taking the ring here safe.
+    match resampler.process(data) {
         Ok(out) => {
-            drop(resampler);
             if !out.is_empty() {
-                append_capped(shared, &out);
+                append_capped(shared, out);
             }
         }
         // Don't silently swallow: a dropped block is lost audio, so surface it.
@@ -264,6 +279,7 @@ impl ActiveCapture {
         let shared = Arc::new(Shared {
             ring: Mutex::new(Vec::new()),
             resampler: Mutex::new(resampler),
+            convert: Mutex::new(Vec::new()),
             level: AtomicU32::new(0),
             gain: 1.0,
             noise_gate: 0.0,
@@ -341,6 +357,7 @@ impl AudioCaptureImpl {
         let shared = Arc::new(Shared {
             ring: Mutex::new(Vec::new()),
             resampler: Mutex::new(resampler),
+            convert: Mutex::new(Vec::new()),
             level: AtomicU32::new(0),
             gain: config.input_gain,
             noise_gate: config.noise_gate_threshold,
@@ -544,6 +561,7 @@ mod tests {
         let shared = Arc::new(Shared {
             ring: Mutex::new(Vec::new()),
             resampler: Mutex::new(resampler),
+            convert: Mutex::new(Vec::new()),
             level: AtomicU32::new(0),
             gain: 1.0,
             noise_gate: 0.0,
@@ -563,6 +581,7 @@ mod tests {
         let shared = Arc::new(Shared {
             ring: Mutex::new(Vec::new()),
             resampler: Mutex::new(resampler),
+            convert: Mutex::new(Vec::new()),
             level: AtomicU32::new(0),
             gain: 1.0,
             noise_gate: 0.0,
@@ -573,15 +592,37 @@ mod tests {
         assert_eq!(shared.get_level(), 0.0);
 
         // Process high amplitude
-        process_samples(&shared, &[0.5]);
+        process_samples(&shared, &mut [0.5]);
         let level1 = shared.get_level();
         assert!(level1 > 0.0);
 
         // Process silence - level should decay, not drop to 0 instantly
-        process_samples(&shared, &[0.0]);
+        process_samples(&shared, &mut [0.0]);
         let level2 = shared.get_level();
         assert!(level2 > 0.0);
         assert!(level2 < level1);
+    }
+
+    #[test]
+    fn process_samples_transforms_in_place_with_gain_and_clamp() {
+        // Same-rate passthrough resampler, so the ring holds exactly the
+        // gain-applied, clamped block. Verifies the in-place conversion path.
+        let resampler = Resampler::new(16_000, TARGET_SAMPLE_RATE, 1).unwrap();
+        let shared = Arc::new(Shared {
+            ring: Mutex::new(Vec::new()),
+            resampler: Mutex::new(resampler),
+            convert: Mutex::new(Vec::new()),
+            level: AtomicU32::new(0),
+            gain: 2.0,
+            noise_gate: 0.0,
+            max_samples: MAX_CAPTURE_SAMPLES,
+            capped: AtomicBool::new(false),
+        });
+
+        let mut block = [0.25f32, -0.75, 0.0];
+        process_samples(&shared, &mut block);
+
+        assert_eq!(shared.ring.lock_recover().as_slice(), &[0.5, -1.0, 0.0]);
     }
 
     #[test]

@@ -87,7 +87,7 @@ impl AudioFile {
     pub fn decode_16k_mono(
         mut self,
         max_secs: u64,
-        mut on_samples: impl FnMut(Vec<f32>) -> Result<()>,
+        mut on_samples: impl FnMut(&[f32]) -> Result<()>,
     ) -> Result<()> {
         let max_samples = max_secs as usize * TARGET_SAMPLE_RATE as usize;
         let mut resampler: Option<Resampler> = None;
@@ -110,7 +110,7 @@ impl AudioFile {
         if let Some(mut r) = resampler {
             let tail = r.flush()?;
             if !tail.is_empty() {
-                on_samples(tail)?;
+                on_samples(&tail)?;
             }
         }
         Ok(())
@@ -258,7 +258,7 @@ mod tests {
     fn decode_all(path: &Path, max_secs: u64) -> Result<Vec<f32>> {
         let mut out = Vec::new();
         AudioFile::open(path)?.decode_16k_mono(max_secs, |s| {
-            out.extend(s);
+            out.extend_from_slice(s);
             Ok(())
         })?;
         Ok(out)
