@@ -60,7 +60,6 @@ impl SttEngine for WhisperCppEngine {
             confidence: None,
             language: normalize_language(&config.language),
             duration_ms,
-            raw_response: None,
         })
     }
 

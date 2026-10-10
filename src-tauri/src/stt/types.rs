@@ -12,8 +12,6 @@ pub struct TranscriptionResult {
     /// Detected language: "id", "en", "unknown".
     pub language: String,
     pub duration_ms: u64,
-    /// Raw provider response for debugging.
-    pub raw_response: Option<String>,
 }
 
 impl TranscriptionResult {
@@ -23,7 +21,6 @@ impl TranscriptionResult {
             confidence: None,
             language: language.into(),
             duration_ms: 0,
-            raw_response: None,
         }
     }
 }
