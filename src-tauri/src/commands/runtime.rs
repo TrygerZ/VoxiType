@@ -125,12 +125,14 @@ fn decrypt_api_key_str(raw: &str, master_key: &[u8; 32]) -> Result<String> {
     if raw.is_empty() {
         return Ok(String::new());
     }
-    crate::crypto::decrypt_api_key(raw, master_key).map_err(|e| {
+    let decrypted = crate::crypto::decrypt_api_key(raw, master_key).map_err(|e| {
         tracing::error!("Failed to decrypt API key: {e}");
         AppError::api_key_decrypt_failed(
             "Failed to decrypt stored Groq API key: master key mismatch or corrupted key",
         )
-    })
+    })?;
+    // Trim so legacy rows written with stray whitespace self-heal at read time.
+    Ok(decrypted.trim().to_string())
 }
 
 pub fn decrypted_api_key(state: &AppStateInner) -> Result<String> {
@@ -1629,5 +1631,25 @@ mod tests {
         release_tx.send(()).expect("release blocking task");
         let res = blocking_handle.await.expect("spawn_blocking joins cleanly");
         assert_eq!(res.unwrap(), false);
+    }
+
+    #[test]
+    fn decrypt_api_key_str_roundtrips_trimmed() {
+        let key = [4u8; 32];
+        let enc = crate::crypto::encrypt_api_key("key123", &key).unwrap();
+        assert_eq!(decrypt_api_key_str(&enc, &key).unwrap(), "key123");
+    }
+
+    #[test]
+    fn decrypt_api_key_str_trims_legacy_whitespace() {
+        let key = [7u8; 32];
+        // A legacy row encrypted before the write-side trim still carries spaces.
+        let enc = crate::crypto::encrypt_api_key("  key123  ", &key).unwrap();
+        assert_eq!(decrypt_api_key_str(&enc, &key).unwrap(), "key123");
+    }
+
+    #[test]
+    fn decrypt_api_key_str_keeps_empty() {
+        assert_eq!(decrypt_api_key_str("", &[8u8; 32]).unwrap(), "");
     }
 }

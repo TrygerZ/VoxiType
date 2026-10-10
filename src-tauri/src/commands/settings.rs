@@ -239,7 +239,9 @@ fn encode_setting_value(
         let plain = value
             .as_str()
             .ok_or_else(|| AppError::invalid_input("Setting 'groq_api_key' must be a string"))?;
-        let enc = crate::crypto::encrypt_api_key(plain, master_key)?;
+        // Trim before encrypting: a pasted trailing space passes Test (which
+        // trims) but breaks dictation auth. Empty stays empty.
+        let enc = crate::crypto::encrypt_api_key(plain.trim(), master_key)?;
         Ok(serde_json::to_string(&enc)?)
     } else {
         Ok(serde_json::to_string(value)?)
@@ -438,6 +440,26 @@ mod tests {
         let valid =
             encode_setting_value("groq_api_key", &serde_json::json!("gsk_test"), &key).unwrap();
         assert!(!valid.is_empty());
+    }
+
+    #[test]
+    fn encode_groq_api_key_trims_whitespace_before_encrypting() {
+        let key = [5u8; 32];
+        let encoded =
+            encode_setting_value("groq_api_key", &serde_json::json!("  key123  "), &key).unwrap();
+        let stored: String = serde_json::from_str(&encoded).unwrap();
+        let decrypted = crate::crypto::decrypt_api_key(&stored, &key).unwrap();
+        assert_eq!(decrypted, "key123");
+    }
+
+    #[test]
+    fn encode_groq_api_key_trims_whitespace_only_to_empty() {
+        let key = [6u8; 32];
+        let encoded =
+            encode_setting_value("groq_api_key", &serde_json::json!("   "), &key).unwrap();
+        let stored: String = serde_json::from_str(&encoded).unwrap();
+        // Whitespace-only trims to empty, which encrypt_api_key stores as empty.
+        assert_eq!(stored, "");
     }
 
     #[test]
