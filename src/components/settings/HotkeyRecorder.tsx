@@ -47,20 +47,25 @@ export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
       if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
         setRecording(false);
         return;
       }
+      // Tab must move focus, so never consume it.
+      if (e.key === "Tab") return;
+
       const combo = toAccelerator(e);
-      if (combo) {
-        if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
-          return;
-        }
+      const hasModifier = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey;
+      if (combo && hasModifier) {
+        e.preventDefault();
+        e.stopPropagation();
         onChange(combo);
         setRecording(false);
       }
+      // Plain keys without modifiers stay unconsumed: the recorder keeps
+      // waiting and the keystroke reaches the rest of the UI.
     },
     [onChange],
   );
