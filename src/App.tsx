@@ -69,7 +69,7 @@ export default function App() {
 
     return () => {
       active = false;
-      unsub.then((fn) => fn());
+      unsub.then((fn) => fn()).catch(() => {});
     };
   }, []);
 
@@ -81,12 +81,16 @@ export default function App() {
       const message =
         payload.code === "no_speech_detected"
           ? t("notice.no_speech")
-          : payload.message;
+          : payload.code === "translation_fallback"
+            ? t("notice.translation_fallback")
+            : payload.code === "update_available"
+              ? t("notice.update_available", { version: payload.message })
+              : payload.message;
       toast(message, "info");
     });
     return () => {
       active = false;
-      unsub.then((fn) => fn());
+      unsub.then((fn) => fn()).catch(() => {});
     };
   }, [t]);
 
@@ -108,7 +112,7 @@ export default function App() {
   if (!loaded) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="text-sm text-vx-text-dim">Loading...</span>
+        <span className="text-sm text-vx-text-dim">{t("app.loading")}</span>
       </div>
     );
   }
@@ -132,8 +136,9 @@ export default function App() {
   if (showOnboarding) {
     return (
       <ErrorBoundary>
-        <div className="flex h-full flex-col">
+        <div className="flex h-full flex-col relative">
           <OnboardingFlow onComplete={() => setShowOnboarding(false)} />
+          <ToastContainer />
         </div>
       </ErrorBoundary>
     );

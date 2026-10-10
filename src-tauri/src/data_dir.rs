@@ -259,11 +259,16 @@ fn copy_database_files(
         if source_shm.is_file() {
             copy_verified(&source_shm, &sidecar_path(target_db, "-shm"))?;
         }
-        copy_verified(source_key, target_key)?;
-        // A legitimate pre-DPAPI install may still hold a raw key. Re-wrap it at
-        // the custom destination so migration keeps working; the load-time gate
-        // rejects a raw key left in a custom directory (M-4).
-        crate::crypto::rewrap_legacy_key_if_raw(target_key)?;
+        // The key is copied only when present: a deleted key file (or a DB
+        // restored from backup) must not strand the database in the default
+        // directory.
+        if source_key.is_file() {
+            copy_verified(source_key, target_key)?;
+            // A legitimate pre-DPAPI install may still hold a raw key. Re-wrap it
+            // at the custom destination so migration keeps working; the load-time
+            // gate rejects a raw key left in a custom directory (M-4).
+            crate::crypto::rewrap_legacy_key_if_raw(target_key)?;
+        }
         Ok(())
     };
     if let Err(error) = copy_sidecars_and_key() {
@@ -280,20 +285,25 @@ fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
     let target_key = target_dir.join("master.key");
 
     if target_db.exists() {
-        if is_valid_sqlite_file(&target_db) {
-            if target_key.is_file() {
-                tracing::info!("Data migration skipped; target database already exists");
-                return Ok(());
-            }
+        if !is_valid_sqlite_file(&target_db) {
+            return Err(AppError::data_directory("target database is invalid"));
+        }
+        // A valid target DB with no key means a prior copy attempt was interrupted
+        // before the key (or ran without one). Recover whenever the source still
+        // holds a DB to copy; never delete a target that is the only copy.
+        if !target_key.is_file() && source_db.is_file() {
             tracing::info!(
                 "Recovering interrupted data migration by removing target database without master.key"
             );
             remove_target_db_and_sidecars(&target_db);
         } else {
-            return Err(AppError::data_directory("target database is invalid"));
+            tracing::info!("Data migration skipped; target database already exists");
+            return Ok(());
         }
     }
-    if !source_db.is_file() || !source_key.is_file() {
+    // The DB migrates independently of the key: a deleted key file (or a DB
+    // restored from backup) must not strand the database in the default dir.
+    if !source_db.is_file() {
         tracing::info!(
             "No existing application data to migrate; target will initialize on first use"
         );
@@ -312,6 +322,12 @@ fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
             .ok_or_else(|| AppError::data_directory("target database has no parent directory"))?,
     )?;
     copy_database_files(&source_db, &target_db, &source_key, &target_key)?;
+    if !source_key.is_file() {
+        tracing::warn!(
+            "Migrated database without a master.key; API keys stored in it will not decrypt at {} and must be re-entered",
+            target_dir.display()
+        );
+    }
     copy_logs_best_effort(default_dir, target_dir);
     tracing::info!("Migrated application data to {}", target_dir.display());
     Ok(())
@@ -847,6 +863,50 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_target_without_source_key_recopies_source() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        std::fs::create_dir_all(source.0.join("data")).unwrap();
+        std::fs::write(
+            source.0.join("data/voxitype.db"),
+            b"SQLite format 3\0fresh-source",
+        )
+        .unwrap();
+        // Source key was lost too; the newer source DB must still win.
+        std::fs::create_dir_all(target.0.join("data")).unwrap();
+        std::fs::write(target.0.join("data/voxitype.db"), b"SQLite format 3\0stale").unwrap();
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert_eq!(
+            std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
+            b"SQLite format 3\0fresh-source"
+        );
+        assert!(
+            !target.0.join("master.key").exists(),
+            "no key should be invented when neither side holds one"
+        );
+    }
+
+    #[test]
+    fn target_without_key_is_kept_when_source_has_no_database() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        std::fs::create_dir_all(target.0.join("data")).unwrap();
+        std::fs::write(
+            target.0.join("data/voxitype.db"),
+            b"SQLite format 3\0only-copy",
+        )
+        .unwrap();
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert_eq!(
+            std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
+            b"SQLite format 3\0only-copy",
+            "the target is the only copy and must not be deleted"
+        );
+    }
+
+    #[test]
     fn fresh_target_copies_critical_files() {
         let source = TempDir::new();
         let target = TempDir::new();
@@ -865,6 +925,29 @@ mod tests {
         assert_eq!(
             crate::crypto::get_master_key(&target.0, &default_dir.0).unwrap(),
             [7u8; 32]
+        );
+    }
+
+    #[test]
+    fn migrates_database_without_master_key() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        std::fs::create_dir_all(source.0.join("data")).unwrap();
+        std::fs::write(
+            source.0.join("data/voxitype.db"),
+            b"SQLite format 3\0payload",
+        )
+        .unwrap();
+        // No source master.key: the DB must still migrate.
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert_eq!(
+            std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
+            b"SQLite format 3\0payload"
+        );
+        assert!(
+            !target.0.join("master.key").exists(),
+            "no key should be invented when the source key is absent"
         );
     }
 

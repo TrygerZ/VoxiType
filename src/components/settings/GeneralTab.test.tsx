@@ -276,6 +276,43 @@ describe("GeneralTab data directory settings", () => {
   });
 });
 
+describe("GeneralTab accessible names", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSettingsStore.setState({
+      settings: { language: "id", floating_widget: true },
+      loaded: true,
+      error: null,
+    });
+  });
+
+  it("exposes accessible names on each settings control", () => {
+    render(<GeneralTab />);
+
+    expect(
+      screen.getByRole("combobox", { name: "Bahasa antarmuka" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Widget melayang" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Mulai dengan Windows" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Pembaruan otomatis" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Suara perekaman" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Mode perintah" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Statistik penggunaan anonim" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("GeneralTab auto-hide floating widget settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();

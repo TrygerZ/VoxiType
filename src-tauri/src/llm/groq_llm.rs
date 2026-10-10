@@ -9,7 +9,9 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::prompts::{format_user_prefix, system_prompt, translation_prompt};
+use super::prompts::{
+    format_user_prefix, system_prompt, translation_prompt, translation_user_prefix,
+};
 use super::types::{GroqLlmConfig, LlmMode};
 use super::LlmFormatter;
 use crate::error::{AppError, ErrorCode, Result};
@@ -77,9 +79,11 @@ impl GroqLlmFormatter {
                     .await?;
 
                 let status = resp.status();
-                // Capture the header before `text()` consumes the response.
+                // Capture the header before the body reader consumes the response.
                 let retry_after = crate::util::retry_after_secs(resp.headers());
-                let text = resp.text().await?;
+                let text =
+                    crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES)
+                        .await?;
                 if status == reqwest::StatusCode::UNAUTHORIZED {
                     return Err(AppError::new(
                         ErrorCode::LlmApiKeyInvalid,
@@ -159,8 +163,9 @@ impl LlmFormatter for GroqLlmFormatter {
 
     async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String> {
         let system = translation_prompt(source, target);
+        let user = format!("{}\n\n{}", translation_user_prefix(), text);
         let max_tokens = effective_max_tokens(word_count(text), self.config.max_tokens);
-        self.chat(&system, text, max_tokens).await
+        self.chat(&system, &user, max_tokens).await
     }
 
     fn name(&self) -> &'static str {

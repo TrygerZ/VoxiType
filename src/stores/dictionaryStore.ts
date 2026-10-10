@@ -45,24 +45,36 @@ export const useDictionaryStore = create<DictionaryStore>((set) => {
     add: async (entry) => {
       // Bump so a stale in-flight load cannot overwrite the post-add list.
       // Clearing `loading` releases the flag the discarded load would leave set.
+      // On failure the discarded load's clear is skipped, so the catch clears it
+      // too before rethrowing; otherwise `loading` would stay stuck true.
       const seq = ++requestSeq;
-      await addDictionaryWord(entry);
-      const entries = await getDictionary();
-      if (seq === requestSeq) {
-        set({ entries, loading: false });
+      try {
+        await addDictionaryWord(entry);
+        const entries = await getDictionary();
+        if (seq === requestSeq) {
+          set({ entries, loading: false });
+        }
+      } catch (err) {
+        set({ loading: false });
+        throw err;
       }
     },
 
     // Bump so a stale in-flight load cannot commit afterwards and resurrect
     // the deleted entry. Clearing `loading` releases the flag that discarded
-    // load would otherwise leave set.
+    // load would otherwise leave set; the catch does the same on failure.
     remove: async (id) => {
       ++requestSeq;
-      await deleteDictionaryWord(id);
-      set((s) => ({
-        entries: s.entries.filter((e) => e.id !== id),
-        loading: false,
-      }));
+      try {
+        await deleteDictionaryWord(id);
+        set((s) => ({
+          entries: s.entries.filter((e) => e.id !== id),
+          loading: false,
+        }));
+      } catch (err) {
+        set({ loading: false });
+        throw err;
+      }
     },
   };
 });

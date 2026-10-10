@@ -114,6 +114,7 @@ export interface KnownSettings {
   groq_api_key?: string;
   groq_api_key_set?: boolean;
   stt_engine?: string;
+  stt_model?: string;
   stt_language?: string;
   whisper_cpp_binary_path?: string;
   whisper_cpp_model_path?: string;
@@ -130,7 +131,10 @@ export interface KnownSettings {
   per_app_mode?: boolean;
   floating_widget?: boolean;
   floating_widget_auto_hide_seconds?: number;
+  floating_widget_pos?: { x: number; y: number } | null;
   onboarding_completed?: boolean;
+  auto_start?: boolean;
+  auto_update?: boolean;
   mic_device?: string;
   hotkey?: unknown;
   /** Backend-written: true when the global hotkey failed to register at startup. */

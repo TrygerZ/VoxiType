@@ -17,6 +17,7 @@ interface MicrophoneStepProps {
   step: Step;
   currentStepIdx: number;
   t: TFunc;
+  busy: boolean;
   selectedDevice: string;
   onDeviceChange: (deviceId: string) => void;
   onBack: () => void;
@@ -100,7 +101,7 @@ export function MicrophoneStep(props: MicrophoneStepProps) {
           <Button variant="ghost" size="lg" onClick={props.onSkip}>
             {t("onboarding.skip")}
           </Button>
-          <Button variant="primary" size="lg" onClick={continueStep}>
+          <Button variant="primary" size="lg" disabled={props.busy} onClick={continueStep}>
             <Check className="h-4 w-4" />
             {t("onboarding.microphone.continue")}
             <ChevronRight className="h-4 w-4" />

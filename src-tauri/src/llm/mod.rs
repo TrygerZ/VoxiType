@@ -31,4 +31,16 @@ pub trait LlmFormatter: Send + Sync {
     /// actually won, so history and telemetry are not misattributed. Before any
     /// call it reports the default (primary) engine.
     fn name(&self) -> &'static str;
+    /// Whether this engine can actually translate. Engines that ignore the
+    /// request (rule-based cleaner, off) return false so the pipeline can warn
+    /// the user instead of silently inserting untranslated text.
+    fn supports_translation(&self) -> bool {
+        true
+    }
+    /// Whether the last completed `translate` call silently returned the input
+    /// unchanged because the winning engine cannot translate. Only `translate`
+    /// updates this; `format` leaves it untouched.
+    fn last_translate_fell_back(&self) -> bool {
+        false
+    }
 }

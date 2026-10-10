@@ -83,9 +83,11 @@ impl GroqSttEngine {
                         .await?;
 
                     let status = resp.status();
-                    // Capture the header before `text()` consumes the response.
+                    // Capture the header before the body reader consumes the response.
                     let retry_after = crate::util::retry_after_secs(resp.headers());
-                    let body = resp.text().await?;
+                    let body =
+                        crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES)
+                            .await?;
 
                     if status == reqwest::StatusCode::UNAUTHORIZED {
                         return Err(AppError::new(
@@ -122,7 +124,6 @@ impl GroqSttEngine {
             confidence,
             language,
             duration_ms: parsed.duration.map(|d| (d * 1000.0) as u64).unwrap_or(0),
-            raw_response: Some(body),
         })
     }
 }
@@ -478,14 +479,12 @@ mod tests {
             confidence: Some(0.3),
             language: "id".to_string(),
             duration_ms: 0,
-            raw_response: None,
         };
         let en_res = TranscriptionResult {
             text: "the system is working today".to_string(),
             confidence: Some(0.85),
             language: "en".to_string(),
             duration_ms: 0,
-            raw_response: None,
         };
         let winner = pick_better_transcription(id_res, en_res);
         assert_eq!(winner.language, "en");
@@ -500,14 +499,12 @@ mod tests {
             confidence: Some(0.85),
             language: "id".to_string(),
             duration_ms: 0,
-            raw_response: None,
         };
         let en_res = TranscriptionResult {
             text: "sahya pergee ke pasar".to_string(),
             confidence: Some(0.3),
             language: "en".to_string(),
             duration_ms: 0,
-            raw_response: None,
         };
         let winner = pick_better_transcription(id_res, en_res);
         assert_eq!(winner.language, "id");
@@ -549,7 +546,6 @@ mod tests {
             confidence: Some(0.85),
             language: "id".to_string(),
             duration_ms: 1000,
-            raw_response: None,
         };
         // High confidence ID speech must NOT trigger secondary English verification.
         assert!(!should_verify_id_transcription("auto", &high_conf));
@@ -559,7 +555,6 @@ mod tests {
             confidence: Some(0.40),
             language: "id".to_string(),
             duration_ms: 1000,
-            raw_response: None,
         };
         // Low confidence ID detection MUST trigger secondary English verification.
         assert!(should_verify_id_transcription("auto", &low_conf));
@@ -570,7 +565,6 @@ mod tests {
             confidence: Some(ID_VERIFICATION_CONFIDENCE_THRESHOLD),
             language: "id".to_string(),
             duration_ms: 1000,
-            raw_response: None,
         };
         assert!(!should_verify_id_transcription("auto", &boundary));
 
@@ -580,7 +574,6 @@ mod tests {
             confidence: None,
             language: "id".to_string(),
             duration_ms: 1000,
-            raw_response: None,
         };
         assert!(should_verify_id_transcription("auto", &unknown));
 
@@ -593,7 +586,6 @@ mod tests {
             confidence: Some(0.40),
             language: "en".to_string(),
             duration_ms: 1000,
-            raw_response: None,
         };
         assert!(!should_verify_id_transcription("auto", &en_res));
     }
@@ -653,14 +645,12 @@ mod tests {
             confidence: None,
             language: "id".to_string(),
             duration_ms: 0,
-            raw_response: None,
         };
         let en_res = TranscriptionResult {
             text: "the system is working".to_string(),
             confidence: Some(0.9),
             language: "en".to_string(),
             duration_ms: 0,
-            raw_response: None,
         };
         let winner = pick_better_transcription(id_res, en_res);
         assert_eq!(winner.language, "en");

@@ -14,6 +14,7 @@ interface Props {
   step: Step;
   currentStepIdx: number;
   t: TFunc;
+  busy: boolean;
   hotkeyKey: string;
   onBack: () => void;
   onContinue: () => void;
@@ -24,6 +25,7 @@ export function SmokeTestStep({
   step,
   currentStepIdx,
   t,
+  busy,
   hotkeyKey,
   onBack,
   onContinue,
@@ -46,9 +48,9 @@ export function SmokeTestStep({
     const timeout = window.setTimeout(() => setTimedOut(true), 30_000);
     return () => {
       window.clearTimeout(timeout);
-      void Promise.all(listeners)
-        .then((fns) => fns.forEach((fn) => fn()))
-        .catch(() => {});
+      // Unlisten independently: one rejected registration must not stop the
+      // siblings that did register from being torn down (leak on unmount).
+      listeners.forEach((p) => p.then((fn) => fn()).catch(() => {}));
     };
   }, []);
 
@@ -76,7 +78,7 @@ export function SmokeTestStep({
           <Button
             variant="primary"
             size="lg"
-            disabled={!text}
+            disabled={!text || busy}
             onClick={onContinue}
           >
             {t("onboarding.smoke_test.continue")}

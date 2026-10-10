@@ -18,6 +18,10 @@ pub struct BatchOutcome {
     /// wrapper this is the engine that actually won, not the configured one.
     pub llm_engine: String,
     pub inject: InjectResult,
+    /// Whether the requested translation silently fell back to untranslated
+    /// text: the selected engine cannot translate, or its rule-based fallback
+    /// returned the input unchanged.
+    pub translation_fell_back: bool,
 }
 
 /// Optional translation step applied after formatting.
@@ -39,6 +43,10 @@ pub struct PostProcess {
 ///
 /// Replacements and snippet expansion run after formatting/translation so
 /// custom spellings and shortcuts always win over the LLM's output.
+///
+/// `verify_target` runs immediately before injection so the caller can
+/// re-check the target window at paste time, after the multi-second STT/LLM
+/// delay. Its error aborts the batch without injecting.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_batch(
     audio: &[f32],
@@ -49,9 +57,19 @@ pub async fn run_batch(
     post: &PostProcess,
     translate: Option<&TranslateOpts>,
     injector: Arc<dyn TextInjector>,
+    verify_target: impl FnOnce() -> Result<()>,
 ) -> Result<BatchOutcome> {
     let transcription = stt.transcribe(audio, stt_config).await?;
-    run_batch_with_transcription(transcription, llm, mode, post, translate, injector).await
+    run_batch_with_transcription(
+        transcription,
+        llm,
+        mode,
+        post,
+        translate,
+        injector,
+        verify_target,
+    )
+    .await
 }
 
 /// Like [`run_batch`] but skips STT, reusing an already-computed transcription.
@@ -59,6 +77,10 @@ pub async fn run_batch(
 /// Used by command-mode, which must transcribe up front to detect editing
 /// commands; on a non-command phrase it falls through to normal injection
 /// without paying for a second transcription.
+///
+/// `verify_target` runs immediately before injection so the caller can
+/// re-check the target window at paste time, after the multi-second STT/LLM
+/// delay. It is not called for empty text, since no injection happens then.
 pub async fn run_batch_with_transcription(
     transcription: TranscriptionResult,
     llm: Arc<dyn LlmFormatter>,
@@ -66,7 +88,9 @@ pub async fn run_batch_with_transcription(
     post: &PostProcess,
     translate: Option<&TranslateOpts>,
     injector: Arc<dyn TextInjector>,
+    verify_target: impl FnOnce() -> Result<()>,
 ) -> Result<BatchOutcome> {
+    let mut translation_fell_back = false;
     let formatted_text = if transcription.text.trim().is_empty() {
         String::new()
     } else {
@@ -79,7 +103,8 @@ pub async fn run_batch_with_transcription(
                 // matches the target language already (e.g. STT misdetected
                 // the language but the text is already in the target). This
                 // prevents a "leaking" translation that converts e.g. English
-                // to Indonesian when the user did not intend it.
+                // to Indonesian when the user did not intend it. A skipped
+                // translation is not a fallback, so it leaves the flag false.
                 let text_lang = detect_text_language(&formatted);
                 if text_lang == opts.target {
                     tracing::info!(
@@ -87,7 +112,7 @@ pub async fn run_batch_with_transcription(
                         opts.target
                     );
                     formatted
-                } else {
+                } else if llm.supports_translation() {
                     if is_unresolved_language(&transcription.language) {
                         tracing::info!(
                             "STT returned unresolved language '{}'; \
@@ -95,8 +120,21 @@ pub async fn run_batch_with_transcription(
                             transcription.language
                         );
                     }
-                    llm.translate(&formatted, &transcription.language, &opts.target)
-                        .await?
+                    let out = llm
+                        .translate(&formatted, &transcription.language, &opts.target)
+                        .await?;
+                    translation_fell_back = llm.last_translate_fell_back();
+                    out
+                } else {
+                    // The selected engine cannot translate; skip the call and
+                    // keep the formatted text, reporting the fallback instead
+                    // of pretending the text was translated.
+                    tracing::warn!(
+                        "Engine '{}' does not support translation; inserting formatted text",
+                        llm.name()
+                    );
+                    translation_fell_back = true;
+                    formatted
                 }
             }
             _ => formatted,
@@ -113,6 +151,9 @@ pub async fn run_batch_with_transcription(
             duration_ms: 0,
         }
     } else {
+        // The focused window may have changed during the multi-second
+        // STT/LLM delay; abort before touching the clipboard if it did.
+        verify_target()?;
         // Injection blocks the OS event loop for hundreds of milliseconds
         // (clipboard propagation sleeps + enigo keystroke simulation), so it
         // must never run directly on a tokio worker thread.
@@ -131,6 +172,7 @@ pub async fn run_batch_with_transcription(
         formatted_text,
         llm_engine,
         inject,
+        translation_fell_back,
     })
 }
 
@@ -203,17 +245,57 @@ mod tests {
         }
     }
 
+    /// Injector that counts calls so tests can assert whether injection ran.
+    #[derive(Default)]
+    struct RecordingInjector {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl RecordingInjector {
+        fn call_count(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl TextInjector for RecordingInjector {
+        fn inject(&self, text: &str) -> Result<InjectResult> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(InjectResult {
+                success: true,
+                strategy: InjectStrategy::Clipboard,
+                chars_injected: text.chars().count() as u32,
+                duration_ms: 1,
+            })
+        }
+        fn inject_keystroke(&self, text: &str) -> Result<InjectResult> {
+            self.inject(text)
+        }
+        fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
+            self.inject(text)
+        }
+    }
+
     /// Formatter that records every `translate` call so tests can assert
     /// whether translation actually ran, and tags translated output with
     /// the requested source/target pair.
     struct RecordingLlm {
         translate_calls: std::sync::Mutex<Vec<(String, String)>>,
+        supports_translation: bool,
     }
 
     impl RecordingLlm {
         fn new() -> Self {
             Self {
                 translate_calls: std::sync::Mutex::new(Vec::new()),
+                supports_translation: true,
+            }
+        }
+
+        /// A formatter that cannot translate, like the rule-based cleaner.
+        fn without_translation() -> Self {
+            Self {
+                supports_translation: false,
+                ..Self::new()
             }
         }
 
@@ -240,6 +322,10 @@ mod tests {
 
         fn name(&self) -> &'static str {
             "recording"
+        }
+
+        fn supports_translation(&self) -> bool {
+            self.supports_translation
         }
     }
 
@@ -275,6 +361,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -302,6 +389,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -322,6 +410,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -344,6 +433,7 @@ mod tests {
             &PostProcess::default(),
             None,
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -382,10 +472,202 @@ mod tests {
             &PostProcess::default(),
             None,
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
         // The fallback produced the text, so history must attribute it there.
         assert_eq!(out.llm_engine, "rule_based");
+    }
+
+    /// Always fails both `format` and `translate`, like an unreachable cloud
+    /// engine, so the wrapper falls back to the rule-based cleaner.
+    struct DownPrimary;
+    #[async_trait]
+    impl LlmFormatter for DownPrimary {
+        async fn format(&self, _t: &str, _m: &LlmMode, _l: &str) -> Result<String> {
+            Err(AppError::llm_connection_refused("down"))
+        }
+        async fn translate(&self, _t: &str, _s: &str, _d: &str) -> Result<String> {
+            Err(AppError::llm_connection_refused("down"))
+        }
+        fn name(&self) -> &'static str {
+            "cloud_llm"
+        }
+    }
+
+    #[tokio::test]
+    async fn engine_without_translation_reports_fallback_and_skips_translate() {
+        let llm = Arc::new(RecordingLlm::without_translation());
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            llm.clone(),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            Arc::new(MockInjector),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        // The engine cannot translate, so no call is made and the original
+        // formatted text is inserted with the fallback flagged.
+        assert!(out.translation_fell_back);
+        assert_eq!(llm.translate_call_count(), 0);
+        assert_eq!(out.formatted_text, "this is a test of the system");
+    }
+
+    #[tokio::test]
+    async fn no_translation_request_leaves_fallback_flag_false() {
+        let llm = Arc::new(RecordingLlm::new());
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            llm,
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            Arc::new(MockInjector),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert!(!out.translation_fell_back);
+    }
+
+    #[tokio::test]
+    async fn anti_leak_skip_does_not_set_fallback_flag() {
+        let llm = Arc::new(RecordingLlm::new());
+        // Text already in the target language: the anti-leak guard skips the
+        // call, which is not a fallback and must leave the flag false.
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("saya pergi ke pasar dengan mereka", "unknown"),
+            llm.clone(),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            Arc::new(MockInjector),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(llm.translate_call_count(), 0);
+        assert!(!out.translation_fell_back);
+    }
+
+    #[tokio::test]
+    async fn fallback_win_reports_translation_fallback() {
+        use crate::llm::{FallbackFormatter, LlmFactory, RuleBasedConfig};
+        let primary: Arc<dyn LlmFormatter> = Arc::new(DownPrimary);
+        let llm = Arc::new(FallbackFormatter::new(
+            primary,
+            LlmFactory::rule_based(RuleBasedConfig::default()),
+        ));
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            llm,
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            Arc::new(MockInjector),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        // The rule-based fallback returned the input unchanged, so the text
+        // was never translated.
+        assert!(out.translation_fell_back);
+    }
+
+    #[tokio::test]
+    async fn successful_primary_translation_leaves_fallback_flag_false() {
+        use crate::llm::{FallbackFormatter, LlmFactory, RuleBasedConfig};
+        let primary: Arc<dyn LlmFormatter> = Arc::new(RecordingLlm::new());
+        let llm = Arc::new(FallbackFormatter::new(
+            primary,
+            LlmFactory::rule_based(RuleBasedConfig::default()),
+        ));
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            llm,
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            Some(&TranslateOpts {
+                target: "id".into(),
+            }),
+            Arc::new(MockInjector),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert!(!out.translation_fell_back);
+    }
+
+    #[tokio::test]
+    async fn verify_target_error_aborts_before_injection() {
+        let injector = Arc::new(RecordingInjector::default());
+        let result = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            Arc::new(RecordingLlm::new()),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            injector.clone(),
+            || Err(AppError::injection("window changed")),
+        )
+        .await;
+        match result {
+            Ok(_) => panic!("expected the verify error to abort the batch"),
+            Err(e) => assert_eq!(e.code, crate::error::ErrorCode::InjectionFailed),
+        }
+        assert_eq!(injector.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn verify_target_ok_allows_injection() {
+        let injector = Arc::new(RecordingInjector::default());
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            Arc::new(RecordingLlm::new()),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            injector.clone(),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(injector.call_count(), 1);
+        assert!(out.inject.success);
+    }
+
+    #[tokio::test]
+    async fn empty_transcription_skips_verify_and_injection() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let injector = Arc::new(RecordingInjector::default());
+        let verify_called = Arc::new(AtomicBool::new(false));
+        let flag = verify_called.clone();
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("   ", "en"),
+            Arc::new(RecordingLlm::new()),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            injector.clone(),
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!verify_called.load(Ordering::SeqCst));
+        assert_eq!(injector.call_count(), 0);
+        assert!(out.inject.success);
     }
 }

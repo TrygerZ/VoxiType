@@ -111,6 +111,38 @@ describe("dictionaryStore", () => {
     expect(useDictionaryStore.getState().loading).toBe(false);
   });
 
+  it("clears loading when add rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (entries: DictionaryEntry[]) => void;
+    const stalePromise = new Promise<DictionaryEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getDictionary).mockImplementationOnce(() => stalePromise);
+    const load = useDictionaryStore.getState().load();
+    expect(useDictionaryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.addDictionaryWord).mockRejectedValueOnce(
+      new Error("add failed"),
+    );
+    await expect(
+      useDictionaryStore.getState().add({
+        id: "3",
+        word: "new",
+        pronunciation: null,
+        category: "tech",
+        replacement: "new",
+        language: "en",
+        usage_count: 0,
+        is_active: true,
+      }),
+    ).rejects.toThrow("add failed");
+    expect(useDictionaryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useDictionaryStore.getState().loading).toBe(false);
+  });
+
   it("does not resurrect a removed entry when a stale load resolves late", async () => {
     let resolveStale!: (entries: DictionaryEntry[]) => void;
     const stalePromise = new Promise<DictionaryEntry[]>((resolve) => {
@@ -154,6 +186,29 @@ describe("dictionaryStore", () => {
 
     vi.mocked(tauri.deleteDictionaryWord).mockResolvedValueOnce(undefined);
     await useDictionaryStore.getState().remove("1");
+    expect(useDictionaryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useDictionaryStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when remove rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (entries: DictionaryEntry[]) => void;
+    const stalePromise = new Promise<DictionaryEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getDictionary).mockImplementationOnce(() => stalePromise);
+    const load = useDictionaryStore.getState().load();
+    expect(useDictionaryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteDictionaryWord).mockRejectedValueOnce(
+      new Error("delete failed"),
+    );
+    await expect(
+      useDictionaryStore.getState().remove("1"),
+    ).rejects.toThrow("delete failed");
     expect(useDictionaryStore.getState().loading).toBe(false);
 
     resolveStale([]);

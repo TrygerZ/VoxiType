@@ -125,12 +125,14 @@ fn decrypt_api_key_str(raw: &str, master_key: &[u8; 32]) -> Result<String> {
     if raw.is_empty() {
         return Ok(String::new());
     }
-    crate::crypto::decrypt_api_key(raw, master_key).map_err(|e| {
+    let decrypted = crate::crypto::decrypt_api_key(raw, master_key).map_err(|e| {
         tracing::error!("Failed to decrypt API key: {e}");
         AppError::api_key_decrypt_failed(
             "Failed to decrypt stored Groq API key: master key mismatch or corrupted key",
         )
-    })
+    })?;
+    // Trim so legacy rows written with stray whitespace self-heal at read time.
+    Ok(decrypted.trim().to_string())
 }
 
 pub fn decrypted_api_key(state: &AppStateInner) -> Result<String> {
@@ -477,6 +479,29 @@ pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
 // Core recording flow
 // ---------------------------------------------------------------
 
+/// Decide whether a dictation may still inject into the window that was
+/// focused at recording start.
+///
+/// Unlike command mode (which stays fail-closed and aborts when no handle
+/// exists), dictation proceeds unverified when no window handle was captured,
+/// since the audio was already recorded and discarding it would surprise the
+/// user. When a handle was captured, a changed foreground window aborts the
+/// paste with a visible error.
+fn verify_dictation_target(expected: Option<isize>, current: Option<isize>) -> Result<()> {
+    let Some(expected) = expected else {
+        tracing::warn!(
+            "No target window captured at recording start; skipping window verification"
+        );
+        return Ok(());
+    };
+    if current != Some(expected) {
+        return Err(AppError::injection(
+            "Dictation aborted: the focused window changed during processing",
+        ));
+    }
+    Ok(())
+}
+
 /// Process the captured audio through STT → LLM → injection → persist → emit.
 ///
 /// `session_generation` identifies the recording this audio belongs to.
@@ -587,6 +612,9 @@ pub async fn process_audio<R: Runtime>(
     let stt_name = stt.name().to_string();
     let mode_id = mode.id();
 
+    // Re-check the target window at paste time, after the multi-second
+    // STT/LLM delay. The two match arms are exclusive, so each may move the
+    // closure independently.
     let outcome = match precomputed {
         Some(tr) => {
             batch::run_batch_with_transcription(
@@ -596,6 +624,12 @@ pub async fn process_audio<R: Runtime>(
                 &post,
                 translate_opts.as_ref(),
                 injector.clone(),
+                || {
+                    verify_dictation_target(
+                        state.pipeline.active_window_id(),
+                        crate::active_window::foreground_window_id(),
+                    )
+                },
             )
             .await
         }
@@ -609,6 +643,12 @@ pub async fn process_audio<R: Runtime>(
                 &post,
                 translate_opts.as_ref(),
                 injector,
+                || {
+                    verify_dictation_target(
+                        state.pipeline.active_window_id(),
+                        crate::active_window::foreground_window_id(),
+                    )
+                },
             )
             .await
         }
@@ -624,7 +664,7 @@ pub async fn process_audio<R: Runtime>(
                 text_raw: out.transcription.text.clone(),
                 text_formatted: out.formatted_text.clone(),
                 source_lang: out.transcription.language.clone(),
-                target_lang: if translate_enabled {
+                target_lang: if translate_enabled && !out.translation_fell_back {
                     Some(translate_target.clone())
                 } else {
                     None
@@ -666,6 +706,13 @@ pub async fn process_audio<R: Runtime>(
                 out.transcription.duration_ms as i64,
             );
             events::emit_state(&app, state.pipeline.state_tag());
+            if out.translation_fell_back && !out.formatted_text.is_empty() {
+                events::emit_notice(
+                    &app,
+                    "translation_fallback",
+                    "Translation failed; inserted the original text",
+                );
+            }
             crate::overlay::reset_idle_timer(&state);
             hide_overlay_soon(app.clone());
         }
@@ -829,12 +876,20 @@ fn announce_capture_ready(state: &AppStateInner, started_at: Instant) {
 }
 
 fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
+    // Capture the recording identity once: a stop+start inside one 50 ms sleep
+    // would otherwise let this emitter wake, see Recording again, and keep
+    // running beside the new emitter. Comparing against the captured generation
+    // exits on stop, error, and supersession alike.
+    let initial_generation = match app.state::<AppStateInner>().pipeline.recording_generation() {
+        Some(generation) => generation,
+        None => return,
+    };
     tauri::async_runtime::spawn(async move {
         loop {
             let mut stop = false;
             {
                 let state = app.state::<AppStateInner>();
-                if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Recording {
+                if state.pipeline.recording_generation() != Some(initial_generation) {
                     break;
                 }
                 if let Some(dur) = state.pipeline.recording_duration() {
@@ -1629,5 +1684,47 @@ mod tests {
         release_tx.send(()).expect("release blocking task");
         let res = blocking_handle.await.expect("spawn_blocking joins cleanly");
         assert_eq!(res.unwrap(), false);
+    }
+
+    #[test]
+    fn decrypt_api_key_str_roundtrips_trimmed() {
+        let key = [4u8; 32];
+        let enc = crate::crypto::encrypt_api_key("key123", &key).unwrap();
+        assert_eq!(decrypt_api_key_str(&enc, &key).unwrap(), "key123");
+    }
+
+    #[test]
+    fn decrypt_api_key_str_trims_legacy_whitespace() {
+        let key = [7u8; 32];
+        // A legacy row encrypted before the write-side trim still carries spaces.
+        let enc = crate::crypto::encrypt_api_key("  key123  ", &key).unwrap();
+        assert_eq!(decrypt_api_key_str(&enc, &key).unwrap(), "key123");
+    }
+
+    #[test]
+    fn decrypt_api_key_str_keeps_empty() {
+        assert_eq!(decrypt_api_key_str("", &[8u8; 32]).unwrap(), "");
+    }
+
+    #[test]
+    fn verify_dictation_target_no_captured_window_proceeds() {
+        assert!(verify_dictation_target(None, None).is_ok());
+    }
+
+    #[test]
+    fn verify_dictation_target_unchanged_window_proceeds() {
+        assert!(verify_dictation_target(Some(5), Some(5)).is_ok());
+    }
+
+    #[test]
+    fn verify_dictation_target_changed_window_aborts() {
+        let err = verify_dictation_target(Some(5), Some(6)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InjectionFailed);
+    }
+
+    #[test]
+    fn verify_dictation_target_lost_window_aborts() {
+        let err = verify_dictation_target(Some(5), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InjectionFailed);
     }
 }

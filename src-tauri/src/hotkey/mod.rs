@@ -5,15 +5,29 @@ pub mod config;
 pub use config::{HotkeyConfig, HotkeyMode};
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::error::{AppError, Result};
+use crate::util::MutexExt;
 
 static PTT_KEY_DOWN: AtomicBool = AtomicBool::new(false);
 
+/// Serializes PTT event evaluation against hotkey rebinds.
+///
+/// Invariant: dispatch acquires this lock non-blockingly and skips the event on
+/// contention; rebind holds the lock across its register/unregister/persist swap.
+/// A blocking acquire here would invert lock order against the plugin's own
+/// `shortcuts` mutex (the plugin holds it while invoking the dispatch handler),
+/// so dispatch must never block while that mutex is held.
+static PTT_EVENT_LOCK: Mutex<()> = Mutex::new(());
+
 /// Reset the PTT key-down guard flag.
+///
+/// Plain store: callers already holding [`PTT_EVENT_LOCK`] must not re-lock, so
+/// this never acquires the event lock.
 pub fn reset_key_down() {
     PTT_KEY_DOWN.store(false, Ordering::SeqCst);
 }
@@ -62,6 +76,15 @@ pub fn ptt_action(
 }
 
 fn dispatch_shortcut_event<R: Runtime>(app: &AppHandle<R>, mode: HotkeyMode, state: ShortcutState) {
+    // Non-blocking on purpose: the plugin holds its own shortcuts mutex while
+    // calling this handler, and rebind holds PTT_EVENT_LOCK while calling plugin
+    // functions, so a blocking acquire here would deadlock (lock-order inversion).
+    // Contention only happens during an active rebind (user-initiated, ms), and
+    // dropping the racing event is the safe choice: no half-swapped evaluation.
+    let Some(_guard) = PTT_EVENT_LOCK.try_lock_recover() else {
+        tracing::debug!("Hotkey event dropped: rebind in progress");
+        return;
+    };
     match mode {
         HotkeyMode::Ptt => {
             let is_recording = app.state::<crate::AppStateInner>().pipeline.state_tag()
@@ -92,6 +115,7 @@ pub fn parse_shortcut(accelerator: &str) -> Result<Shortcut> {
 }
 
 /// Check whether two accelerator strings represent identical key combinations.
+#[cfg(test)]
 pub fn accelerators_equal(a: &str, b: &str) -> bool {
     match (parse_shortcut(a), parse_shortcut(b)) {
         (Ok(sc_a), Ok(sc_b)) => sc_a == sc_b,
@@ -104,7 +128,6 @@ fn register_shortcut<R: Runtime>(
     shortcut: Shortcut,
     cfg: &HotkeyConfig,
 ) -> Result<()> {
-    reset_key_down();
     let mode = cfg.mode;
     let gs = app.global_shortcut();
     let app_handle = app.clone();
@@ -126,6 +149,9 @@ fn unregister_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: Shortcut) -> Re
 
 /// Register the global hotkey on startup.
 pub fn register<R: Runtime>(app: &AppHandle<R>, cfg: &HotkeyConfig) -> Result<()> {
+    // The flag is false at startup, but clear it explicitly so a restart path
+    // that reuses this function never inherits a stale key-down.
+    reset_key_down();
     let shortcut = parse_shortcut(&cfg.key)?;
     register_shortcut(app, shortcut, cfg)
 }
@@ -136,6 +162,34 @@ pub fn is_registered<R: Runtime>(app: &AppHandle<R>, accelerator: &str) -> bool 
     parse_shortcut(accelerator)
         .map(|shortcut| app.global_shortcut().is_registered(shortcut))
         .unwrap_or(false)
+}
+
+/// Unregister `old` and verify it is gone; retry once, then fail.
+///
+/// A failed `unregister` call does not guarantee the binding survived, so the
+/// authoritative check is `is_registered`. If the binding is still present
+/// after two attempts the old hotkey would fire alongside the new one, so this
+/// reports a conflict instead of silently leaving both live.
+fn ensure_unregistered(
+    mut unregister: impl FnMut() -> Result<()>,
+    is_registered: impl Fn() -> bool,
+) -> Result<()> {
+    if let Err(e) = unregister() {
+        tracing::warn!("Unregister reported an error; verifying binding state: {e}");
+    }
+    if !is_registered() {
+        return Ok(());
+    }
+
+    if let Err(e) = unregister() {
+        tracing::warn!("Unregister retry reported an error; verifying binding state: {e}");
+    }
+    if is_registered() {
+        return Err(AppError::hotkey_conflict(
+            "Failed to unregister the previous hotkey; it is still active",
+        ));
+    }
+    Ok(())
 }
 
 /// Rebind to a candidate hotkey using a transactional register-then-swap pattern:
@@ -176,8 +230,15 @@ fn rebind_identical_accelerator<R: Runtime, F>(
 where
     F: FnOnce() -> Result<()>,
 {
+    // Hold the event lock across the whole swap so no PTT event can evaluate
+    // against a half-swapped binding. Deadlock check: register_shortcut,
+    // unregister_shortcut, and persist never take this lock or re-enter
+    // dispatch.
+    let _guard = PTT_EVENT_LOCK.lock_recover();
+
     let mode_changed = old_cfg.is_some_and(|old| old.mode != new_cfg.mode);
     if !mode_changed {
+        // No binding change: the key-down flag stays as it was.
         return persist();
     }
 
@@ -197,6 +258,9 @@ where
         }
         return Err(e);
     }
+    // Success: the new binding is the only live one, so clear the stale flag.
+    // On rollback above the previous binding and flag are left untouched.
+    reset_key_down();
     Ok(())
 }
 
@@ -211,12 +275,25 @@ fn rebind_swap_with_rollback<R: Runtime, F>(
 where
     F: FnOnce() -> Result<()>,
 {
+    // Hold the event lock across the whole swap so no PTT event can evaluate
+    // against a half-swapped binding. Deadlock check: register_shortcut,
+    // unregister_shortcut, and persist never take this lock or re-enter
+    // dispatch.
+    let _guard = PTT_EVENT_LOCK.lock_recover();
+
     // Step 1: Register candidate first. Old binding is retained if this fails.
     register_shortcut(app, new_sc, new_cfg)?;
 
     // Step 2: Candidate registered successfully; unregister old binding.
     if let Some(old) = old_sc {
-        let _ = unregister_shortcut(app, old);
+        if let Err(e) = ensure_unregistered(
+            || unregister_shortcut(app, old),
+            || app.global_shortcut().is_registered(old),
+        ) {
+            // Rollback: drop the candidate so only the previous binding remains.
+            let _ = unregister_shortcut(app, new_sc);
+            return Err(e);
+        }
     }
 
     // Step 3: Persist new setting to storage.
@@ -229,6 +306,9 @@ where
         return Err(save_err);
     }
 
+    // Success: the new binding is the only live one, so clear the stale flag.
+    // On rollback above the previous binding and flag are left untouched.
+    reset_key_down();
     Ok(())
 }
 
@@ -398,5 +478,81 @@ mod tests {
     fn test_accelerators_equal_invalid() {
         assert!(!accelerators_equal("InvalidKey", "Ctrl+Space"));
         assert!(!accelerators_equal("InvalidKey1", "InvalidKey2"));
+    }
+
+    #[test]
+    fn ensure_unregistered_recovers_after_first_error() {
+        use std::cell::Cell;
+        let registered = Cell::new(true);
+        let calls = Cell::new(0);
+        let result = ensure_unregistered(
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 1 {
+                    // First attempt errors and leaves the binding registered,
+                    // forcing the retry.
+                    return Err(AppError::hotkey_conflict("boom"));
+                }
+                registered.set(false);
+                Ok(())
+            },
+            || registered.get(),
+        );
+        assert!(result.is_ok());
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn ensure_unregistered_retries_once_then_fails() {
+        use std::cell::Cell;
+        let registered = Cell::new(true);
+        let calls = Cell::new(0);
+        let result = ensure_unregistered(
+            || {
+                calls.set(calls.get() + 1);
+                Err(AppError::hotkey_conflict("boom"))
+            },
+            || registered.get(),
+        );
+        assert!(matches!(
+            result,
+            Err(AppError {
+                code: crate::error::ErrorCode::HotkeyConflict,
+                ..
+            })
+        ));
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn ensure_unregistered_ok_when_gone_first_try() {
+        use std::cell::Cell;
+        let registered = Cell::new(true);
+        let calls = Cell::new(0);
+        let result = ensure_unregistered(
+            || {
+                calls.set(calls.get() + 1);
+                registered.set(false);
+                Ok(())
+            },
+            || registered.get(),
+        );
+        assert!(result.is_ok());
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn ensure_unregistered_ok_when_error_but_binding_gone() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let result = ensure_unregistered(
+            || {
+                calls.set(calls.get() + 1);
+                Err(AppError::hotkey_conflict("boom"))
+            },
+            || false,
+        );
+        assert!(result.is_ok());
+        assert_eq!(calls.get(), 1);
     }
 }

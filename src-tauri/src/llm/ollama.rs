@@ -14,7 +14,9 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::prompts::{format_user_prefix, system_prompt, translation_prompt};
+use super::prompts::{
+    format_user_prefix, system_prompt, translation_prompt, translation_user_prefix,
+};
 use super::types::{LlmMode, OllamaConfig};
 use super::LlmFormatter;
 use crate::error::{AppError, Result};
@@ -63,7 +65,8 @@ impl OllamaFormatter {
                 }
             })?;
         let status = resp.status();
-        let text = resp.text().await?;
+        let text =
+            crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES).await?;
         if !status.is_success() {
             let safe_text = crate::util::sanitize_error_body(&text);
             return Err(AppError::llm(format!("Ollama error {status}: {safe_text}"))
@@ -97,7 +100,7 @@ impl LlmFormatter for OllamaFormatter {
 
     async fn translate(&self, text: &str, source: &str, target: &str) -> Result<String> {
         let system = translation_prompt(source, target);
-        let prompt = format!("Dictated text (format only, do NOT answer):\n\n{}", text);
+        let prompt = format!("{}\n\n{}", translation_user_prefix(), text);
         self.generate(&system, &prompt).await
     }
 

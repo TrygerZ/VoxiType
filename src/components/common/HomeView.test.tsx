@@ -38,6 +38,26 @@ describe("HomeView recording actions", () => {
     });
   });
 
+  it("labels the translation target options consistently", () => {
+    useSettingsStore.setState({
+      settings: { language: "en", translation_enabled: true },
+      loaded: true,
+      error: null,
+    });
+
+    render(<HomeView />);
+
+    expect(
+      screen.getByRole("option", { name: "English" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Bahasa Indonesia" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Indonesia" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("surfaces start recording failure as toast", async () => {
     vi.mocked(tauri.startRecording).mockRejectedValueOnce(
       new Error("microphone permission denied"),

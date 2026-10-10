@@ -5,45 +5,86 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use super::KeyGuard;
 use crate::error::{AppError, Result};
 
-/// Split text into the segments injected between explicit Return presses.
+/// One step in a keystroke plan: a run of printable text, or a named key press.
+#[derive(Debug, PartialEq, Eq)]
+enum KeystrokeAction {
+    Text(String),
+    Press(Key),
+}
+
+/// Build the injection plan for `text`.
 ///
-/// enigo 0.2.1's Windows `text()` returns early on `'\n'`, silently dropping
-/// the rest of the string, so newlines are split out here and typed as
-/// explicit Return key presses. `'\r'` is stripped because it is never
-/// injected. Empty lines are preserved so consecutive newlines still produce
-/// the right number of Return presses.
-pub fn newline_segments(text: &str) -> Vec<String> {
-    text.split('\n')
-        .map(|segment| segment.replace('\r', ""))
-        .collect()
+/// enigo 0.2.1's Windows `text()` returns early on `'\n'` and `'\t'`, silently
+/// discarding the rest of its buffer, so text around either separator would be
+/// lost and the injected count over-reported. The text is therefore split at
+/// those separators and each is emitted as an explicit key press. The scan runs
+/// left to right, drops `'\r'` (never injected), accumulates printable runs into
+/// `Text`, and emits one key action per separator. Consecutive separators emit
+/// consecutive key actions, and no empty `Text` entries are produced.
+fn keystroke_sequence(text: &str) -> Vec<KeystrokeAction> {
+    let mut actions = Vec::new();
+    let mut run = String::new();
+    for ch in text.chars() {
+        match ch {
+            '\n' => {
+                flush_text_run(&mut actions, &mut run);
+                actions.push(KeystrokeAction::Press(Key::Return));
+            }
+            '\t' => {
+                flush_text_run(&mut actions, &mut run);
+                actions.push(KeystrokeAction::Press(Key::Tab));
+            }
+            '\r' => {}
+            _ => run.push(ch),
+        }
+    }
+    flush_text_run(&mut actions, &mut run);
+    actions
+}
+
+/// Move the accumulated text run into the plan, if any, leaving it empty.
+fn flush_text_run(actions: &mut Vec<KeystrokeAction>, run: &mut String) {
+    if !run.is_empty() {
+        actions.push(KeystrokeAction::Text(std::mem::take(run)));
+    }
+}
+
+/// Count characters actually injected: one per text character plus one per key
+/// press (Return and Tab each count as one).
+fn injected_count(actions: &[KeystrokeAction]) -> u32 {
+    actions
+        .iter()
+        .map(|action| match action {
+            KeystrokeAction::Text(segment) => segment.chars().count() as u32,
+            KeystrokeAction::Press(_) => 1,
+        })
+        .sum()
 }
 
 /// Type text character-by-character (Unicode-aware).
 ///
 /// The returned count reflects only characters actually injected: one per
-/// segment character plus one per Return between segments.
+/// segment character plus one per key press between segments.
 pub fn type_text(text: &str) -> Result<u32> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|e| AppError::injection(format!("Enigo init failed: {e}")))?;
 
-    let segments = newline_segments(text);
-    let mut injected = 0u32;
-    for (index, segment) in segments.iter().enumerate() {
-        if index > 0 {
-            enigo
-                .key(Key::Return, Direction::Click)
-                .map_err(|e| AppError::injection(format!("Return click failed: {e}")))?;
-            injected += 1;
+    let actions = keystroke_sequence(text);
+    for action in &actions {
+        match action {
+            KeystrokeAction::Text(segment) => {
+                enigo
+                    .text(segment)
+                    .map_err(|e| AppError::injection(format!("Keystroke text failed: {e}")))?;
+            }
+            KeystrokeAction::Press(key) => {
+                enigo
+                    .key(*key, Direction::Click)
+                    .map_err(|e| AppError::injection(format!("Key click failed: {e}")))?;
+            }
         }
-        if segment.is_empty() {
-            continue;
-        }
-        enigo
-            .text(segment)
-            .map_err(|e| AppError::injection(format!("Keystroke text failed: {e}")))?;
-        injected += segment.chars().count() as u32;
     }
-    Ok(injected)
+    Ok(injected_count(&actions))
 }
 
 /// Simulate pressing Ctrl+V to paste.
@@ -70,27 +111,85 @@ pub fn paste() -> Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn single_line_is_one_segment() {
-        assert_eq!(newline_segments("hello world"), vec!["hello world"]);
+    fn text(value: &str) -> KeystrokeAction {
+        KeystrokeAction::Text(value.to_string())
     }
 
     #[test]
-    fn newlines_split_into_segments() {
+    fn single_line_is_one_text_run() {
+        assert_eq!(keystroke_sequence("hello world"), vec![text("hello world")]);
+    }
+
+    #[test]
+    fn tab_splits_into_key_press() {
         assert_eq!(
-            newline_segments("line one\nline two\nline three"),
-            vec!["line one", "line two", "line three"]
+            keystroke_sequence("a\tb"),
+            vec![text("a"), KeystrokeAction::Press(Key::Tab), text("b")]
+        );
+    }
+
+    #[test]
+    fn newline_splits_into_return() {
+        assert_eq!(
+            keystroke_sequence("a\nb"),
+            vec![text("a"), KeystrokeAction::Press(Key::Return), text("b")]
+        );
+    }
+
+    #[test]
+    fn mixed_separators_emit_consecutive_keys() {
+        assert_eq!(
+            keystroke_sequence("a\t\nb"),
+            vec![
+                text("a"),
+                KeystrokeAction::Press(Key::Tab),
+                KeystrokeAction::Press(Key::Return),
+                text("b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn leading_separator_has_no_empty_text() {
+        assert_eq!(
+            keystroke_sequence("\ta"),
+            vec![KeystrokeAction::Press(Key::Tab), text("a")]
+        );
+    }
+
+    #[test]
+    fn trailing_separator_has_no_empty_text() {
+        assert_eq!(
+            keystroke_sequence("a\t"),
+            vec![text("a"), KeystrokeAction::Press(Key::Tab)]
         );
     }
 
     #[test]
     fn carriage_returns_are_stripped() {
-        assert_eq!(newline_segments("a\r\nb"), vec!["a", "b"]);
-        assert_eq!(newline_segments("lone\rcr"), vec!["lonecr"]);
+        assert_eq!(
+            keystroke_sequence("a\r\tb"),
+            vec![text("a"), KeystrokeAction::Press(Key::Tab), text("b")]
+        );
+        assert_eq!(keystroke_sequence("lone\rcr"), vec![text("lonecr")]);
     }
 
     #[test]
-    fn blank_lines_are_preserved() {
-        assert_eq!(newline_segments("a\n\nb"), vec!["a", "", "b"]);
+    fn consecutive_newlines_emit_consecutive_returns() {
+        assert_eq!(
+            keystroke_sequence("a\n\nb"),
+            vec![
+                text("a"),
+                KeystrokeAction::Press(Key::Return),
+                KeystrokeAction::Press(Key::Return),
+                text("b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn count_includes_text_chars_and_key_presses() {
+        assert_eq!(injected_count(&keystroke_sequence("a\tb")), 3);
+        assert_eq!(injected_count(&keystroke_sequence("a\n\nb")), 4);
     }
 }

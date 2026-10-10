@@ -190,6 +190,7 @@ export function GeneralTab() {
       <SettingsGroup title={t("settings.general.appearance")}>
         <SettingsRow label={t("settings.general.lang")}>
           <Select
+            aria-label={t("settings.general.lang")}
             options={[
               { value: "id", label: "Bahasa Indonesia" },
               { value: "en", label: "English" },
@@ -206,6 +207,7 @@ export function GeneralTab() {
           <Switch
             checked={widgetEnabled}
             onChange={toggleFloatingWidget}
+            ariaLabel={t("settings.general.widget")}
           />
         </SettingsRow>
         <SettingsRow
@@ -392,6 +394,7 @@ export function GeneralTab() {
           <Switch
             checked={getBooleanSetting(settings.auto_start, false)}
             onChange={(v) => void invokeAction(() => update("auto_start", v))}
+            ariaLabel={t("settings.general.startup")}
           />
         </SettingsRow>
         <SettingsRow
@@ -401,6 +404,7 @@ export function GeneralTab() {
           <Switch
             checked={getBooleanSetting(settings.auto_update, true)}
             onChange={(v) => void invokeAction(() => update("auto_update", v))}
+            ariaLabel={t("settings.general.updates")}
           />
         </SettingsRow>
         <SettingsRow
@@ -410,6 +414,7 @@ export function GeneralTab() {
           <Switch
             checked={getBooleanSetting(settings.sound_cues, false)}
             onChange={(v) => void invokeAction(() => update("sound_cues", v))}
+            ariaLabel={t("settings.general.sound")}
           />
         </SettingsRow>
       </SettingsGroup>
@@ -422,6 +427,7 @@ export function GeneralTab() {
           <Switch
             checked={getBooleanSetting(settings.command_mode, false)}
             onChange={(v) => void invokeAction(() => update("command_mode", v))}
+            ariaLabel={t("settings.general.command")}
           />
         </SettingsRow>
         <SettingsRow
@@ -431,6 +437,7 @@ export function GeneralTab() {
           <Switch
             checked={getBooleanSetting(settings.telemetry, false)}
             onChange={(v) => void invokeAction(() => update("telemetry", v))}
+            ariaLabel={t("settings.general.stats")}
           />
         </SettingsRow>
       </SettingsGroup>

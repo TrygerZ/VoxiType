@@ -4,7 +4,7 @@ version = "0.6.11"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.90"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 # --- Tauri core + plugins ---
 tauri = { version = "2", features = ["image-png", "tray-icon"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
 
 # --- Serialization ---
 serde = { version = "1", features = ["derive"] }
@@ -39,6 +40,9 @@ zip = { version = "=7.2.0", default-features = false }
 
 # --- HTTP client (Ollama, Groq) ---
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+# URL parsing for the open_url host allowlist (H-1): a hand-rolled split
+# misreads an `@` inside a fragment/query as userinfo.
+url = "2"
 # shellexecute-on-windows: open URLs via ShellExecuteW instead of `cmd /c start`,
 # removing the cmd percent-expansion surface (L-25).
 open = { version = "5", features = ["shellexecute-on-windows"] }
@@ -76,14 +80,12 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
 ] }
 
-# --- Unix: single-instance flock in main.rs ---
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+[dev-dependencies]
+# Builds synthetic `reqwest::Response` values for `read_body_capped` tests.
+http = "1"
 
 [features]
 default = []
-local-stt = []
-local-vad = []
 
 [profile.release]
 codegen-units = 1

@@ -19,7 +19,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, reload, EnvFilter};
 
 const LOG_FILE_NAME: &str = "voxitype.log";
-const DEFAULT_LOG_FILTER: &str = "info,voxitype_lib=debug";
+// Release builds log at info by default; set RUST_LOG to opt into debug
+// (e.g. `RUST_LOG=voxitype_lib=debug`).
+const DEFAULT_LOG_FILTER: &str = "info";
 
 /// Number of daily log files kept before the oldest are pruned.
 const MAX_LOG_FILES: usize = 14;

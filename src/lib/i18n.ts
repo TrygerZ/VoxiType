@@ -7,15 +7,21 @@ type Dict = Record<string, string>;
 
 export const id: Dict = {
   "app.name": "VoxiType",
+  "app.loading": "Memuat...",
   "notice.no_speech": "Tidak ada suara yang terdeteksi",
+  "notice.translation_fallback": "Terjemahan gagal; teks asli dimasukkan",
   "notice.hotkey_unavailable":
     "Hotkey tidak dapat didaftarkan. Pilih shortcut lain di Pengaturan.",
+  "notice.update_available": "VoxiType {version} tersedia",
   "error.settings_load_failed": "Gagal memuat pengaturan",
   "error.dictionary_load_failed": "Gagal memuat kamus",
   "error.history_load_failed": "Gagal memuat riwayat",
   "error.snippets_load_failed": "Gagal memuat cuplikan",
   "error.stats_load_failed": "Gagal memuat statistik",
   "error.retry": "Coba lagi",
+  "error.title": "Terjadi kesalahan",
+  "error.unexpected": "Terjadi kesalahan tak terduga",
+  "error.reload": "Muat ulang",
   "nav.home": "Beranda",
   "nav.settings": "Pengaturan",
   "nav.history": "Riwayat",
@@ -139,6 +145,7 @@ export const id: Dict = {
   "settings.stt.ready": "Siap",
   "settings.stt.check_setup": "Cek setup",
   "settings.stt.test_fail": "Tes gagal",
+  "settings.stt.browse": "Telusuri",
 
   // LLM Tab
   "settings.llm.title": "Format AI",
@@ -198,6 +205,11 @@ export const id: Dict = {
   "settings.shortcuts.mode_desc": "Push-to-talk dengan menahan; toggle mulai/berhenti saat ditekan.",
   "settings.shortcuts.apply_btn": "Terapkan hotkey",
   "settings.shortcuts.applied": "Diterapkan",
+  "settings.shortcuts.recorder_label": "Kombinasi hotkey",
+  "settings.shortcuts.recorder_press": "Tekan shortcut Anda...",
+  "settings.shortcuts.recorder_hint": "Klik untuk merekam shortcut baru",
+  "settings.shortcuts.recorder_cancel_hint": "Tekan Escape untuk membatalkan",
+  "settings.preferences": "Preferensi",
 
   // About Tab
   "settings.about.title": "Tentang",
@@ -221,6 +233,8 @@ export const id: Dict = {
   "history.clearing": "Membersihkan...",
   "history.search_placeholder": "Cari transkripsi...",
   "history.all_modes": "Semua mode",
+  "history.mode_filter": "Filter berdasarkan mode",
+  "history.load_more": "Muat lebih banyak",
   "history.loading": "Memuat...",
   "history.empty": "Belum ada transkripsi",
   "history.words_suffix": "{count} kata",
@@ -312,6 +326,7 @@ export const id: Dict = {
   "onboarding.stt.save": "Simpan & Lanjut",
   "onboarding.stt.skip": "Atur nanti",
   "onboarding.stt.test": "Tes Koneksi",
+  "onboarding.stt.testing": "Menguji...",
   "onboarding.stt.test_ok": "Siap dipakai",
   "onboarding.stt.test_err": "Tes gagal",
   "onboarding.stt.groq.choice_title": "Groq API",
@@ -392,10 +407,10 @@ export const id: Dict = {
   "onboarding.welcome.how.step2_desc": "Suara Anda direkam lalu ditranskripsi",
   "onboarding.welcome.how.step3": "Teks muncul",
   "onboarding.welcome.how.step3_desc": "Hasil otomatis diketik ke aplikasi aktif",
-  // Welcome prep (heuristic: error prevention — set expectations before setup)
+  // Welcome prep (heuristic: error prevention - set expectations before setup)
   "onboarding.welcome.prep_title": "Yang perlu disiapkan",
   "onboarding.welcome.prep_body": "Setup cepat, sekitar 2 menit. Anda akan memilih mesin transkripsi lalu menetapkan hotkey. Semua bisa diubah nanti dari Pengaturan.",
-  // STT recommendation (heuristic: match real world — guide the beginner)
+  // STT recommendation (heuristic: match real world - guide the beginner)
   "onboarding.stt.recommended": "Direkomendasikan",
   "onboarding.stt.groq.recommend_note": "Paling mudah untuk pemula, setup kurang dari 1 menit.",
   "onboarding.stt.offline.recommend_note": "Cocok jika ingin transkripsi tanpa koneksi internet.",
@@ -431,6 +446,7 @@ export const id: Dict = {
   "home.greeting.afternoon": "Selamat Siang",
   "home.greeting.evening": "Selamat Malam",
   "home.greeting.generic": "Halo",
+  "home.greeting.suffix": ", Pengguna!",
   "home.active_mode": "Mode Aktif",
   "home.quick_settings": "Pengaturan Cepat",
   "home.recent_transcriptions": "Transkripsi Terakhir",
@@ -474,15 +490,21 @@ export const id: Dict = {
 
 export const en: Dict = {
   "app.name": "VoxiType",
+  "app.loading": "Loading...",
   "notice.no_speech": "No speech detected",
+  "notice.translation_fallback": "Translation failed; inserted the original text",
   "notice.hotkey_unavailable":
     "The hotkey could not be registered. Choose a different shortcut in Settings.",
+  "notice.update_available": "VoxiType {version} is available",
   "error.settings_load_failed": "Failed to load settings",
   "error.dictionary_load_failed": "Failed to load dictionary",
   "error.history_load_failed": "Failed to load history",
   "error.snippets_load_failed": "Failed to load snippets",
   "error.stats_load_failed": "Failed to load stats",
   "error.retry": "Retry",
+  "error.title": "Something went wrong",
+  "error.unexpected": "An unexpected error occurred",
+  "error.reload": "Reload",
   "nav.home": "Home",
   "nav.settings": "Settings",
   "nav.history": "History",
@@ -606,6 +628,7 @@ export const en: Dict = {
   "settings.stt.ready": "Ready",
   "settings.stt.check_setup": "Check setup",
   "settings.stt.test_fail": "Test failed",
+  "settings.stt.browse": "Browse",
 
   // LLM Tab
   "settings.llm.title": "AI Formatting",
@@ -665,6 +688,11 @@ export const en: Dict = {
   "settings.shortcuts.mode_desc": "Push-to-talk holds; toggle starts/stops on press.",
   "settings.shortcuts.apply_btn": "Apply hotkey",
   "settings.shortcuts.applied": "Applied",
+  "settings.shortcuts.recorder_label": "Hotkey combination",
+  "settings.shortcuts.recorder_press": "Press your shortcut...",
+  "settings.shortcuts.recorder_hint": "Click to record a new shortcut",
+  "settings.shortcuts.recorder_cancel_hint": "Press Escape to cancel",
+  "settings.preferences": "Preferences",
 
   // About Tab
   "settings.about.title": "About",
@@ -688,6 +716,8 @@ export const en: Dict = {
   "history.clearing": "Clearing...",
   "history.search_placeholder": "Search transcriptions...",
   "history.all_modes": "All modes",
+  "history.mode_filter": "Filter by mode",
+  "history.load_more": "Load more",
   "history.loading": "Loading...",
   "history.empty": "No transcriptions yet",
   "history.words_suffix": "{count} words",
@@ -779,6 +809,7 @@ export const en: Dict = {
   "onboarding.stt.save": "Save & Continue",
   "onboarding.stt.skip": "Set up later",
   "onboarding.stt.test": "Test Connection",
+  "onboarding.stt.testing": "Testing...",
   "onboarding.stt.test_ok": "Ready",
   "onboarding.stt.test_err": "Test failed",
   "onboarding.stt.groq.choice_title": "Groq API",
@@ -859,10 +890,10 @@ export const en: Dict = {
   "onboarding.welcome.how.step2_desc": "Your voice is recorded and transcribed",
   "onboarding.welcome.how.step3": "Text appears",
   "onboarding.welcome.how.step3_desc": "The result is typed into the active app",
-  // Welcome prep (heuristic: error prevention — set expectations before setup)
+  // Welcome prep (heuristic: error prevention - set expectations before setup)
   "onboarding.welcome.prep_title": "What you will need",
   "onboarding.welcome.prep_body": "Quick setup, about 2 minutes. You will pick a transcription engine then set a hotkey. Everything can be changed later in Settings.",
-  // STT recommendation (heuristic: match real world — guide the beginner)
+  // STT recommendation (heuristic: match real world - guide the beginner)
   "onboarding.stt.recommended": "Recommended",
   "onboarding.stt.groq.recommend_note": "Easiest for beginners, under 1 minute to set up.",
   "onboarding.stt.offline.recommend_note": "Best when you want transcription without internet.",
@@ -898,6 +929,7 @@ export const en: Dict = {
   "home.greeting.afternoon": "Good Afternoon",
   "home.greeting.evening": "Good Evening",
   "home.greeting.generic": "Hello",
+  "home.greeting.suffix": ", User!",
   "home.active_mode": "Active Mode",
   "home.quick_settings": "Quick Settings",
   "home.recent_transcriptions": "Recent Transcriptions",
@@ -990,7 +1022,7 @@ if (typeof initialLang === "string") {
   setLanguage(initialLang);
 }
 
-// ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
+// ponytail: minimal reactive hook - upgrade to react-i18next if >5 languages
 export function useT() {
   const lang = useSettingsStore((s) => s.settings.language);
   const activeLang = lang && dictionaries[lang] ? lang : currentLang;

@@ -80,4 +80,21 @@ describe("STTTab", () => {
     const testButton = screen.getByRole("button", { name: "Tes Koneksi" });
     expect(testButton).toBeDisabled();
   });
+
+  it("shows an empty whisper-cli path with the hint placeholder when unset", () => {
+    useSettingsStore.setState({
+      settings: {
+        language: "id",
+        stt_engine: "whisper_cpp",
+      },
+      loaded: true,
+      error: null,
+    });
+
+    render(<STTTab />);
+
+    const binaryInput = screen.getByPlaceholderText("whisper-cli");
+    expect(binaryInput).toHaveValue("");
+    expect(binaryInput).toHaveAttribute("placeholder", "whisper-cli");
+  });
 });

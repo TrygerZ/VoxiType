@@ -7,7 +7,8 @@ use super::{clipboard, keystroke, InjectResult, InjectStrategy, TextInjector};
 use crate::error::Result;
 use crate::util::MutexExt;
 
-static CLIPBOARD_INJECTION_LOCK: Mutex<()> = Mutex::new(());
+/// Serializes real-clipboard mutations across injection tests.
+pub(crate) static CLIPBOARD_INJECTION_LOCK: Mutex<()> = Mutex::new(());
 
 /// Pause after writing to the clipboard before issuing the paste keystroke.
 ///
@@ -162,12 +163,26 @@ fn restore_clipboard(prev: &clipboard::ClipboardSnapshot, dictated: &str) {
                 wipe_clipboard_fail_safe();
             }
         }
+        clipboard::ClipboardSnapshot::Image {
+            width,
+            height,
+            bytes,
+        } => {
+            if let Err(e) = clipboard::write_image(*width, *height, bytes) {
+                tracing::warn!(
+                    "Failed to restore clipboard image ({e}); wiping dictated text from clipboard"
+                );
+                wipe_clipboard_fail_safe();
+            }
+        }
         clipboard::ClipboardSnapshot::NonText => {
-            // ponytail: non-text clipboard content (images, files) cannot be restored via
-            // text API without multi-format serialization. Wiping clipboard to empty so
-            // dictated text does not linger where clipboard managers can read it.
-            // Upgrade when arboard or platform API supports raw format preservation.
-            tracing::debug!("Non-text content on clipboard before injection; wiping dictated text");
+            // ponytail: HTML and file-list content still cannot be re-serialized
+            // through the text API, so they keep the wipe. Images are restored via
+            // the Image arm above. Upgrade when arboard or the platform API supports
+            // raw multi-format preservation.
+            tracing::debug!(
+                "Non-restorable non-text content on clipboard before injection; wiping dictated text"
+            );
             wipe_clipboard_fail_safe();
         }
         clipboard::ClipboardSnapshot::Unavailable => {
@@ -290,6 +305,46 @@ mod tests {
         );
         guard.restore();
         assert!(guard.snapshot.is_none());
+    }
+
+    #[test]
+    fn restore_guard_restores_image_content() {
+        let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
+        use crate::injection::clipboard::{self, ClipboardSnapshot};
+
+        // 2x2 RGBA8 image on the clipboard before injection.
+        let bytes = vec![
+            255, 0, 0, 255, //
+            0, 255, 0, 255, //
+            0, 0, 255, 255, //
+            255, 255, 255, 255,
+        ];
+        clipboard::write_image(2, 2, &bytes).unwrap();
+
+        let dictated = "VOXITYPE_TEST_IMAGE_DICTATION";
+        let mut guard = ClipboardRestoreGuard::new(
+            ClipboardSnapshot::Image {
+                width: 2,
+                height: 2,
+                bytes: bytes.clone(),
+            },
+            dictated.to_string(),
+        );
+        // Injection overwrites the image with the dictated text.
+        clipboard::write_text(dictated).unwrap();
+        guard.restore();
+
+        match clipboard::read_snapshot() {
+            ClipboardSnapshot::Image {
+                width,
+                height,
+                bytes: restored,
+            } => {
+                assert_eq!((width, height), (2, 2));
+                assert_eq!(restored, bytes);
+            }
+            other => panic!("expected Image snapshot after restore, got {other:?}"),
+        }
     }
 
     #[test]

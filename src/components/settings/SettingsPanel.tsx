@@ -40,7 +40,7 @@ export function SettingsPanel() {
     <div className="mx-auto flex h-full max-w-4xl">
       <div className="flex w-56 shrink-0 flex-col gap-0.5 px-4 py-9" role="tablist" aria-orientation="vertical">
         <h1 className="mb-4 px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-vx-text-dim">
-          Preferences
+          {t("settings.preferences")}
         </h1>
         {tabs.map(({ id, labelKey, icon: Icon }) => (
           <button

@@ -2,7 +2,7 @@
 
 use std::future::Future;
 use std::path::Path;
-use std::sync::{MutexGuard, OnceLock};
+use std::sync::{MutexGuard, OnceLock, TryLockError};
 use std::time::Duration;
 
 use crate::error::{AppError, ErrorCode};
@@ -12,11 +12,24 @@ use crate::error::{AppError, ErrorCode};
 /// the lock; the data may be inconsistent but crashing the whole app is worse.
 pub trait MutexExt<T> {
     fn lock_recover(&self) -> MutexGuard<'_, T>;
+
+    /// Non-blocking variant of [`Self::lock_recover`]. Returns `None` when the
+    /// lock is currently held elsewhere; a poisoned lock is recovered like
+    /// `lock_recover` (the guarded data is a unit marker, never partially written).
+    fn try_lock_recover(&self) -> Option<MutexGuard<'_, T>>;
 }
 
 impl<T> MutexExt<T> for std::sync::Mutex<T> {
     fn lock_recover(&self) -> MutexGuard<'_, T> {
         self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn try_lock_recover(&self) -> Option<MutexGuard<'_, T>> {
+        match self.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
     }
 }
 
@@ -83,10 +96,40 @@ pub fn http_client() -> crate::error::Result<reqwest::Client> {
         .map_err(|e| AppError::internal(format!("Failed to build HTTP client: {e}")))
 }
 
+/// Maximum accepted upstream response body size, in bytes. Guards against a
+/// hostile or malfunctioning endpoint streaming an unbounded body before the
+/// error-body cap applies.
+pub const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
+
+/// Whether a response body of `len` bytes is within the accepted `max` size.
+fn body_within_limit(len: usize, max: usize) -> bool {
+    len <= max
+}
+
+/// Read a response body with a size guard. Rejects (without buffering) when
+/// `Content-Length` exceeds the cap; otherwise reads the body and rejects it
+/// once the received size exceeds the cap. `reqwest::Response::text` is avoided
+/// because it buffers the whole body before any cap can apply.
+pub async fn read_body_capped(
+    resp: reqwest::Response,
+    max_bytes: usize,
+) -> crate::error::Result<String> {
+    if let Some(len) = resp.content_length() {
+        if len > max_bytes as u64 {
+            return Err(AppError::network("response body exceeds the size limit"));
+        }
+    }
+    let bytes = resp.bytes().await?;
+    if !body_within_limit(bytes.len(), max_bytes) {
+        return Err(AppError::network("response body exceeds the size limit"));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 /// Maximum length of upstream error-body text kept in an error message.
 /// Upstream bodies are untrusted (format can change, may echo request
 /// context), so they are capped before being embedded in logs or IPC events.
-const MAX_ERROR_BODY_LEN: usize = 300;
+pub(crate) const MAX_ERROR_BODY_LEN: usize = 300;
 
 /// Suffix appended when an upstream error body was truncated.
 const TRUNCATED_SUFFIX: &str = "…(truncated)";
@@ -499,6 +542,41 @@ mod tests {
     }
 
     #[test]
+    fn body_within_limit_boundaries() {
+        assert!(body_within_limit(0, MAX_RESPONSE_BODY_BYTES));
+        assert!(body_within_limit(
+            MAX_RESPONSE_BODY_BYTES,
+            MAX_RESPONSE_BODY_BYTES
+        ));
+        assert!(!body_within_limit(
+            MAX_RESPONSE_BODY_BYTES + 1,
+            MAX_RESPONSE_BODY_BYTES
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_body_capped_accepts_small_body() {
+        let response = reqwest::Response::from(http::Response::new("hello".to_string()));
+        let body = read_body_capped(response, MAX_RESPONSE_BODY_BYTES)
+            .await
+            .expect("small body accepted");
+        assert_eq!(body, "hello");
+    }
+
+    #[tokio::test]
+    async fn read_body_capped_rejects_oversized_body() {
+        // The response advertises a known body size (its Content-Length), which
+        // exceeds the cap, so it is rejected with a network error.
+        let response =
+            reqwest::Response::from(http::Response::new("x".repeat(MAX_RESPONSE_BODY_BYTES + 1)));
+        let err = read_body_capped(response, MAX_RESPONSE_BODY_BYTES)
+            .await
+            .expect_err("oversized body rejected");
+        assert_eq!(err.code, ErrorCode::NetworkError);
+        assert!(err.message.contains("size limit"));
+    }
+
+    #[test]
     fn sanitize_error_body_keeps_short_body_untouched() {
         let body = "{\"error\":\"quota exceeded\"}";
         assert_eq!(sanitize_error_body(body), body);
@@ -532,5 +610,27 @@ mod tests {
         let kept_chars: usize = result.chars().count() - TRUNCATED_SUFFIX.chars().count();
         assert_eq!(kept_chars, MAX_ERROR_BODY_LEN);
         assert!(result.contains("…(truncated)"));
+    }
+
+    #[test]
+    fn try_lock_recover_returns_none_when_held() {
+        let mutex = std::sync::Mutex::new(());
+        let _held = mutex.lock_recover();
+        assert!(mutex.try_lock_recover().is_none());
+    }
+
+    #[test]
+    fn try_lock_recover_recovers_poisoned_lock() {
+        let mutex = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let poisoner = mutex.clone();
+        // Poison the mutex by panicking while holding it (the spawned thread
+        // isolates the panic so this test thread survives).
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poison the lock");
+        })
+        .join();
+        assert!(mutex.is_poisoned());
+        assert!(mutex.try_lock_recover().is_some());
     }
 }

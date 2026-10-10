@@ -111,6 +111,36 @@ describe("snippetStore", () => {
     expect(useSnippetStore.getState().loading).toBe(false);
   });
 
+  it("clears loading when add rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (snippets: Snippet[]) => void;
+    const stalePromise = new Promise<Snippet[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getSnippets).mockImplementationOnce(() => stalePromise);
+    const load = useSnippetStore.getState().load();
+    expect(useSnippetStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.addSnippet).mockRejectedValueOnce(new Error("add failed"));
+    await expect(
+      useSnippetStore.getState().add({
+        id: "s3",
+        name: "new",
+        trigger_phrase: "new",
+        content: "new content",
+        category: null,
+        mode: null,
+        usage_count: 0,
+        is_active: true,
+      }),
+    ).rejects.toThrow("add failed");
+    expect(useSnippetStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useSnippetStore.getState().loading).toBe(false);
+  });
+
   it("does not resurrect a removed snippet when a stale load resolves late", async () => {
     let resolveStale!: (snippets: Snippet[]) => void;
     const stalePromise = new Promise<Snippet[]>((resolve) => {
@@ -154,6 +184,29 @@ describe("snippetStore", () => {
 
     vi.mocked(tauri.deleteSnippet).mockResolvedValueOnce(undefined);
     await useSnippetStore.getState().remove("s1");
+    expect(useSnippetStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useSnippetStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when remove rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (snippets: Snippet[]) => void;
+    const stalePromise = new Promise<Snippet[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getSnippets).mockImplementationOnce(() => stalePromise);
+    const load = useSnippetStore.getState().load();
+    expect(useSnippetStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteSnippet).mockRejectedValueOnce(
+      new Error("delete failed"),
+    );
+    await expect(
+      useSnippetStore.getState().remove("s1"),
+    ).rejects.toThrow("delete failed");
     expect(useSnippetStore.getState().loading).toBe(false);
 
     resolveStale([]);

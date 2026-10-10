@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Check } from "lucide-react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
@@ -19,6 +19,7 @@ export function ShortcutsTab() {
   const [mode, setMode] = useState(hotkey?.mode ?? "ptt");
   const [status, setStatus] = useState<"idle" | "ok" | string>("idle");
   const [busy, setBusy] = useState(false);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep the editor in sync with the stored hotkey. Settings may load after
   // this tab mounts (or change elsewhere), so mirror the store whenever the
@@ -28,14 +29,31 @@ export function ShortcutsTab() {
     if (hotkey?.mode) setMode(hotkey.mode);
   }, [hotkey?.key, hotkey?.mode]);
 
+  // Cancel the pending "applied" reset timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    };
+  }, []);
+
   const handleApply = async () => {
     if (busy) return;
+    // Clear any pending reset timer so a prior success can't erase this
+    // attempt's error (or stale "ok") a moment later.
+    if (statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
     setBusy(true);
     try {
       await setHotkey(key, mode);
       await loadSettings();
       setStatus("ok");
-      setTimeout(() => setStatus("idle"), 2000);
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => {
+        setStatus("idle");
+        statusTimerRef.current = null;
+      }, 2000);
     } catch (e: unknown) {
       setStatus(formatTauriError(e));
     } finally {
@@ -59,6 +77,7 @@ export function ShortcutsTab() {
           description={t("settings.shortcuts.mode_desc")}
         >
           <Select
+            aria-label={t("settings.shortcuts.mode")}
             options={[
               { value: "ptt", label: "Push-to-Talk" },
               { value: "toggle", label: "Toggle" },

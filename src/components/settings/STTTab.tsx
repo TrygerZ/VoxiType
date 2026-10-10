@@ -41,10 +41,7 @@ export function STTTab() {
   const language = stringSetting(settings.stt_language, "auto");
   const groqKey = stringSetting(settings.groq_api_key, "");
   const groqKeySet = settings.groq_api_key_set === true;
-  const whisperBinary = stringSetting(
-    settings.whisper_cpp_binary_path,
-    "whisper-cli",
-  );
+  const whisperBinary = stringSetting(settings.whisper_cpp_binary_path, "");
   const whisperModel = stringSetting(settings.whisper_cpp_model_path, "");
   const whisperThreads = numberSetting(settings.whisper_cpp_threads, 4);
 
@@ -105,6 +102,7 @@ export function STTTab() {
       <SettingsGroup title={t("settings.stt.engine_group")}>
         <SettingsRow label={t("settings.stt.engine")}>
           <Select
+            aria-label={t("settings.stt.engine")}
             options={[
               { value: "groq", label: "Groq Whisper" },
               { value: "whisper_cpp", label: "Offline whisper.cpp" },
@@ -116,6 +114,7 @@ export function STTTab() {
         </SettingsRow>
         <SettingsRow label={t("settings.stt.lang")}>
           <Select
+            aria-label={t("settings.stt.lang")}
             options={[
               { value: "auto", label: t("settings.stt.lang_auto") },
               { value: "id", label: "Bahasa Indonesia" },
@@ -133,10 +132,10 @@ export function STTTab() {
           <div className="flex flex-col gap-4 px-4 py-3.5">
             <PathPickerField
               label={t("settings.stt.binary_path")}
-              placeholder="C:\\tools\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"
+              placeholder="whisper-cli"
               value={whisperBinary}
               onBrowse={handlePickBinary}
-              browseLabel="Browse"
+              browseLabel={t("settings.stt.browse")}
               hint={t("settings.stt.binary_hint")}
             />
             <PathPickerField
@@ -144,7 +143,7 @@ export function STTTab() {
               placeholder="C:\\models\\ggml-base.bin"
               value={whisperModel}
               onBrowse={handlePickModel}
-              browseLabel="Browse"
+              browseLabel={t("settings.stt.browse")}
               hint={t("settings.stt.model_hint")}
             />
             <Input
@@ -168,6 +167,7 @@ export function STTTab() {
               okLabel={t("settings.stt.ready")}
               failLabel={t("settings.stt.check_setup")}
               errLabel={t("settings.stt.test_fail")}
+              testingLabel={t("settings.stt.testing")}
               onClick={handleTestWhisper}
               disabled={
                 whisperStatus === "testing" ||
@@ -195,6 +195,7 @@ export function STTTab() {
               okLabel={t("settings.stt.connected")}
               failLabel={t("settings.stt.invalid_key")}
               errLabel={t("settings.stt.conn_fail")}
+              testingLabel={t("settings.stt.testing")}
               onClick={handleTestApi}
               disabled={
                 groqStatus === "testing" || (!localKey.trim() && !groqKeySet)
@@ -291,6 +292,7 @@ function StatusButton({
   okLabel,
   failLabel,
   errLabel,
+  testingLabel,
   className = "",
   ...rest
 }: {
@@ -299,6 +301,7 @@ function StatusButton({
   okLabel: string;
   failLabel: string;
   errLabel: string;
+  testingLabel: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -315,7 +318,7 @@ function StatusButton({
       ) : status === "fail" || status === "err" ? (
         <XCircle className="h-4 w-4" />
       ) : null}
-      {statusLabel(status, idleLabel, okLabel, failLabel, errLabel)}
+      {statusLabel(status, idleLabel, okLabel, failLabel, errLabel, testingLabel)}
     </button>
   );
 }
@@ -326,8 +329,9 @@ function statusLabel(
   ok: string,
   fail: string,
   err: string,
+  testing: string,
 ) {
-  if (status === "testing") return "Testing...";
+  if (status === "testing") return testing;
   if (status === "ok") return ok;
   if (status === "fail") return fail;
   if (status === "err") return err;

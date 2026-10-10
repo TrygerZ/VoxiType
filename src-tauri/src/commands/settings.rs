@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_autostart::ManagerExt;
 
 use crate::commands::runtime::{MAX_WHISPER_THREADS, MIN_WHISPER_THREADS};
 use crate::error::AppError;
@@ -75,7 +76,35 @@ pub fn update_setting<R: Runtime>(
     if key == "floating_widget_auto_hide_seconds" {
         crate::overlay::reset_idle_timer_and_reconcile(&app);
     }
+    if key == "auto_start" {
+        // The setting is persisted first; startup reconciliation retries the
+        // apply, so a failure here self-heals on the next launch. Validation
+        // above already rejects non-bools; this guard is defense in depth.
+        let enabled = value
+            .as_bool()
+            .ok_or_else(|| AppError::invalid_input("Setting 'auto_start' must be a boolean"))?;
+        apply_autostart(&app, enabled)?;
+    }
     Ok(())
+}
+
+/// Apply the desired Windows startup registration. No-ops in debug builds so
+/// `tauri dev` binaries never pollute the user's Run registry key.
+pub(crate) fn apply_autostart<R: Runtime>(
+    app: &AppHandle<R>,
+    enabled: bool,
+) -> std::result::Result<(), AppError> {
+    if cfg!(debug_assertions) {
+        tracing::debug!("Skipping autostart change in debug build (enabled={enabled})");
+        return Ok(());
+    }
+    let manager = app.autolaunch();
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    result.map_err(|e| AppError::internal(format!("Failed to update autostart: {e}")))
 }
 
 pub(crate) fn validate_auto_hide_seconds(value: &Value) -> std::result::Result<u64, AppError> {
@@ -146,8 +175,20 @@ fn validate_setting_value(key: &str, value: &Value) -> std::result::Result<(), A
         }
         "floating_widget_auto_hide_seconds" => validate_auto_hide_seconds(value).map(|_| ()),
         "whisper_cpp_threads" => validate_whisper_threads(value),
+        "auto_start" | "auto_update" => validate_bool(key, value),
         _ => Ok(()),
     }
+}
+
+/// Reject a value that is not a JSON boolean for `key`. This runs before the
+/// value is encoded and persisted, so a non-bool can never reach the store.
+fn validate_bool(key: &str, value: &Value) -> std::result::Result<(), AppError> {
+    if value.is_boolean() {
+        return Ok(());
+    }
+    Err(AppError::invalid_input(format!(
+        "Setting '{key}' must be a boolean"
+    )))
 }
 
 /// Reject a value that is not one of the known strings for `key`.
@@ -239,7 +280,9 @@ fn encode_setting_value(
         let plain = value
             .as_str()
             .ok_or_else(|| AppError::invalid_input("Setting 'groq_api_key' must be a string"))?;
-        let enc = crate::crypto::encrypt_api_key(plain, master_key)?;
+        // Trim before encrypting: a pasted trailing space passes Test (which
+        // trims) but breaks dictation auth. Empty stays empty.
+        let enc = crate::crypto::encrypt_api_key(plain.trim(), master_key)?;
         Ok(serde_json::to_string(&enc)?)
     } else {
         Ok(serde_json::to_string(value)?)
@@ -414,6 +457,45 @@ mod tests {
     }
 
     #[test]
+    fn validate_setting_bool_keys_accept_booleans() {
+        for key in ["auto_start", "auto_update"] {
+            assert!(
+                validate_setting_value(key, &serde_json::json!(true)).is_ok(),
+                "{key} true"
+            );
+            assert!(
+                validate_setting_value(key, &serde_json::json!(false)).is_ok(),
+                "{key} false"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_setting_bool_keys_reject_non_booleans() {
+        for key in ["auto_start", "auto_update"] {
+            for bad in [
+                serde_json::json!("yes"),
+                serde_json::json!(1),
+                serde_json::json!(0),
+                serde_json::json!(null),
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ] {
+                let err = validate_setting_value(key, &bad).unwrap_err();
+                assert_eq!(err.code, crate::error::ErrorCode::InvalidInput, "key {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn non_bool_auto_start_is_rejected_before_persist() {
+        // `update_setting` validates before `set_raw`; a non-bool must fail at
+        // validation so it can never reach the store.
+        let err = validate_setting_value("auto_start", &serde_json::json!("yes")).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
     fn encode_groq_api_key_rejects_non_string() {
         let key = [0u8; 32];
         let bad_values = [
@@ -438,6 +520,26 @@ mod tests {
         let valid =
             encode_setting_value("groq_api_key", &serde_json::json!("gsk_test"), &key).unwrap();
         assert!(!valid.is_empty());
+    }
+
+    #[test]
+    fn encode_groq_api_key_trims_whitespace_before_encrypting() {
+        let key = [5u8; 32];
+        let encoded =
+            encode_setting_value("groq_api_key", &serde_json::json!("  key123  "), &key).unwrap();
+        let stored: String = serde_json::from_str(&encoded).unwrap();
+        let decrypted = crate::crypto::decrypt_api_key(&stored, &key).unwrap();
+        assert_eq!(decrypted, "key123");
+    }
+
+    #[test]
+    fn encode_groq_api_key_trims_whitespace_only_to_empty() {
+        let key = [6u8; 32];
+        let encoded =
+            encode_setting_value("groq_api_key", &serde_json::json!("   "), &key).unwrap();
+        let stored: String = serde_json::from_str(&encoded).unwrap();
+        // Whitespace-only trims to empty, which encrypt_api_key stores as empty.
+        assert_eq!(stored, "");
     }
 
     #[test]

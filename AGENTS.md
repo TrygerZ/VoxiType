@@ -6,12 +6,12 @@
 | Desktop | Tauri 2.x | src-tauri/ |
 | Frontend | React 19 + Vite 7 + Tailwind 4 | src/ |
 | Frontend testing | Vitest + React Testing Library | vitest.config.ts, src/test/ |
-| Backend | Rust 1.85+ | src-tauri/src/ |
+| Backend | Rust 1.90+ | src-tauri/src/ |
 | State | Zustand 5.x | src/stores/ |
 | Storage | SQLite 3.53.2 via rusqlite 0.40.2 | src-tauri/src/storage/ |
-| Audio | cpal + rubato + ringbuf; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
-| VAD | Energy-based (default) + Silero ONNX (feature-gated `local-vad`) | src-tauri/src/audio/capture.rs |
-| STT | Groq Whisper (REST primary) + whisper.cpp (feature-gated `local-stt`) | src-tauri/src/stt/ |
+| Audio | cpal + rubato; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
+| VAD | None; block-level noise gate + post-hoc voice check (no VAD module) | src-tauri/src/audio/capture.rs |
+| STT | Groq Whisper (REST primary) + whisper.cpp (external CLI) | src-tauri/src/stt/ |
 | LLM | Ollama Qwen2.5 3B, Groq Llama 3.1 8B, rule-based fallback, Off mode | src-tauri/src/llm/ |
 | Dictionary | Word/replacement pairs with hotword boosting | src-tauri/src/storage/dictionary.rs |
 | Snippets | Trigger phrase expansion | src-tauri/src/storage/snippets.rs |
@@ -30,6 +30,8 @@
 | Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
 | Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
+
+Dictionary uniqueness uses SQLite NOCASE, which folds ASCII only; non-ASCII case variants are not deduped (`src-tauri/src/storage/db.rs` is the source of truth).
 
 ## Global Rules
 
@@ -167,23 +169,24 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
 
 ## Architecture Rules
-1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector
+1. **Modules = traits + factories** - SttEngine, LlmFormatter, TextInjector
 2. **Pipeline orchestrates** - state_machine.rs controls all flow, modules do not call each other
 3. **IPC only** - frontend uses invoke/events, never touches system APIs
 4. **Storage isolated** - only `storage/` module accesses SQLite
 5. **Module error types** - unified `AppError` in `error.rs` with typed `ErrorCode`
 6. **Post-processing pipeline** - dictionary replacements → snippet expansion applied after LLM + translation
 7. **Per-app mode routing** - active window detection overrides default mode when `per_app_mode` enabled
-8. **Feature gates** - `local-stt` (whisper.cpp), `local-vad` (Silero ONNX) behind Cargo features, requires cmake/libclang
 
 ## State Machine
 ```
-IDLE -(hotkey press)> RECORDING -(vad end / stop)> PROCESSING -(done)> IDLE
+IDLE -(hotkey press)> RECORDING -(stop)> PROCESSING -(done)> IDLE
   ^                        |                                               |
   |                        '--(cancel)--> IDLE                             |
   '----(start_recording)---<---- ERROR <------------(fail)-----------------'
 ```
 Transitions: Idle→Recording, Recording→Processing, Recording→Idle (cancel), Processing→Idle, Processing→Error, Error→Recording (retry).
+
+Recording ends on PTT release, toggle press, UI stop, or the 300 s capture cap; there is no automatic VAD stop.
 
 ## Storage Module (`src-tauri/src/storage/`)
 ```
@@ -219,7 +222,7 @@ mod.rs exports:
 ## CI/CD
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
-| CI | Push/PR to `main` | tsc, vite build, cargo fmt, clippy, test (all `--no-default-features`) |
+| CI | Push/PR to `main` | tsc, vite build, frontend tests, cargo fmt, clippy, test (all `--no-default-features`) |
 | Release | Push tag `v*` | tauri-action unsigned build, creates GitHub Release draft with NSIS installer, manual publish required, fallback to local build if CI fails |
 
 ## Release Procedure
@@ -274,7 +277,7 @@ mod.rs exports:
 
 ### Granular Commits
 - Commit each logical change as a separate commit while working; never batch an entire feature, its tests, and unrelated edits into one commit.
-- Split by type and scope, e.g. `fix(audio): flush ringbuf on vad end` stays separate from `chore(ci): pin actions to sha`.
+- Split by type and scope, e.g. `fix(audio): drop partial frame on stop` stays separate from `chore(ci): pin actions to sha`.
 - Stage files explicitly per commit; never use `git add -A` or `git add .` when composing commits. A single commit mixing layers (Rust, TypeScript, config) is allowed only when splitting would break compilation; explain that coupling in the commit body.
 - The ban applies at commit composition time; `git add -A` remains acceptable for scratch flows such as stashing a WIP snapshot.
 

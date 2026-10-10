@@ -15,6 +15,7 @@ interface Props {
   currentStepIdx: number;
   t: TFunc;
   error: string;
+  busy: boolean;
   onStart: () => void;
   onSkip: () => void;
 }
@@ -24,6 +25,7 @@ export function WelcomeStep({
   currentStepIdx,
   t,
   error,
+  busy,
   onStart,
   onSkip,
 }: Props) {
@@ -123,11 +125,11 @@ export function WelcomeStep({
         ))}
       </div>
       <div className="flex flex-wrap justify-center gap-3">
-        <Button variant="primary" size="lg" onClick={onStart}>
+        <Button variant="primary" size="lg" disabled={busy} onClick={onStart}>
           {t("onboarding.welcome.start")}
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="lg" onClick={onSkip}>
+        <Button variant="ghost" size="lg" disabled={busy} onClick={onSkip}>
           {t("onboarding.welcome.skip")}
         </Button>
       </div>

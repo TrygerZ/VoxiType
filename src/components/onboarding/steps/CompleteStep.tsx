@@ -9,6 +9,7 @@ interface Props {
   currentStepIdx: number;
   t: TFunc;
   error: string;
+  busy: boolean;
   hotkeyKey: string;
   onFinish: () => void;
 }
@@ -18,6 +19,7 @@ export function CompleteStep({
   currentStepIdx,
   t,
   error,
+  busy,
   hotkeyKey,
   onFinish,
 }: Props) {
@@ -31,7 +33,7 @@ export function CompleteStep({
       description={t("onboarding.complete.body", { key: hotkeyKey })}
       error={error}
       actions={
-        <Button variant="primary" size="lg" onClick={onFinish}>
+        <Button variant="primary" size="lg" disabled={busy} onClick={onFinish}>
           {t("onboarding.complete.start")}
         </Button>
       }

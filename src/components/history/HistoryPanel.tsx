@@ -35,6 +35,8 @@ export function HistoryPanel() {
   const error = useHistoryStore((s) => s.error);
   const query = useHistoryStore((s) => s.query);
   const load = useHistoryStore((s) => s.load);
+  const loadMore = useHistoryStore((s) => s.loadMore);
+  const hasMore = useHistoryStore((s) => s.hasMore);
   const search = useHistoryStore((s) => s.search);
   const remove = useHistoryStore((s) => s.remove);
   const clear = useHistoryStore((s) => s.clear);
@@ -161,12 +163,14 @@ export function HistoryPanel() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
           <input
             className="w-full rounded-lg bg-vx-bg-tertiary py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
+            aria-label={t("history.search_placeholder")}
             placeholder={t("history.search_placeholder")}
             value={query}
             onChange={(e) => void search(e.target.value)}
           />
         </div>
         <Select
+          aria-label={t("history.mode_filter")}
           options={[
             { value: "", label: t("history.all_modes") },
             { value: "dictation", label: t("settings.modes.dictation") },
@@ -273,6 +277,14 @@ export function HistoryPanel() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {!query && hasMore && (
+          <div className="flex justify-center py-4">
+            <Button size="sm" disabled={loading} onClick={() => void loadMore()}>
+              {t("history.load_more")}
+            </Button>
           </div>
         )}
       </div>

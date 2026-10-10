@@ -28,6 +28,13 @@ pub fn format_user_prefix(language: &str) -> String {
     }
 }
 
+/// User-message prefix for translation calls. Distinct from
+/// [`format_user_prefix`]: translation must not inherit the formatting
+/// instruction "Do NOT translate".
+pub fn translation_user_prefix() -> &'static str {
+    "Translate the following dictated text exactly as instructed; output only the translation:"
+}
+
 fn map_language_name(lang_code: &str) -> &str {
     match lang_code.to_lowercase().as_str() {
         "id" | "indonesian" => "Indonesian",
@@ -154,5 +161,13 @@ mod tests {
     fn translation_prompt_names_known_source_language() {
         let prompt = translation_prompt("en", "id");
         assert!(prompt.contains("from English to Indonesian"));
+    }
+
+    #[test]
+    fn translation_user_prefix_is_translation_oriented() {
+        let prefix = translation_user_prefix();
+        assert!(prefix.contains("Translate"), "prefix: {prefix}");
+        // Must not carry the formatting instruction that forbids translation.
+        assert!(!prefix.contains("Do NOT translate"));
     }
 }

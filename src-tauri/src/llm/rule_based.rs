@@ -181,6 +181,10 @@ impl LlmFormatter for RuleBasedFormatter {
     fn name(&self) -> &'static str {
         "rule_based"
     }
+
+    fn supports_translation(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

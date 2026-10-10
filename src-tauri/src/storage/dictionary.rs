@@ -86,8 +86,20 @@ impl<'a> DictionaryRepository<'a> {
     }
 
     /// Upsert a batch of entries in a single transaction. Returns the number
-    /// of rows processed (duplicates within the batch collapse).
+    /// of rows actually written: within-batch duplicates collapse via the
+    /// NOCASE upsert, so this counts distinct `(word, language)` keys rather
+    /// than reporting `entries.len()`. The word is ASCII-lowercased because
+    /// SQLite's `NOCASE` collation folds ASCII letters only, matching the
+    /// unique index exactly. (Summing the per-statement row counts would
+    /// over-report: the `DO UPDATE` branch of an upsert also counts as a
+    /// changed row.)
     pub fn upsert_many(&self, entries: &[DictionaryEntry]) -> Result<u32> {
+        let mut keys = std::collections::HashSet::with_capacity(entries.len());
+        let rows_written = entries
+            .iter()
+            .filter(|entry| keys.insert((entry.word.to_ascii_lowercase(), entry.language.clone())))
+            .count() as u32;
+
         self.db.with_conn(|c| {
             let tx = c.unchecked_transaction()?;
             {
@@ -97,7 +109,7 @@ impl<'a> DictionaryRepository<'a> {
                 }
             }
             tx.commit()?;
-            Ok(entries.len() as u32)
+            Ok(rows_written)
         })
     }
 
@@ -380,12 +392,43 @@ mod tests {
             ..first.clone()
         };
 
-        assert_eq!(repo.upsert_many(&[first, second]).unwrap(), 2);
+        assert_eq!(repo.upsert_many(&[first, second]).unwrap(), 1);
 
         let all = repo.get_all(&DictFilter::default()).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].word, "js");
         assert_eq!(all[0].replacement.as_deref(), Some("JavaScript ES2020"));
+    }
+
+    #[test]
+    fn upsert_many_reports_rows_actually_written() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        let entry = |id: &str, word: &str| DictionaryEntry {
+            id: id.into(),
+            word: word.into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: None,
+            language: "id".into(),
+            usage_count: 0,
+            is_active: true,
+        };
+
+        // Three distinct words -> three rows written.
+        assert_eq!(
+            repo.upsert_many(&[entry("1", "alpha"), entry("2", "beta"), entry("3", "gamma"),])
+                .unwrap(),
+            3
+        );
+
+        // "Hello" and "hello" collapse into one row: one row written.
+        assert_eq!(
+            repo.upsert_many(&[entry("4", "Hello"), entry("5", "hello")])
+                .unwrap(),
+            1
+        );
+        assert_eq!(repo.get_all(&DictFilter::default()).unwrap().len(), 4);
     }
 
     #[test]

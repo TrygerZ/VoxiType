@@ -26,6 +26,7 @@ describe("historyStore", () => {
       loading: false,
       error: null,
       query: "",
+      hasMore: false,
     });
   });
 
@@ -209,6 +210,30 @@ describe("historyStore", () => {
     expect(useHistoryStore.getState().loading).toBe(false);
   });
 
+  it("clears loading when remove rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteHistory).mockRejectedValueOnce(
+      new Error("delete failed"),
+    );
+    await expect(useHistoryStore.getState().remove("h1")).rejects.toThrow(
+      "delete failed",
+    );
+    // The discarded load's clear is skipped, so the mutation must clear it.
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
   it("clears loading when clear invalidates an in-flight load", async () => {
     let resolveStale!: (items: TranscriptionEntry[]) => void;
     const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
@@ -221,6 +246,29 @@ describe("historyStore", () => {
 
     vi.mocked(tauri.clearHistory).mockResolvedValueOnce(0);
     await useHistoryStore.getState().clear();
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when clear rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.clearHistory).mockRejectedValueOnce(
+      new Error("clear failed"),
+    );
+    await expect(useHistoryStore.getState().clear()).rejects.toThrow(
+      "clear failed",
+    );
     expect(useHistoryStore.getState().loading).toBe(false);
 
     resolveStale([]);
@@ -245,6 +293,90 @@ describe("historyStore", () => {
     resolveStale([]);
     await load;
     expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when togglePin rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.pinHistory).mockRejectedValueOnce(
+      new Error("pin failed"),
+    );
+    await expect(
+      useHistoryStore.getState().togglePin("h1", true),
+    ).rejects.toThrow("pin failed");
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it("load() requests the first page and sets hasMore when the page is full", async () => {
+    const fullPage = Array.from({ length: 100 }, (_, i) =>
+      createMockItem(`h${i}`, `item ${i}`),
+    );
+    vi.mocked(tauri.getHistory).mockResolvedValueOnce(fullPage);
+
+    await useHistoryStore.getState().load();
+
+    expect(tauri.getHistory).toHaveBeenCalledWith({ limit: 100, offset: 0 });
+    const state = useHistoryStore.getState();
+    expect(state.items).toEqual(fullPage);
+    expect(state.hasMore).toBe(true);
+  });
+
+  it("load() clears hasMore when a short page is returned", async () => {
+    vi.mocked(tauri.getHistory).mockResolvedValueOnce([
+      createMockItem("h1", "only one"),
+    ]);
+
+    await useHistoryStore.getState().load();
+
+    expect(useHistoryStore.getState().hasMore).toBe(false);
+  });
+
+  it("loadMore() requests the next page and appends results", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, i) =>
+      createMockItem(`h${i}`, `item ${i}`),
+    );
+    const secondPage = [createMockItem("h100", "next page item")];
+    vi.mocked(tauri.getHistory)
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(secondPage);
+
+    await useHistoryStore.getState().load();
+    await useHistoryStore.getState().loadMore();
+
+    expect(tauri.getHistory).toHaveBeenLastCalledWith({
+      limit: 100,
+      offset: 100,
+    });
+    const state = useHistoryStore.getState();
+    expect(state.items).toEqual([...firstPage, ...secondPage]);
+    expect(state.hasMore).toBe(false);
+  });
+
+  it("loadMore() does nothing when hasMore is false", async () => {
+    useHistoryStore.setState({ items: [createMockItem("h1", "x")], hasMore: false });
+
+    await useHistoryStore.getState().loadMore();
+
+    expect(tauri.getHistory).not.toHaveBeenCalled();
+  });
+
+  it("loadMore() does nothing while a load is already in flight", async () => {
+    useHistoryStore.setState({ hasMore: true, loading: true });
+
+    await useHistoryStore.getState().loadMore();
+
+    expect(tauri.getHistory).not.toHaveBeenCalled();
   });
 
   it("ignores stale rejection when a newer request has already completed", async () => {

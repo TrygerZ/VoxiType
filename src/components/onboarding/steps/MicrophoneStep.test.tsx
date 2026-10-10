@@ -20,6 +20,7 @@ describe("MicrophoneStep", () => {
     step: "microphone" as const,
     currentStepIdx: 2,
     t,
+    busy: false,
     selectedDevice: "",
     onDeviceChange: vi.fn(),
     onBack: vi.fn(),

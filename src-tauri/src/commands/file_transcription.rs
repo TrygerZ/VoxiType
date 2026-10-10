@@ -35,6 +35,9 @@ const PICKER_KIND_EXPORT_DIRECTORY: &str = "export_directory";
 /// 10 minutes of 16-bit 16 kHz WAV is ~19 MB, under Groq's 25 MB upload cap.
 const CHUNK_SECS: usize = 600;
 const CUT_SEARCH_SECS: usize = 5;
+/// Extra seconds a chunk may grow past `CHUNK_SECS` while searching for a
+/// quiet cut point in uniformly loud audio, before a force-cut.
+const CHUNK_EXTEND_SECS: usize = 5;
 pub const FILE_HISTORY_MODE: &str = "file";
 const SUPPORTED_LANGUAGES: [&str; 3] = ["auto", "id", "en"];
 /// A 180-word segment on a local 3B model can take well over the 30 s
@@ -160,20 +163,36 @@ pub struct TranscriptExport {
 
 /// Writes one file per transcript into a folder chosen via
 /// `pick_export_directory`. Returns the written paths.
+///
+/// Writing many files is blocking IO, so the work runs off the main thread.
 #[tauri::command]
-pub fn export_transcripts(
-    state: State<'_, AppStateInner>,
+pub async fn export_transcripts<R: Runtime>(
+    app: AppHandle<R>,
     directory: String,
     format: ExportFormat,
     items: Vec<TranscriptExport>,
 ) -> std::result::Result<Vec<String>, AppError> {
-    ensure_picker_backed_path(&state, PICKER_KIND_EXPORT_DIRECTORY, &directory)?;
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppStateInner>();
+        export_transcripts_blocking(&state, &directory, format, &items)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("export_transcripts task failed: {e}")))?
+}
+
+fn export_transcripts_blocking(
+    state: &AppStateInner,
+    directory: &str,
+    format: ExportFormat,
+    items: &[TranscriptExport],
+) -> std::result::Result<Vec<String>, AppError> {
+    ensure_picker_backed_path(state, PICKER_KIND_EXPORT_DIRECTORY, directory)?;
     if items.len() > MAX_BATCH_FILES {
         return Err(AppError::invalid_input(format!(
             "Export at most {MAX_BATCH_FILES} transcripts at a time"
         )));
     }
-    for item in &items {
+    for item in items {
         super::check_len("export item text", &item.text, super::MAX_TEXT_BLOB_LEN)?;
         super::check_len(
             "export item source path",
@@ -181,7 +200,7 @@ pub fn export_transcripts(
             super::MAX_IDENTIFIER_LEN,
         )?;
     }
-    let dir = Path::new(&directory);
+    let dir = Path::new(directory);
     items
         .iter()
         .map(|item| {
@@ -377,9 +396,13 @@ fn merge_decode_failure(
 
 fn decode_into_chunks(file: AudioFile, tx: mpsc::Sender<Vec<f32>>) -> Result<()> {
     let rate = TARGET_SAMPLE_RATE as usize;
-    let mut splitter = ChunkSplitter::new(CHUNK_SECS * rate, CUT_SEARCH_SECS * rate);
+    let mut splitter = ChunkSplitter::new(
+        CHUNK_SECS * rate,
+        CUT_SEARCH_SECS * rate,
+        CHUNK_EXTEND_SECS * rate,
+    );
     let decoded = file.decode_16k_mono(MAX_FILE_DURATION_SECS, |samples| {
-        for chunk in splitter.push(&samples) {
+        for chunk in splitter.push(samples) {
             tx.blocking_send(chunk).map_err(|_| consumer_gone())?;
         }
         Ok(())

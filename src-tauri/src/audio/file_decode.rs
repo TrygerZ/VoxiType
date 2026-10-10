@@ -22,6 +22,11 @@ use crate::error::{AppError, Result};
 /// Window used to measure loudness when searching for a cut point (100 ms).
 const SILENCE_WINDOW_SAMPLES: usize = TARGET_SAMPLE_RATE as usize / 10;
 
+/// Amplitude threshold below which a window counts as silent. Mirrors the
+/// capture module's `VOICE_THRESHOLD` concept; the mean-square comparison
+/// squares this value, so the gate is stated in amplitude for readability.
+const SILENT_WINDOW_RMS: f32 = 0.01;
+
 fn decode_error(e: SymphoniaError) -> AppError {
     AppError::invalid_input(format!("Unsupported or corrupt audio file: {e}"))
 }
@@ -82,7 +87,7 @@ impl AudioFile {
     pub fn decode_16k_mono(
         mut self,
         max_secs: u64,
-        mut on_samples: impl FnMut(Vec<f32>) -> Result<()>,
+        mut on_samples: impl FnMut(&[f32]) -> Result<()>,
     ) -> Result<()> {
         let max_samples = max_secs as usize * TARGET_SAMPLE_RATE as usize;
         let mut resampler: Option<Resampler> = None;
@@ -105,7 +110,7 @@ impl AudioFile {
         if let Some(mut r) = resampler {
             let tail = r.flush()?;
             if !tail.is_empty() {
-                on_samples(tail)?;
+                on_samples(&tail)?;
             }
         }
         Ok(())
@@ -152,20 +157,25 @@ pub fn too_long_error(max_secs: u64) -> AppError {
     ))
 }
 
-/// Splits a sample stream into chunks of at most `chunk_len` samples, cutting
-/// at the quietest window within the last `search_len` samples of each chunk.
+/// Splits a sample stream into chunks, cutting at the quietest window so words
+/// are not split. A chunk is cut as soon as a window below [`SILENT_WINDOW_RMS`]
+/// is found near the boundary; when the audio is uniformly loud, the buffer is
+/// allowed to grow up to `extend_len` past `chunk_len` before a force-cut at the
+/// quietest available window. No audio overlaps between chunks.
 pub struct ChunkSplitter {
     buffer: Vec<f32>,
     chunk_len: usize,
     search_len: usize,
+    extend_len: usize,
 }
 
 impl ChunkSplitter {
-    pub fn new(chunk_len: usize, search_len: usize) -> Self {
+    pub fn new(chunk_len: usize, search_len: usize, extend_len: usize) -> Self {
         Self {
             buffer: Vec::new(),
             chunk_len,
             search_len: search_len.min(chunk_len / 2),
+            extend_len,
         }
     }
 
@@ -174,7 +184,19 @@ impl ChunkSplitter {
         self.buffer.extend_from_slice(samples);
         let mut chunks = Vec::new();
         while self.buffer.len() >= self.chunk_len {
-            let cut = quietest_cut(&self.buffer[..self.chunk_len], self.search_len);
+            let search_start = self.chunk_len - self.search_len;
+            let (quiet_cut, energy) = quietest_cut(&self.buffer, search_start, self.chunk_len);
+            let cut = if energy < SILENT_WINDOW_RMS * SILENT_WINDOW_RMS {
+                // A silent window exists near the boundary; cut there immediately.
+                quiet_cut
+            } else if self.buffer.len() >= self.chunk_len + self.extend_len {
+                // Uniformly loud: the extended tail may hold a quieter spot.
+                let limit = (self.chunk_len + self.extend_len).min(self.buffer.len());
+                quietest_cut(&self.buffer, search_start, limit).0
+            } else {
+                // Not yet long enough to force a cut; wait for more samples.
+                break;
+            };
             let rest = self.buffer.split_off(cut);
             chunks.push(std::mem::replace(&mut self.buffer, rest));
         }
@@ -187,15 +209,38 @@ impl ChunkSplitter {
     }
 }
 
-fn quietest_cut(chunk: &[f32], search_len: usize) -> usize {
-    let start = chunk.len() - search_len;
-    chunk[start..]
+/// Quietest window's midpoint within `samples[start..end]`, paired with that
+/// window's mean square energy.
+///
+/// Ties resolve to the later window so a force-cut on uniformly loud audio
+/// lands as close to the extension limit as possible (longer chunks, fewer
+/// boundaries), rather than snapping back to the start of the search region.
+fn quietest_cut(samples: &[f32], start: usize, end: usize) -> (usize, f32) {
+    let mut best: Option<(usize, f32)> = None;
+    for (i, window) in samples[start..end]
         .chunks(SILENCE_WINDOW_SAMPLES)
         .enumerate()
-        .map(|(i, w)| (i, w.len(), w.iter().map(|s| s * s).sum::<f32>()))
-        .min_by(|a, b| a.2.total_cmp(&b.2))
-        .map(|(i, len, _)| start + i * SILENCE_WINDOW_SAMPLES + len / 2)
-        .unwrap_or(chunk.len())
+    {
+        let energy = mean_square(window);
+        if best.is_none_or(|(_, best_energy)| energy <= best_energy) {
+            // Cut at the window midpoint, staying inside the window even when
+            // the trailing window is shorter than a full window.
+            best = Some((
+                start + i * SILENCE_WINDOW_SAMPLES + window.len() / 2,
+                energy,
+            ));
+        }
+    }
+    best.unwrap_or((end, f32::INFINITY))
+}
+
+/// Mean square energy of a window (mean, not sum, so a shorter trailing window
+/// compares fairly against full windows).
+fn mean_square(window: &[f32]) -> f32 {
+    if window.is_empty() {
+        return 0.0;
+    }
+    window.iter().map(|s| s * s).sum::<f32>() / window.len() as f32
 }
 
 #[cfg(test)]
@@ -213,7 +258,7 @@ mod tests {
     fn decode_all(path: &Path, max_secs: u64) -> Result<Vec<f32>> {
         let mut out = Vec::new();
         AudioFile::open(path)?.decode_16k_mono(max_secs, |s| {
-            out.extend(s);
+            out.extend_from_slice(s);
             Ok(())
         })?;
         Ok(out)
@@ -255,7 +300,7 @@ mod tests {
         let mut stream = vec![0.5f32; window * 25];
         // Silent window inside the search region (last 10 windows of the first 20).
         stream[window * 14..window * 15].fill(0.0);
-        let mut splitter = ChunkSplitter::new(window * 20, window * 10);
+        let mut splitter = ChunkSplitter::new(window * 20, window * 10, window * 5);
         let chunks = splitter.push(&stream);
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].len(), window * 14 + window / 2);
@@ -264,12 +309,87 @@ mod tests {
     }
 
     #[test]
-    fn splitter_never_exceeds_chunk_len() {
-        let mut splitter = ChunkSplitter::new(10_000, 4_000);
-        let chunks = splitter.push(&vec![0.3; 55_000]);
-        assert!(chunks.iter().all(|c| c.len() <= 10_000 && !c.is_empty()));
+    fn splitter_extends_uniform_energy_then_force_cuts_within_extend_len() {
+        let window = SILENCE_WINDOW_SAMPLES;
+        let chunk_len = window * 6;
+        let extend_len = window * 5;
+        // Uniform loud audio: no silent window, so the chunk must grow past
+        // chunk_len up to chunk_len + extend_len before a force-cut.
+        let mut splitter = ChunkSplitter::new(chunk_len, window * 3, extend_len);
+        let chunks = splitter.push(&vec![0.3; window * 35]);
+
+        assert!(!chunks.is_empty());
+        assert!(
+            chunks
+                .iter()
+                .all(|c| !c.is_empty() && c.len() <= chunk_len + extend_len),
+            "chunks must stay within chunk_len + extend_len"
+        );
+        assert!(
+            chunks[0].len() > chunk_len,
+            "uniform energy must extend past chunk_len, got {}",
+            chunks[0].len()
+        );
+        assert!(
+            (chunk_len + extend_len) - chunks[0].len() < window,
+            "force-cut must land within one window of the extension limit"
+        );
+
         let total: usize =
             chunks.iter().map(Vec::len).sum::<usize>() + splitter.finish().map_or(0, |c| c.len());
-        assert_eq!(total, 55_000);
+        assert_eq!(total, window * 35, "every sample must be preserved");
+    }
+
+    #[test]
+    fn splitter_cuts_below_threshold_before_extension() {
+        let window = SILENCE_WINDOW_SAMPLES;
+        let chunk_len = window * 6;
+        // Quiet (below-threshold) window inside the search region, past the
+        // halfway point of the chunk: energy 0.005^2 = 2.5e-5 < threshold^2.
+        let mut stream = vec![0.5f32; window * 10];
+        stream[window * 4..window * 5].fill(0.005);
+        let mut splitter = ChunkSplitter::new(chunk_len, window * 3, window * 5);
+        let chunks = splitter.push(&stream);
+
+        assert_eq!(chunks.len(), 1);
+        assert!(
+            chunks[0].len() < chunk_len,
+            "a below-threshold window must cut before the extension, got {}",
+            chunks[0].len()
+        );
+        assert_eq!(chunks[0].len(), window * 4 + window / 2);
+    }
+
+    #[test]
+    fn splitter_force_cut_prefers_quieter_window_in_extension() {
+        let window = SILENCE_WINDOW_SAMPLES;
+        let chunk_len = window * 6;
+        let extend_len = window * 5;
+        // Loud audio with a quieter (but still above-threshold) window in the
+        // extension region, past chunk_len: energy 0.05^2 = 2.5e-3 > threshold^2.
+        let mut stream = vec![0.3f32; window * 11];
+        stream[window * 7..window * 8].fill(0.05);
+        let mut splitter = ChunkSplitter::new(chunk_len, window * 3, extend_len);
+        let chunks = splitter.push(&stream);
+
+        assert_eq!(chunks.len(), 1);
+        // The force-cut must choose the quieter window, not the earlier loud one.
+        assert_eq!(chunks[0].len(), window * 7 + window / 2);
+    }
+
+    #[test]
+    fn splitter_waits_for_extend_len_before_cutting() {
+        let window = SILENCE_WINDOW_SAMPLES;
+        let chunk_len = window * 6;
+        let extend_len = window * 5;
+        // Uniform loud stream shorter than chunk_len + extend_len: no chunk yet.
+        let mut splitter = ChunkSplitter::new(chunk_len, window * 3, extend_len);
+        let chunks = splitter.push(&vec![0.3; window * 10]);
+
+        assert!(
+            chunks.is_empty(),
+            "must not cut before reaching the extension limit"
+        );
+        assert_eq!(splitter.finish().map_or(0, |c| c.len()), window * 10);
     }
 }

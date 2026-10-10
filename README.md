@@ -51,10 +51,9 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 | Desktop | Tauri 2.x |
 | Frontend | React 19 + Vite 7 + Tailwind 4 |
 | State | Zustand 5.x |
-| Backend | Rust 1.85+ |
+| Backend | Rust 1.90+ |
 | Storage | SQLite (rusqlite) |
-| Audio | cpal + rubato + ringbuf; symphonia for file decode |
-| VAD | Energy-based (default) |
+| Audio | cpal + rubato; symphonia for file decode |
 | Export | TXT, DOCX (zip), PDF (built-in Helvetica) |
 | STT | Groq Whisper API + whisper.cpp (selectable via `stt_engine` setting) |
 | LLM | Ollama (Qwen2.5 3B), Groq (Llama 3.1 8B), rule-based, off |
@@ -66,7 +65,7 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 
 - Windows 10 or Windows 11
 - Node.js 20+
-- Rust 1.85+
+- Rust 1.90+
 - Groq API key for cloud transcription ([sign up for free](https://console.groq.com/))
 - Optional for offline mode: whisper-cli binary + GGML model
 
@@ -109,7 +108,7 @@ For offline dictation without Groq, follow [docs/offline-whisper-cpp.md](docs/of
 
 VoxiType enforces strict separation of concerns:
 
-- **Modules = traits + factories** - Each module (STT, LLM, Audio, Text Injection) is a trait with factory instantiation
+- **Modules = traits + factories** - Each module (STT, LLM, Text Injection) is a trait with factory instantiation; audio is a concrete implementation
 - **Pipeline orchestrates** - `pipeline/` controls the entire recording lifecycle as a finite state machine. Modules do not call each other
 - **IPC only** - Frontend communicates via `invoke`/events, never touches system APIs
 - **Storage isolated** - Only `storage/` module accesses SQLite
@@ -130,7 +129,7 @@ Error→Recording retry for transient failures (network, timeout) with exponenti
 ```
 User presses hotkey
        │
-[Idle → Recording]  - Audio capture via cpal, resample 48k → 16k to ring buffer
+[Idle → Recording]  - Audio capture via cpal, resample 48k → 16k into the capture buffer
         │ (hotkey release / toggle stop)
 [Recording → Processing]
        ├── STT: Groq Whisper API or local whisper.cpp (with hotword boosting)
@@ -193,7 +192,7 @@ src/                  # React frontend
 
 src-tauri/src/        # Rust backend
 ├── active_window.rs  # Per-app mode detection via Win32 API
-├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD + file decode (symphonia)
+├── audio/            # Audio capture (cpal) + resampler (rubato) + file decode (symphonia)
 ├── commands/         # Tauri IPC handlers (49 commands across 9 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate
@@ -265,7 +264,7 @@ For full offline transcription without Groq, see [docs/offline-whisper-cpp.md](d
 
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
-| CI | Push/PR to `main` | TypeScript check, Vite build, Rust format, clippy, test (all `--no-default-features`) |
+| CI | Push/PR to `main` | TypeScript check, Vite build, frontend tests, Rust format, clippy, test (all `--no-default-features`) |
 | Release | Push tag `v*` | tauri-action unsigned build + GitHub Release draft (Windows only) |
 
 ## License

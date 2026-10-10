@@ -78,4 +78,44 @@ describe("statsStore", () => {
     expect(state.error).toBeNull();
     expect(state.totals.total_words).toBe(50);
   });
+
+  it("ignores a stale load that resolves after a newer one", async () => {
+    // First (older) load resolves last with stale totals; the second (newer)
+    // load resolves first with fresh totals. The stale result must not
+    // overwrite the fresher one.
+    let resolveStale: (value: {
+      total_words: number;
+      total_duration_ms: number;
+      total_sessions: number;
+    }) => void = () => {};
+    const stalePromise = new Promise<{
+      total_words: number;
+      total_duration_ms: number;
+      total_sessions: number;
+    }>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getUsageStats).mockReturnValueOnce(stalePromise);
+    const staleLoad = useStatsStore.getState().load();
+
+    vi.mocked(tauri.getUsageStats).mockResolvedValueOnce({
+      total_words: 200,
+      total_duration_ms: 120000,
+      total_sessions: 20,
+    });
+    await useStatsStore.getState().load();
+
+    // Resolve the older request only after the newer one has committed.
+    resolveStale({
+      total_words: 1,
+      total_duration_ms: 1000,
+      total_sessions: 1,
+    });
+    await staleLoad;
+
+    const state = useStatsStore.getState();
+    expect(state.totals.total_words).toBe(200);
+    expect(state.totals.total_sessions).toBe(20);
+  });
 });

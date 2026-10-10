@@ -69,6 +69,7 @@ export function LLMTab() {
       <SettingsGroup title={t("settings.llm.engine_group")}>
         <SettingsRow label={t("settings.llm.formatter")}>
           <Select
+            aria-label={t("settings.llm.formatter")}
             options={[
               { value: "ollama", label: "Ollama (Local)" },
               { value: "groq", label: "Groq Llama 3.1 (Cloud)" },

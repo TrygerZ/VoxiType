@@ -1,6 +1,6 @@
 //! Dictionary commands.
 
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -87,17 +87,32 @@ pub fn export_dictionary(state: State<'_, AppStateInner>) -> std::result::Result
     serde_json::to_string_pretty(&entries).map_err(AppError::from)
 }
 
+/// Imports dictionary entries from a JSON payload. Parsing up to 10,000
+/// entries and writing them is blocking IO, so the work runs off the main
+/// thread.
 #[tauri::command]
-pub fn import_dictionary(
-    state: State<'_, AppStateInner>,
+pub async fn import_dictionary<R: Runtime>(
+    app: AppHandle<R>,
     data: String,
+) -> std::result::Result<u32, AppError> {
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppStateInner>();
+        import_dictionary_blocking(&state, &data)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("import_dictionary task failed: {e}")))?
+}
+
+fn import_dictionary_blocking(
+    state: &AppStateInner,
+    data: &str,
 ) -> std::result::Result<u32, AppError> {
     if data.len() > MAX_IMPORT_BYTES {
         return Err(AppError::internal(format!(
             "import payload exceeds {MAX_IMPORT_BYTES} bytes"
         )));
     }
-    let mut entries: Vec<DictionaryEntry> = serde_json::from_str(&data)?;
+    let mut entries: Vec<DictionaryEntry> = serde_json::from_str(data)?;
     if entries.len() > MAX_IMPORT_ENTRIES {
         return Err(AppError::internal(format!(
             "import has {} entries, max {MAX_IMPORT_ENTRIES}",

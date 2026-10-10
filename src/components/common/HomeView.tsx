@@ -212,7 +212,8 @@ export function HomeView() {
             {t("app.name")}
           </div>
           <h2 className="mb-6 text-2xl font-bold tracking-tight text-vx-text-primary">
-            {greeting}, User!
+            {greeting}
+            {t("home.greeting.suffix")}
           </h2>
 
           {/* Voice Mic Button — calm brand tint, no glow */}
@@ -453,7 +454,7 @@ export function HomeView() {
                     aria-label={t("settings.general.lang")}
                   >
                     <option value="en">English</option>
-                    <option value="id">Indonesia</option>
+                    <option value="id">Bahasa Indonesia</option>
                   </select>
                 )}
                 <button

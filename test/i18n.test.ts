@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { en, id } from "../src/lib/i18n";
@@ -19,9 +22,11 @@ function flatten(source: Record<string, unknown>, prefix = ""): Map<string, stri
   return out;
 }
 
-// U+2013 en dash and U+2014 em dash, written as escapes so this source
+// U+2013 en dash and U+2014 em dash, built from code points so this source
 // carries neither character itself.
-const FORBIDDEN_DASH = /[\u2013\u2014]/;
+const EN_DASH = String.fromCharCode(0x2013);
+const EM_DASH = String.fromCharCode(0x2014);
+const FORBIDDEN_DASH = new RegExp(`[${EN_DASH}${EM_DASH}]`);
 
 describe("i18n catalogs", () => {
   const catalogs = { id, en };
@@ -42,5 +47,10 @@ describe("i18n catalogs", () => {
       .filter(([, value]) => FORBIDDEN_DASH.test(value))
       .map(([key]) => key);
     expect(offenders).toEqual([]);
+  });
+
+  it("i18n.ts source has no en/em dash anywhere, comments included", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/lib/i18n.ts"), "utf8");
+    expect(FORBIDDEN_DASH.test(source)).toBe(false);
   });
 });

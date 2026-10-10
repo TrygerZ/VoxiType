@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
+import { useT } from "../../lib/i18n";
+
 const MOD_KEYS = new Set([
   "Control",
   "Shift",
@@ -39,25 +41,31 @@ interface HotkeyRecorderProps {
 }
 
 export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
+  const t = useT();
   const [recording, setRecording] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
       if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
         setRecording(false);
         return;
       }
+      // Tab must move focus, so never consume it.
+      if (e.key === "Tab") return;
+
       const combo = toAccelerator(e);
-      if (combo) {
-        if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
-          return;
-        }
+      const hasModifier = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey;
+      if (combo && hasModifier) {
+        e.preventDefault();
+        e.stopPropagation();
         onChange(combo);
         setRecording(false);
       }
+      // Plain keys without modifiers stay unconsumed: the recorder keeps
+      // waiting and the keystroke reaches the rest of the UI.
     },
     [onChange],
   );
@@ -83,7 +91,7 @@ export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-vx-text-secondary">
-        Hotkey combination
+        {t("settings.shortcuts.recorder_label")}
       </span>
       <button
         ref={btnRef}
@@ -97,7 +105,7 @@ export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
       >
         {recording ? (
           <span className="animate-pulse text-vx-accent">
-            Press your shortcut…
+            {t("settings.shortcuts.recorder_press")}
           </span>
         ) : (
           <span className="flex items-center gap-1">
@@ -114,8 +122,8 @@ export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
       </button>
       <span className="text-xs text-vx-text-dim">
         {recording
-          ? "Press Escape to cancel"
-          : "Click to record a new shortcut"}
+          ? t("settings.shortcuts.recorder_cancel_hint")
+          : t("settings.shortcuts.recorder_hint")}
       </span>
     </div>
   );

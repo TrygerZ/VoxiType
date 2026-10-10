@@ -169,11 +169,15 @@ pub async fn post_process(
 }
 
 /// Errors that will repeat for every remaining segment, so further calls
-/// would only waste time.
+/// would only waste time. A per-request timeout (e.g. 120 s on Ollama) is
+/// included: it repeats for every segment and would multiply the wait.
 fn stops_remaining_segments(e: &AppError) -> bool {
     matches!(
         e.code,
-        ErrorCode::LlmConnectionRefused | ErrorCode::LlmApiKeyInvalid | ErrorCode::Cancelled
+        ErrorCode::LlmConnectionRefused
+            | ErrorCode::LlmApiKeyInvalid
+            | ErrorCode::Cancelled
+            | ErrorCode::Timeout
     )
 }
 
@@ -198,6 +202,12 @@ async fn format_segments(
         if stopped {
             out.push(segment);
             skipped += 1;
+            // Advance progress for the segment we just kept raw, otherwise the
+            // UI bar freezes at the segment that stopped the run.
+            on_progress(Progress::Formatting {
+                done: i as u32 + 1,
+                total,
+            });
             continue;
         }
         match format_with_rate_limit_retry(formatter, &segment, &raw.language, cancel).await {
@@ -349,6 +359,23 @@ mod tests {
         }
     }
 
+    /// Always times out per request and counts calls; like a slow Ollama run
+    /// that would repeat the full wait for every remaining segment.
+    struct TimeoutFormatter(AtomicU32);
+    #[async_trait]
+    impl LlmFormatter for TimeoutFormatter {
+        async fn format(&self, _t: &str, _m: &LlmMode, _l: &str) -> Result<String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(AppError::timeout("request timed out"))
+        }
+        async fn translate(&self, text: &str, _s: &str, _t: &str) -> Result<String> {
+            Ok(text.to_string())
+        }
+        fn name(&self) -> &'static str {
+            "timeout"
+        }
+    }
+
     fn channel_with(chunks: Vec<Vec<f32>>) -> mpsc::Receiver<Vec<f32>> {
         let (tx, rx) = mpsc::channel(chunks.len().max(1));
         for c in chunks {
@@ -483,6 +510,45 @@ mod tests {
         assert_eq!(down.0.load(Ordering::SeqCst), 1);
         assert_eq!(out.text.split("\n\n").count(), 3);
         assert_eq!(out.llm_issue.unwrap().count, 3);
+    }
+
+    #[tokio::test]
+    async fn timeout_stops_after_first_segment_and_keeps_raw_text() {
+        let timeout = Arc::new(TimeoutFormatter(AtomicU32::new(0)));
+        let out = post_process(
+            &raw(&three_segments()),
+            &options(Some(timeout.clone())),
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .await;
+        // A per-request timeout would repeat for every segment, so it stops the
+        // run after the first failure instead of waiting once per segment.
+        assert_eq!(timeout.0.load(Ordering::SeqCst), 1);
+        assert_eq!(out.text.split("\n\n").count(), 3);
+        let issue = out.llm_issue.unwrap();
+        assert_eq!(issue.count, 3);
+        assert_eq!(issue.reason, "request timed out");
+    }
+
+    #[tokio::test]
+    async fn stopped_segments_still_advance_progress() {
+        // A stopping error on segment 1 leaves the rest raw, but the progress
+        // bar must still reach `done == total` instead of freezing.
+        let timeout = Arc::new(TimeoutFormatter(AtomicU32::new(0)));
+        let progress = Mutex::new(Vec::new());
+        let out = post_process(
+            &raw(&three_segments()),
+            &options(Some(timeout)),
+            &AtomicBool::new(false),
+            |p| progress.lock().unwrap().push(p),
+        )
+        .await;
+        let total = out.text.split("\n\n").count() as u32;
+        assert_eq!(
+            progress.lock().unwrap().last(),
+            Some(&Progress::Formatting { done: total, total })
+        );
     }
 
     #[tokio::test]
