@@ -38,6 +38,12 @@ export function ShortcutsTab() {
 
   const handleApply = async () => {
     if (busy) return;
+    // Clear any pending reset timer so a prior success can't erase this
+    // attempt's error (or stale "ok") a moment later.
+    if (statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
     setBusy(true);
     try {
       await setHotkey(key, mode);

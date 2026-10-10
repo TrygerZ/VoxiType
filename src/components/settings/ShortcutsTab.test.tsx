@@ -62,6 +62,27 @@ describe("ShortcutsTab applied status timer", () => {
 
     expect(clearSpy).toHaveBeenCalled();
   });
+
+  it("keeps the error when a failure follows a success within the reset window", async () => {
+    render(<ShortcutsTab />);
+
+    await applyHotkey();
+    expect(screen.getByText("Applied")).toBeInTheDocument();
+
+    // Second apply fails 500 ms in, while the first success timer is armed.
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    vi.mocked(tauri.setHotkey).mockRejectedValueOnce(new Error("boom"));
+    await applyHotkey();
+    expect(screen.getByText("boom")).toBeInTheDocument();
+
+    // Past the first timer's deadline the error must still be shown.
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByText("boom")).toBeInTheDocument();
+  });
 });
 
 describe("ShortcutsTab apply failure", () => {
