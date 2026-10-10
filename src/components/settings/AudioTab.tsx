@@ -31,6 +31,7 @@ export function AudioTab() {
       <SettingsGroup title={t("settings.audio.device_group")}>
         <SettingsRow label={t("settings.audio.mic")}>
           <Select
+            aria-label={t("settings.audio.mic")}
             options={devices.map((d) => ({ value: d.id, label: d.name }))}
             value={getStringSetting(settings.mic_device, "default")}
             onChange={(e) => void invokeAction(() => update("mic_device", e.target.value))}

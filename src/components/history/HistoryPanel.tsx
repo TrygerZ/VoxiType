@@ -167,6 +167,7 @@ export function HistoryPanel() {
           />
         </div>
         <Select
+          aria-label={t("history.mode_filter")}
           options={[
             { value: "", label: t("history.all_modes") },
             { value: "dictation", label: t("settings.modes.dictation") },

@@ -59,6 +59,7 @@ export function ShortcutsTab() {
           description={t("settings.shortcuts.mode_desc")}
         >
           <Select
+            aria-label={t("settings.shortcuts.mode")}
             options={[
               { value: "ptt", label: "Push-to-Talk" },
               { value: "toggle", label: "Toggle" },

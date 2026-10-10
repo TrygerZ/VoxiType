@@ -105,6 +105,7 @@ export function STTTab() {
       <SettingsGroup title={t("settings.stt.engine_group")}>
         <SettingsRow label={t("settings.stt.engine")}>
           <Select
+            aria-label={t("settings.stt.engine")}
             options={[
               { value: "groq", label: "Groq Whisper" },
               { value: "whisper_cpp", label: "Offline whisper.cpp" },
@@ -116,6 +117,7 @@ export function STTTab() {
         </SettingsRow>
         <SettingsRow label={t("settings.stt.lang")}>
           <Select
+            aria-label={t("settings.stt.lang")}
             options={[
               { value: "auto", label: t("settings.stt.lang_auto") },
               { value: "id", label: "Bahasa Indonesia" },

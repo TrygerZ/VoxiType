@@ -25,6 +25,7 @@ export function ModesTab() {
           description={t("settings.modes.active_desc")}
         >
           <Select
+            aria-label={t("settings.modes.active")}
             options={[
               { value: "dictation", label: t("settings.modes.dictation") },
               { value: "message", label: t("settings.modes.message") },
@@ -45,11 +46,13 @@ export function ModesTab() {
           <Switch
             checked={translationOn}
             onChange={(v) => void invokeAction(() => update("translation_enabled", v))}
+            ariaLabel={t("settings.modes.trans_after")}
           />
         </SettingsRow>
         {translationOn && (
           <SettingsRow label={t("settings.modes.target")}>
             <Select
+              aria-label={t("settings.modes.target")}
               options={[
                 { value: "en", label: "English" },
                 { value: "id", label: "Bahasa Indonesia" },

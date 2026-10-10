@@ -109,6 +109,7 @@ export function PerAppTab() {
           <Switch
             checked={perAppOn}
             onChange={(v) => void invokeAction(() => update("per_app_mode", v))}
+            ariaLabel={t("settings.app_rules.enable")}
           />
         </SettingsRow>
       </SettingsGroup>
