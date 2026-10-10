@@ -84,7 +84,11 @@ impl MicMeterState {
         let mut inner = self.inner.lock_recover();
         inner.desired = false;
         inner.gen = inner.gen.wrapping_add(1);
-        if let Some(mut capture) = inner.capture.take() {
+        let capture = inner.capture.take();
+        // Drop the lock before joining the capture thread (in `cancel`), so a
+        // concurrent start/stop is not blocked on device teardown. Mirrors `commit`.
+        drop(inner);
+        if let Some(mut capture) = capture {
             let _ = capture.cancel();
         }
     }
