@@ -288,9 +288,10 @@ fn migrate_data(default_dir: &Path, target_dir: &Path) -> Result<()> {
         if !is_valid_sqlite_file(&target_db) {
             return Err(AppError::data_directory("target database is invalid"));
         }
-        // A valid target DB plus a present source key and a missing target key
-        // means a prior attempt copied the DB but was interrupted before the key.
-        if source_key.is_file() && !target_key.is_file() {
+        // A valid target DB with no key means a prior copy attempt was interrupted
+        // before the key (or ran without one). Recover whenever the source still
+        // holds a DB to copy; never delete a target that is the only copy.
+        if !target_key.is_file() && source_db.is_file() {
             tracing::info!(
                 "Recovering interrupted data migration by removing target database without master.key"
             );
@@ -858,6 +859,50 @@ mod tests {
         assert_eq!(
             crate::crypto::get_master_key(&target.0, &default_dir.0).unwrap(),
             [7u8; 32]
+        );
+    }
+
+    #[test]
+    fn interrupted_target_without_source_key_recopies_source() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        std::fs::create_dir_all(source.0.join("data")).unwrap();
+        std::fs::write(
+            source.0.join("data/voxitype.db"),
+            b"SQLite format 3\0fresh-source",
+        )
+        .unwrap();
+        // Source key was lost too; the newer source DB must still win.
+        std::fs::create_dir_all(target.0.join("data")).unwrap();
+        std::fs::write(target.0.join("data/voxitype.db"), b"SQLite format 3\0stale").unwrap();
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert_eq!(
+            std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
+            b"SQLite format 3\0fresh-source"
+        );
+        assert!(
+            !target.0.join("master.key").exists(),
+            "no key should be invented when neither side holds one"
+        );
+    }
+
+    #[test]
+    fn target_without_key_is_kept_when_source_has_no_database() {
+        let source = TempDir::new();
+        let target = TempDir::new();
+        std::fs::create_dir_all(target.0.join("data")).unwrap();
+        std::fs::write(
+            target.0.join("data/voxitype.db"),
+            b"SQLite format 3\0only-copy",
+        )
+        .unwrap();
+
+        assert_eq!(migrate_data_if_needed(&source.0, &target.0), target.0);
+        assert_eq!(
+            std::fs::read(target.0.join("data/voxitype.db")).unwrap(),
+            b"SQLite format 3\0only-copy",
+            "the target is the only copy and must not be deleted"
         );
     }
 
