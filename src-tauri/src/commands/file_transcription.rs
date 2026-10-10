@@ -35,6 +35,9 @@ const PICKER_KIND_EXPORT_DIRECTORY: &str = "export_directory";
 /// 10 minutes of 16-bit 16 kHz WAV is ~19 MB, under Groq's 25 MB upload cap.
 const CHUNK_SECS: usize = 600;
 const CUT_SEARCH_SECS: usize = 5;
+/// Extra seconds a chunk may grow past `CHUNK_SECS` while searching for a
+/// quiet cut point in uniformly loud audio, before a force-cut.
+const CHUNK_EXTEND_SECS: usize = 5;
 pub const FILE_HISTORY_MODE: &str = "file";
 const SUPPORTED_LANGUAGES: [&str; 3] = ["auto", "id", "en"];
 /// A 180-word segment on a local 3B model can take well over the 30 s
@@ -393,7 +396,11 @@ fn merge_decode_failure(
 
 fn decode_into_chunks(file: AudioFile, tx: mpsc::Sender<Vec<f32>>) -> Result<()> {
     let rate = TARGET_SAMPLE_RATE as usize;
-    let mut splitter = ChunkSplitter::new(CHUNK_SECS * rate, CUT_SEARCH_SECS * rate);
+    let mut splitter = ChunkSplitter::new(
+        CHUNK_SECS * rate,
+        CUT_SEARCH_SECS * rate,
+        CHUNK_EXTEND_SECS * rate,
+    );
     let decoded = file.decode_16k_mono(MAX_FILE_DURATION_SECS, |samples| {
         for chunk in splitter.push(&samples) {
             tx.blocking_send(chunk).map_err(|_| consumer_gone())?;
