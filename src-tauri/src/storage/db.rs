@@ -417,6 +417,17 @@ mod tests {
             })
             .unwrap();
         assert_eq!(stt_model, "\"whisper-large-v3-turbo\"");
+
+        let whisper_binary: String = db
+            .with_conn(|c| {
+                Ok(c.query_row(
+                    "SELECT value FROM settings WHERE key = 'whisper_cpp_binary_path'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(whisper_binary, "\"\"");
     }
 
     #[test]

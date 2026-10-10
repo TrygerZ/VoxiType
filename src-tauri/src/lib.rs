@@ -82,6 +82,7 @@ impl AppStateInner {
         }
 
         migrate_legacy_api_key(&db, &master_key)?;
+        clear_seeded_whisper_binary_placeholder(&db)?;
 
         Ok(Self {
             db,
@@ -118,6 +119,32 @@ fn migrate_legacy_api_key(db: &Database, master_key: &[u8; 32]) -> error::Result
     if let Some(encrypted) = crypto::migrate_plaintext_key(&stored, master_key)? {
         settings.set(API_KEY_SETTING, &encrypted)?;
         tracing::info!("Migrated legacy plaintext {API_KEY_SETTING} to encrypted storage");
+    }
+
+    Ok(())
+}
+
+/// Legacy seeded placeholder for the whisper.cpp binary path.
+///
+/// Installs seeded before the placeholder fix stored this literal, which the
+/// settings UI then displayed as a chosen binary.
+const LEGACY_WHISPER_BINARY_PLACEHOLDER: &str = "whisper-cli";
+
+/// Clear the legacy seeded placeholder for the whisper.cpp binary path.
+///
+/// Installs seeded before the placeholder fix stored the literal
+/// `whisper-cli`, which the settings UI then displayed as a chosen binary.
+/// The literal can never be a valid picked path (the picker gate requires a
+/// token sealed to a canonical path), so an exact match is always the seed.
+/// Idempotent; leaves every other value untouched.
+fn clear_seeded_whisper_binary_placeholder(db: &Database) -> error::Result<()> {
+    const BINARY_PATH_SETTING: &str = "whisper_cpp_binary_path";
+    let settings = SettingsManager::new(db);
+
+    let stored = settings.get::<String>(BINARY_PATH_SETTING)?;
+    if stored.as_deref() == Some(LEGACY_WHISPER_BINARY_PLACEHOLDER) {
+        settings.set(BINARY_PATH_SETTING, &"")?;
+        tracing::info!("Cleared legacy seeded {BINARY_PATH_SETTING} placeholder");
     }
 
     Ok(())
@@ -484,5 +511,37 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn clear_seeded_whisper_binary_placeholder_is_idempotent_and_scoped() {
+        const BINARY_PATH_SETTING: &str = "whisper_cpp_binary_path";
+        let db = Database::open_in_memory().expect("open in-memory db");
+        let settings = SettingsManager::new(&db);
+
+        settings
+            .set(BINARY_PATH_SETTING, &LEGACY_WHISPER_BINARY_PLACEHOLDER)
+            .expect("seed legacy placeholder");
+        clear_seeded_whisper_binary_placeholder(&db).expect("normalize");
+        assert_eq!(
+            settings.get::<String>(BINARY_PATH_SETTING).unwrap(),
+            Some(String::new())
+        );
+
+        clear_seeded_whisper_binary_placeholder(&db).expect("normalize again");
+        assert_eq!(
+            settings.get::<String>(BINARY_PATH_SETTING).unwrap(),
+            Some(String::new())
+        );
+
+        let real_path = "C:\\tools\\whisper-cli.exe";
+        settings
+            .set(BINARY_PATH_SETTING, &real_path.to_string())
+            .expect("seed real path");
+        clear_seeded_whisper_binary_placeholder(&db).expect("normalize with real path");
+        assert_eq!(
+            settings.get::<String>(BINARY_PATH_SETTING).unwrap(),
+            Some(real_path.to_string())
+        );
     }
 }
