@@ -136,8 +136,9 @@ export default function App() {
   if (showOnboarding) {
     return (
       <ErrorBoundary>
-        <div className="flex h-full flex-col">
+        <div className="flex h-full flex-col relative">
           <OnboardingFlow onComplete={() => setShowOnboarding(false)} />
+          <ToastContainer />
         </div>
       </ErrorBoundary>
     );

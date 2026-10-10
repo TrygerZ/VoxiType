@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useToastStore, toast } from "./stores/toastStore";
 import * as tauri from "./lib/tauri";
 
 describe("App onboarding gating", () => {
@@ -13,6 +14,7 @@ describe("App onboarding gating", () => {
       loaded: false,
       error: null,
     });
+    useToastStore.setState({ toasts: [] });
   });
 
   it("does not render onboarding when settings load fails with error", async () => {
@@ -90,5 +92,21 @@ describe("App onboarding gating", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Failed to load settings")).not.toBeInTheDocument();
     consoleSpy.mockRestore();
+  });
+
+  it("renders toasts raised during onboarding", async () => {
+    vi.mocked(tauri.getSettings).mockResolvedValue({});
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Welcome to VoxiType" }),
+    ).toBeInTheDocument();
+
+    act(() => {
+      toast("hotkey unavailable", "info");
+    });
+
+    expect(screen.getByText("hotkey unavailable")).toBeInTheDocument();
   });
 });
