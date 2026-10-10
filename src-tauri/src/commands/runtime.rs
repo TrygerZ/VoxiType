@@ -664,7 +664,7 @@ pub async fn process_audio<R: Runtime>(
                 text_raw: out.transcription.text.clone(),
                 text_formatted: out.formatted_text.clone(),
                 source_lang: out.transcription.language.clone(),
-                target_lang: if translate_enabled {
+                target_lang: if translate_enabled && !out.translation_fell_back {
                     Some(translate_target.clone())
                 } else {
                     None
