@@ -86,7 +86,7 @@ pub fn http_client() -> crate::error::Result<reqwest::Client> {
 /// Maximum length of upstream error-body text kept in an error message.
 /// Upstream bodies are untrusted (format can change, may echo request
 /// context), so they are capped before being embedded in logs or IPC events.
-const MAX_ERROR_BODY_LEN: usize = 300;
+pub(crate) const MAX_ERROR_BODY_LEN: usize = 300;
 
 /// Suffix appended when an upstream error body was truncated.
 const TRUNCATED_SUFFIX: &str = "…(truncated)";

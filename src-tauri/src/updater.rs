@@ -128,7 +128,7 @@ fn interpret(status: u16, body: &str, current: &str) -> Result<UpdateInfo> {
         available,
         current_version: current.to_string(),
         latest_version: latest,
-        notes: release.body,
+        notes: crate::util::sanitize_error_body(&release.body),
         url: sanitize_release_url(&release.html_url),
     })
 }
@@ -230,5 +230,23 @@ mod tests {
     #[test]
     fn interpret_server_error_is_error() {
         assert!(interpret(503, "oops", "0.4.2").is_err());
+    }
+
+    #[test]
+    fn interpret_caps_oversized_release_body() {
+        let body = serde_json::json!({
+            "tag_name": "v0.5.0",
+            "body": "x".repeat(10_000),
+            "draft": false,
+            "prerelease": false,
+        })
+        .to_string();
+        let info = interpret(200, &body, "0.4.2").unwrap();
+        assert!(info.notes.len() < 10_000);
+        assert!(
+            info.notes.chars().count() <= crate::util::MAX_ERROR_BODY_LEN + 32,
+            "notes must be capped near MAX_ERROR_BODY_LEN, got {}",
+            info.notes.chars().count()
+        );
     }
 }
