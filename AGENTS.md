@@ -277,7 +277,7 @@ mod.rs exports:
 
 ### Granular Commits
 - Commit each logical change as a separate commit while working; never batch an entire feature, its tests, and unrelated edits into one commit.
-- Split by type and scope, e.g. `fix(audio): flush ringbuf on vad end` stays separate from `chore(ci): pin actions to sha`.
+- Split by type and scope, e.g. `fix(audio): drop partial frame on stop` stays separate from `chore(ci): pin actions to sha`.
 - Stage files explicitly per commit; never use `git add -A` or `git add .` when composing commits. A single commit mixing layers (Rust, TypeScript, config) is allowed only when splitting would break compilation; explain that coupling in the commit body.
 - The ban applies at commit composition time; `git add -A` remains acceptable for scratch flows such as stashing a WIP snapshot.
 

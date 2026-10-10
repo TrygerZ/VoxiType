@@ -129,7 +129,7 @@ Error→Recording retry for transient failures (network, timeout) with exponenti
 ```
 User presses hotkey
        │
-[Idle → Recording]  - Audio capture via cpal, resample 48k → 16k to ring buffer
+[Idle → Recording]  - Audio capture via cpal, resample 48k → 16k into the capture buffer
         │ (hotkey release / toggle stop)
 [Recording → Processing]
        ├── STT: Groq Whisper API or local whisper.cpp (with hotword boosting)
