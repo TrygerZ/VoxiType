@@ -17,11 +17,11 @@ static PTT_KEY_DOWN: AtomicBool = AtomicBool::new(false);
 
 /// Serializes PTT event evaluation against hotkey rebinds.
 ///
-/// `dispatch_shortcut_event` holds this lock for the whole evaluate-and-dispatch
-/// sequence, and the rebind functions hold it across their register/unregister/
-/// persist swap. Without it a PTT event could evaluate against a half-swapped
-/// binding (old handler already gone, new one not yet active) and be treated as
-/// a fresh press. Key events are human-paced, so contention is nil.
+/// Invariant: dispatch acquires this lock non-blockingly and skips the event on
+/// contention; rebind holds the lock across its register/unregister/persist swap.
+/// A blocking acquire here would invert lock order against the plugin's own
+/// `shortcuts` mutex (the plugin holds it while invoking the dispatch handler),
+/// so dispatch must never block while that mutex is held.
 static PTT_EVENT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Reset the PTT key-down guard flag.
@@ -76,11 +76,15 @@ pub fn ptt_action(
 }
 
 fn dispatch_shortcut_event<R: Runtime>(app: &AppHandle<R>, mode: HotkeyMode, state: ShortcutState) {
-    // Held across the whole evaluate + dispatch so a rebind cannot swap the
-    // binding between the key-state check and the resulting start/stop.
-    // Deadlock check: hotkey_start/hotkey_stop do not re-enter hotkey dispatch,
-    // and the rebind path only calls this lock, never dispatch.
-    let _guard = PTT_EVENT_LOCK.lock_recover();
+    // Non-blocking on purpose: the plugin holds its own shortcuts mutex while
+    // calling this handler, and rebind holds PTT_EVENT_LOCK while calling plugin
+    // functions, so a blocking acquire here would deadlock (lock-order inversion).
+    // Contention only happens during an active rebind (user-initiated, ms), and
+    // dropping the racing event is the safe choice: no half-swapped evaluation.
+    let Some(_guard) = PTT_EVENT_LOCK.try_lock_recover() else {
+        tracing::debug!("Hotkey event dropped: rebind in progress");
+        return;
+    };
     match mode {
         HotkeyMode::Ptt => {
             let is_recording = app.state::<crate::AppStateInner>().pipeline.state_tag()

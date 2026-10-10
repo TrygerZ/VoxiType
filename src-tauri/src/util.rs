@@ -2,7 +2,7 @@
 
 use std::future::Future;
 use std::path::Path;
-use std::sync::{MutexGuard, OnceLock};
+use std::sync::{MutexGuard, OnceLock, TryLockError};
 use std::time::Duration;
 
 use crate::error::{AppError, ErrorCode};
@@ -12,11 +12,24 @@ use crate::error::{AppError, ErrorCode};
 /// the lock; the data may be inconsistent but crashing the whole app is worse.
 pub trait MutexExt<T> {
     fn lock_recover(&self) -> MutexGuard<'_, T>;
+
+    /// Non-blocking variant of [`Self::lock_recover`]. Returns `None` when the
+    /// lock is currently held elsewhere; a poisoned lock is recovered like
+    /// `lock_recover` (the guarded data is a unit marker, never partially written).
+    fn try_lock_recover(&self) -> Option<MutexGuard<'_, T>>;
 }
 
 impl<T> MutexExt<T> for std::sync::Mutex<T> {
     fn lock_recover(&self) -> MutexGuard<'_, T> {
         self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn try_lock_recover(&self) -> Option<MutexGuard<'_, T>> {
+        match self.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
     }
 }
 
@@ -597,5 +610,27 @@ mod tests {
         let kept_chars: usize = result.chars().count() - TRUNCATED_SUFFIX.chars().count();
         assert_eq!(kept_chars, MAX_ERROR_BODY_LEN);
         assert!(result.contains("…(truncated)"));
+    }
+
+    #[test]
+    fn try_lock_recover_returns_none_when_held() {
+        let mutex = std::sync::Mutex::new(());
+        let _held = mutex.lock_recover();
+        assert!(mutex.try_lock_recover().is_none());
+    }
+
+    #[test]
+    fn try_lock_recover_recovers_poisoned_lock() {
+        let mutex = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let poisoner = mutex.clone();
+        // Poison the mutex by panicking while holding it (the spawned thread
+        // isolates the panic so this test thread survives).
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poison the lock");
+        })
+        .join();
+        assert!(mutex.is_poisoned());
+        assert!(mutex.try_lock_recover().is_some());
     }
 }
