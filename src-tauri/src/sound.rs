@@ -99,8 +99,9 @@ fn parse_wav(bytes: &[u8]) -> Result<WavData, String> {
 
     let num_samples = raw_data.len() / 2;
     let mut samples = Vec::with_capacity(num_samples);
-    for chunk in raw_data.chunks_exact(2) {
-        samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+    // Length checked even above, so `as_chunks` has no remainder to drop.
+    for chunk in raw_data.as_chunks::<2>().0 {
+        samples.push(i16::from_le_bytes(*chunk));
     }
 
     Ok(WavData {
