@@ -45,24 +45,36 @@ export const useSnippetStore = create<SnippetStore>((set) => {
     add: async (snippet) => {
       // Bump so a stale in-flight load cannot overwrite the post-add list.
       // Clearing `loading` releases the flag the discarded load would leave set.
+      // On failure the discarded load's clear is skipped, so the catch clears it
+      // too before rethrowing; otherwise `loading` would stay stuck true.
       const seq = ++requestSeq;
-      await addSnippet(snippet);
-      const snippets = await getSnippets();
-      if (seq === requestSeq) {
-        set({ snippets, loading: false });
+      try {
+        await addSnippet(snippet);
+        const snippets = await getSnippets();
+        if (seq === requestSeq) {
+          set({ snippets, loading: false });
+        }
+      } catch (err) {
+        set({ loading: false });
+        throw err;
       }
     },
 
     // Bump so a stale in-flight load cannot commit afterwards and resurrect
     // the deleted snippet. Clearing `loading` releases the flag that discarded
-    // load would otherwise leave set.
+    // load would otherwise leave set; the catch does the same on failure.
     remove: async (id) => {
       ++requestSeq;
-      await deleteSnippet(id);
-      set((s) => ({
-        snippets: s.snippets.filter((x) => x.id !== id),
-        loading: false,
-      }));
+      try {
+        await deleteSnippet(id);
+        set((s) => ({
+          snippets: s.snippets.filter((x) => x.id !== id),
+          loading: false,
+        }));
+      } catch (err) {
+        set({ loading: false });
+        throw err;
+      }
     },
   };
 });

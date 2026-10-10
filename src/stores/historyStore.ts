@@ -72,34 +72,51 @@ export const useHistoryStore = create<HistoryStore>((set, get) => {
 
     // Each mutation bumps the token so an in-flight fetch cannot commit stale
     // items afterwards and resurrect the row just deleted. Clearing `loading`
-    // here releases the flag the discarded fetch would otherwise leave set.
+    // here releases the flag the discarded fetch would otherwise leave set. On
+    // failure the discarded fetch's clear is skipped, so the catch clears it too
+    // before rethrowing; otherwise `loading` would stay stuck true.
     remove: async (id) => {
       ++requestSeq;
-      await deleteHistory(id);
-      set((s) => ({
-        items: s.items.filter((i) => i.id !== id),
-        loading: false,
-      }));
+      try {
+        await deleteHistory(id);
+        set((s) => ({
+          items: s.items.filter((i) => i.id !== id),
+          loading: false,
+        }));
+      } catch (err) {
+        set({ loading: false });
+        throw err;
+      }
     },
 
     clear: async (keepPinned = true) => {
       ++requestSeq;
-      await clearHistory(keepPinned);
-      set((s) => ({
-        items: keepPinned ? s.items.filter((i) => i.is_pinned) : [],
-        loading: false,
-      }));
+      try {
+        await clearHistory(keepPinned);
+        set((s) => ({
+          items: keepPinned ? s.items.filter((i) => i.is_pinned) : [],
+          loading: false,
+        }));
+      } catch (err) {
+        set({ loading: false });
+        throw err;
+      }
     },
 
     togglePin: async (id, pinned) => {
       ++requestSeq;
-      await pinHistory(id, pinned);
-      set((s) => ({
-        items: s.items.map((i) =>
-          i.id === id ? { ...i, is_pinned: pinned } : i,
-        ),
-        loading: false,
-      }));
+      try {
+        await pinHistory(id, pinned);
+        set((s) => ({
+          items: s.items.map((i) =>
+            i.id === id ? { ...i, is_pinned: pinned } : i,
+          ),
+          loading: false,
+        }));
+      } catch (err) {
+        set({ loading: false });
+        throw err;
+      }
     },
   };
 });

@@ -209,6 +209,30 @@ describe("historyStore", () => {
     expect(useHistoryStore.getState().loading).toBe(false);
   });
 
+  it("clears loading when remove rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.deleteHistory).mockRejectedValueOnce(
+      new Error("delete failed"),
+    );
+    await expect(useHistoryStore.getState().remove("h1")).rejects.toThrow(
+      "delete failed",
+    );
+    // The discarded load's clear is skipped, so the mutation must clear it.
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
   it("clears loading when clear invalidates an in-flight load", async () => {
     let resolveStale!: (items: TranscriptionEntry[]) => void;
     const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
@@ -228,6 +252,29 @@ describe("historyStore", () => {
     expect(useHistoryStore.getState().loading).toBe(false);
   });
 
+  it("clears loading when clear rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.clearHistory).mockRejectedValueOnce(
+      new Error("clear failed"),
+    );
+    await expect(useHistoryStore.getState().clear()).rejects.toThrow(
+      "clear failed",
+    );
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
   it("clears loading when togglePin invalidates an in-flight load", async () => {
     let resolveStale!: (items: TranscriptionEntry[]) => void;
     const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
@@ -240,6 +287,29 @@ describe("historyStore", () => {
 
     vi.mocked(tauri.pinHistory).mockResolvedValueOnce(undefined);
     await useHistoryStore.getState().togglePin("h1", true);
+    expect(useHistoryStore.getState().loading).toBe(false);
+
+    resolveStale([]);
+    await load;
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it("clears loading when togglePin rejects after invalidating an in-flight load", async () => {
+    let resolveStale!: (items: TranscriptionEntry[]) => void;
+    const stalePromise = new Promise<TranscriptionEntry[]>((resolve) => {
+      resolveStale = resolve;
+    });
+
+    vi.mocked(tauri.getHistory).mockImplementationOnce(() => stalePromise);
+    const load = useHistoryStore.getState().load();
+    expect(useHistoryStore.getState().loading).toBe(true);
+
+    vi.mocked(tauri.pinHistory).mockRejectedValueOnce(
+      new Error("pin failed"),
+    );
+    await expect(
+      useHistoryStore.getState().togglePin("h1", true),
+    ).rejects.toThrow("pin failed");
     expect(useHistoryStore.getState().loading).toBe(false);
 
     resolveStale([]);
