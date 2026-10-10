@@ -5,14 +5,27 @@
 //! release builds are unsigned by default (see the release plan); this checker
 //! just notifies the user a newer version exists and links them to it.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, Runtime};
 
 use crate::error::{AppError, Result};
+use crate::storage::SettingsManager;
+use crate::AppStateInner;
 
 /// GitHub repository that hosts VoxiType releases. Must match the `origin`
 /// remote; a 404 from this endpoint means "no published release yet", which we
 /// treat as "no update" rather than a hard failure.
 const REPO: &str = "TrygerZ/VoxiType";
+
+/// Setting key gating the advisory startup check.
+const AUTO_UPDATE_SETTING: &str = "auto_update";
+
+/// Delay before the startup check runs, so the frontend's notice listener is
+/// attached by the time the result arrives; an event emitted before the
+/// webview mounts is dropped.
+const STARTUP_CHECK_DELAY: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateInfo {
@@ -51,6 +64,33 @@ pub async fn check(current: &str) -> Result<UpdateInfo> {
     let status = resp.status().as_u16();
     let body = resp.text().await?;
     interpret(status, &body, current)
+}
+
+/// Spawn the advisory startup update check when `auto_update` is enabled.
+///
+/// A disabled setting means no network call at all. The result is delivered as
+/// a `notice` event after [`STARTUP_CHECK_DELAY`] so the webview can listen.
+pub fn spawn_startup_check<R: Runtime>(app: AppHandle<R>) {
+    let auto_update = SettingsManager::new(&app.state::<AppStateInner>().db)
+        .get::<bool>(AUTO_UPDATE_SETTING)
+        .ok()
+        .flatten()
+        .unwrap_or(true);
+    if !auto_update {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(STARTUP_CHECK_DELAY).await;
+        let current = app.package_info().version.to_string();
+        match check(&current).await {
+            Ok(info) if info.available => {
+                crate::events::emit_notice(&app, "update_available", &info.latest_version)
+            }
+            Ok(_) => {}
+            Err(e) => tracing::debug!("Startup update check failed: {e}"),
+        }
+    });
 }
 
 /// "No published release to compare against" — neither an update nor an error.

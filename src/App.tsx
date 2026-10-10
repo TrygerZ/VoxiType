@@ -83,7 +83,9 @@ export default function App() {
           ? t("notice.no_speech")
           : payload.code === "translation_fallback"
             ? t("notice.translation_fallback")
-            : payload.message;
+            : payload.code === "update_available"
+              ? t("notice.update_available", { version: payload.message })
+              : payload.message;
       toast(message, "info");
     });
     return () => {

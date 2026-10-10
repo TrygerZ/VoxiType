@@ -249,6 +249,10 @@ pub fn run() {
                 tracing::warn!("Autostart reconciliation failed: {e}");
             }
 
+            // Advisory update check, gated on the auto_update setting. Runs after
+            // the windows exist so the frontend's notice listener can attach.
+            updater::spawn_startup_check(handle.clone());
+
             // System tray.
             if let Err(e) = tray::setup(handle) {
                 tracing::warn!("Tray setup failed: {e}");

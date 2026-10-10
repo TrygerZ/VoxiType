@@ -11,6 +11,7 @@ export const id: Dict = {
   "notice.translation_fallback": "Terjemahan gagal; teks asli dimasukkan",
   "notice.hotkey_unavailable":
     "Hotkey tidak dapat didaftarkan. Pilih shortcut lain di Pengaturan.",
+  "notice.update_available": "VoxiType {version} tersedia",
   "error.settings_load_failed": "Gagal memuat pengaturan",
   "error.dictionary_load_failed": "Gagal memuat kamus",
   "error.history_load_failed": "Gagal memuat riwayat",
@@ -479,6 +480,7 @@ export const en: Dict = {
   "notice.translation_fallback": "Translation failed; inserted the original text",
   "notice.hotkey_unavailable":
     "The hotkey could not be registered. Choose a different shortcut in Settings.",
+  "notice.update_available": "VoxiType {version} is available",
   "error.settings_load_failed": "Failed to load settings",
   "error.dictionary_load_failed": "Failed to load dictionary",
   "error.history_load_failed": "Failed to load history",
