@@ -215,6 +215,7 @@ export function SttSetupStep(props: SttSetupStepProps) {
                 {t("onboarding.stt.language")}
               </label>
               <Select
+                aria-label={t("onboarding.stt.language")}
                 options={[
                   { value: "auto", label: t("onboarding.stt.language_auto") },
                   { value: "id", label: "Bahasa Indonesia" },
