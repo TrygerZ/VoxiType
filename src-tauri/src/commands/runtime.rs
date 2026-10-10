@@ -479,6 +479,29 @@ pub fn engine_kind(name: &str) -> crate::storage::EngineKind {
 // Core recording flow
 // ---------------------------------------------------------------
 
+/// Decide whether a dictation may still inject into the window that was
+/// focused at recording start.
+///
+/// Unlike command mode (which stays fail-closed and aborts when no handle
+/// exists), dictation proceeds unverified when no window handle was captured,
+/// since the audio was already recorded and discarding it would surprise the
+/// user. When a handle was captured, a changed foreground window aborts the
+/// paste with a visible error.
+fn verify_dictation_target(expected: Option<isize>, current: Option<isize>) -> Result<()> {
+    let Some(expected) = expected else {
+        tracing::warn!(
+            "No target window captured at recording start; skipping window verification"
+        );
+        return Ok(());
+    };
+    if current != Some(expected) {
+        return Err(AppError::injection(
+            "Dictation aborted: the focused window changed during processing",
+        ));
+    }
+    Ok(())
+}
+
 /// Process the captured audio through STT → LLM → injection → persist → emit.
 ///
 /// `session_generation` identifies the recording this audio belongs to.
@@ -589,6 +612,9 @@ pub async fn process_audio<R: Runtime>(
     let stt_name = stt.name().to_string();
     let mode_id = mode.id();
 
+    // Re-check the target window at paste time, after the multi-second
+    // STT/LLM delay. The two match arms are exclusive, so each may move the
+    // closure independently.
     let outcome = match precomputed {
         Some(tr) => {
             batch::run_batch_with_transcription(
@@ -598,6 +624,12 @@ pub async fn process_audio<R: Runtime>(
                 &post,
                 translate_opts.as_ref(),
                 injector.clone(),
+                || {
+                    verify_dictation_target(
+                        state.pipeline.active_window_id(),
+                        crate::active_window::foreground_window_id(),
+                    )
+                },
             )
             .await
         }
@@ -611,6 +643,12 @@ pub async fn process_audio<R: Runtime>(
                 &post,
                 translate_opts.as_ref(),
                 injector,
+                || {
+                    verify_dictation_target(
+                        state.pipeline.active_window_id(),
+                        crate::active_window::foreground_window_id(),
+                    )
+                },
             )
             .await
         }
@@ -1658,5 +1696,27 @@ mod tests {
     #[test]
     fn decrypt_api_key_str_keeps_empty() {
         assert_eq!(decrypt_api_key_str("", &[8u8; 32]).unwrap(), "");
+    }
+
+    #[test]
+    fn verify_dictation_target_no_captured_window_proceeds() {
+        assert!(verify_dictation_target(None, None).is_ok());
+    }
+
+    #[test]
+    fn verify_dictation_target_unchanged_window_proceeds() {
+        assert!(verify_dictation_target(Some(5), Some(5)).is_ok());
+    }
+
+    #[test]
+    fn verify_dictation_target_changed_window_aborts() {
+        let err = verify_dictation_target(Some(5), Some(6)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InjectionFailed);
+    }
+
+    #[test]
+    fn verify_dictation_target_lost_window_aborts() {
+        let err = verify_dictation_target(Some(5), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InjectionFailed);
     }
 }

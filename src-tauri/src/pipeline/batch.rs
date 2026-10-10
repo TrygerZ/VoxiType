@@ -43,6 +43,10 @@ pub struct PostProcess {
 ///
 /// Replacements and snippet expansion run after formatting/translation so
 /// custom spellings and shortcuts always win over the LLM's output.
+///
+/// `verify_target` runs immediately before injection so the caller can
+/// re-check the target window at paste time, after the multi-second STT/LLM
+/// delay. Its error aborts the batch without injecting.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_batch(
     audio: &[f32],
@@ -53,9 +57,19 @@ pub async fn run_batch(
     post: &PostProcess,
     translate: Option<&TranslateOpts>,
     injector: Arc<dyn TextInjector>,
+    verify_target: impl FnOnce() -> Result<()>,
 ) -> Result<BatchOutcome> {
     let transcription = stt.transcribe(audio, stt_config).await?;
-    run_batch_with_transcription(transcription, llm, mode, post, translate, injector).await
+    run_batch_with_transcription(
+        transcription,
+        llm,
+        mode,
+        post,
+        translate,
+        injector,
+        verify_target,
+    )
+    .await
 }
 
 /// Like [`run_batch`] but skips STT, reusing an already-computed transcription.
@@ -63,6 +77,10 @@ pub async fn run_batch(
 /// Used by command-mode, which must transcribe up front to detect editing
 /// commands; on a non-command phrase it falls through to normal injection
 /// without paying for a second transcription.
+///
+/// `verify_target` runs immediately before injection so the caller can
+/// re-check the target window at paste time, after the multi-second STT/LLM
+/// delay. It is not called for empty text, since no injection happens then.
 pub async fn run_batch_with_transcription(
     transcription: TranscriptionResult,
     llm: Arc<dyn LlmFormatter>,
@@ -70,6 +88,7 @@ pub async fn run_batch_with_transcription(
     post: &PostProcess,
     translate: Option<&TranslateOpts>,
     injector: Arc<dyn TextInjector>,
+    verify_target: impl FnOnce() -> Result<()>,
 ) -> Result<BatchOutcome> {
     let mut translation_fell_back = false;
     let formatted_text = if transcription.text.trim().is_empty() {
@@ -132,6 +151,9 @@ pub async fn run_batch_with_transcription(
             duration_ms: 0,
         }
     } else {
+        // The focused window may have changed during the multi-second
+        // STT/LLM delay; abort before touching the clipboard if it did.
+        verify_target()?;
         // Injection blocks the OS event loop for hundreds of milliseconds
         // (clipboard propagation sleeps + enigo keystroke simulation), so it
         // must never run directly on a tokio worker thread.
@@ -208,6 +230,36 @@ mod tests {
     struct MockInjector;
     impl TextInjector for MockInjector {
         fn inject(&self, text: &str) -> Result<InjectResult> {
+            Ok(InjectResult {
+                success: true,
+                strategy: InjectStrategy::Clipboard,
+                chars_injected: text.chars().count() as u32,
+                duration_ms: 1,
+            })
+        }
+        fn inject_keystroke(&self, text: &str) -> Result<InjectResult> {
+            self.inject(text)
+        }
+        fn inject_clipboard(&self, text: &str) -> Result<InjectResult> {
+            self.inject(text)
+        }
+    }
+
+    /// Injector that counts calls so tests can assert whether injection ran.
+    #[derive(Default)]
+    struct RecordingInjector {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl RecordingInjector {
+        fn call_count(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl TextInjector for RecordingInjector {
+        fn inject(&self, text: &str) -> Result<InjectResult> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(InjectResult {
                 success: true,
                 strategy: InjectStrategy::Clipboard,
@@ -309,6 +361,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -336,6 +389,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -356,6 +410,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -378,6 +433,7 @@ mod tests {
             &PostProcess::default(),
             None,
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -416,6 +472,7 @@ mod tests {
             &PostProcess::default(),
             None,
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -451,6 +508,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -471,6 +529,7 @@ mod tests {
             &PostProcess::default(),
             None,
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -491,6 +550,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -515,6 +575,7 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
@@ -540,9 +601,73 @@ mod tests {
                 target: "id".into(),
             }),
             Arc::new(MockInjector),
+            || Ok(()),
         )
         .await
         .unwrap();
         assert!(!out.translation_fell_back);
+    }
+
+    #[tokio::test]
+    async fn verify_target_error_aborts_before_injection() {
+        let injector = Arc::new(RecordingInjector::default());
+        let result = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            Arc::new(RecordingLlm::new()),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            injector.clone(),
+            || Err(AppError::injection("window changed")),
+        )
+        .await;
+        match result {
+            Ok(_) => panic!("expected the verify error to abort the batch"),
+            Err(e) => assert_eq!(e.code, crate::error::ErrorCode::InjectionFailed),
+        }
+        assert_eq!(injector.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn verify_target_ok_allows_injection() {
+        let injector = Arc::new(RecordingInjector::default());
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("this is a test of the system", "en"),
+            Arc::new(RecordingLlm::new()),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            injector.clone(),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(injector.call_count(), 1);
+        assert!(out.inject.success);
+    }
+
+    #[tokio::test]
+    async fn empty_transcription_skips_verify_and_injection() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let injector = Arc::new(RecordingInjector::default());
+        let verify_called = Arc::new(AtomicBool::new(false));
+        let flag = verify_called.clone();
+        let out = run_batch_with_transcription(
+            TranscriptionResult::text_only("   ", "en"),
+            Arc::new(RecordingLlm::new()),
+            &LlmMode::Dictation,
+            &PostProcess::default(),
+            None,
+            injector.clone(),
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!verify_called.load(Ordering::SeqCst));
+        assert_eq!(injector.call_count(), 0);
+        assert!(out.inject.success);
     }
 }
