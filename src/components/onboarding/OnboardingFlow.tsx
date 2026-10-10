@@ -31,7 +31,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [sttEngine, setSttEngine] = useState<SttEngine>(settings.stt_engine === "whisper_cpp" ? "whisper_cpp" : "groq");
   const [sttLanguage, setSttLanguage] = useState(setting(settings.stt_language, "auto"));
   const [apiKey, setApiKey] = useState("");
-  const [binary, setBinary] = useState(setting(settings.whisper_cpp_binary_path, "whisper-cli"));
+  const [binary, setBinary] = useState(setting(settings.whisper_cpp_binary_path, ""));
   const [model, setModel] = useState(setting(settings.whisper_cpp_model_path, ""));
   const [threads, setThreads] = useState(numberSetting(settings.whisper_cpp_threads, 4));
   const hotkey = getHotkeySetting(settings.hotkey, { key: "Ctrl+Space", mode: "ptt" });

@@ -41,10 +41,7 @@ export function STTTab() {
   const language = stringSetting(settings.stt_language, "auto");
   const groqKey = stringSetting(settings.groq_api_key, "");
   const groqKeySet = settings.groq_api_key_set === true;
-  const whisperBinary = stringSetting(
-    settings.whisper_cpp_binary_path,
-    "whisper-cli",
-  );
+  const whisperBinary = stringSetting(settings.whisper_cpp_binary_path, "");
   const whisperModel = stringSetting(settings.whisper_cpp_model_path, "");
   const whisperThreads = numberSetting(settings.whisper_cpp_threads, 4);
 
@@ -135,7 +132,7 @@ export function STTTab() {
           <div className="flex flex-col gap-4 px-4 py-3.5">
             <PathPickerField
               label={t("settings.stt.binary_path")}
-              placeholder="C:\\tools\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe"
+              placeholder="whisper-cli"
               value={whisperBinary}
               onBrowse={handlePickBinary}
               browseLabel="Browse"
