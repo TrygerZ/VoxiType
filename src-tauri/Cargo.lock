@@ -5218,6 +5218,7 @@ dependencies = [
  "base64 0.22.1",
  "cpal",
  "enigo",
+ "http",
  "open",
  "rand",
  "reqwest 0.12.28",

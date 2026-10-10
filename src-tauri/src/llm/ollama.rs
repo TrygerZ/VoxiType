@@ -65,7 +65,8 @@ impl OllamaFormatter {
                 }
             })?;
         let status = resp.status();
-        let text = resp.text().await?;
+        let text =
+            crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES).await?;
         if !status.is_success() {
             let safe_text = crate::util::sanitize_error_body(&text);
             return Err(AppError::llm(format!("Ollama error {status}: {safe_text}"))

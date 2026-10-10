@@ -80,6 +80,10 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
 ] }
 
+[dev-dependencies]
+# Builds synthetic `reqwest::Response` values for `read_body_capped` tests.
+http = "1"
+
 [features]
 default = []
 

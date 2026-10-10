@@ -83,6 +83,36 @@ pub fn http_client() -> crate::error::Result<reqwest::Client> {
         .map_err(|e| AppError::internal(format!("Failed to build HTTP client: {e}")))
 }
 
+/// Maximum accepted upstream response body size, in bytes. Guards against a
+/// hostile or malfunctioning endpoint streaming an unbounded body before the
+/// error-body cap applies.
+pub const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
+
+/// Whether a response body of `len` bytes is within the accepted `max` size.
+fn body_within_limit(len: usize, max: usize) -> bool {
+    len <= max
+}
+
+/// Read a response body with a size guard. Rejects (without buffering) when
+/// `Content-Length` exceeds the cap; otherwise reads the body and rejects it
+/// once the received size exceeds the cap. `reqwest::Response::text` is avoided
+/// because it buffers the whole body before any cap can apply.
+pub async fn read_body_capped(
+    resp: reqwest::Response,
+    max_bytes: usize,
+) -> crate::error::Result<String> {
+    if let Some(len) = resp.content_length() {
+        if len > max_bytes as u64 {
+            return Err(AppError::network("response body exceeds the size limit"));
+        }
+    }
+    let bytes = resp.bytes().await?;
+    if !body_within_limit(bytes.len(), max_bytes) {
+        return Err(AppError::network("response body exceeds the size limit"));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 /// Maximum length of upstream error-body text kept in an error message.
 /// Upstream bodies are untrusted (format can change, may echo request
 /// context), so they are capped before being embedded in logs or IPC events.
@@ -496,6 +526,41 @@ mod tests {
         let second = http_client().expect("client builds");
         // Both clones are usable (the cached client is returned by value).
         drop((first, second));
+    }
+
+    #[test]
+    fn body_within_limit_boundaries() {
+        assert!(body_within_limit(0, MAX_RESPONSE_BODY_BYTES));
+        assert!(body_within_limit(
+            MAX_RESPONSE_BODY_BYTES,
+            MAX_RESPONSE_BODY_BYTES
+        ));
+        assert!(!body_within_limit(
+            MAX_RESPONSE_BODY_BYTES + 1,
+            MAX_RESPONSE_BODY_BYTES
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_body_capped_accepts_small_body() {
+        let response = reqwest::Response::from(http::Response::new("hello".to_string()));
+        let body = read_body_capped(response, MAX_RESPONSE_BODY_BYTES)
+            .await
+            .expect("small body accepted");
+        assert_eq!(body, "hello");
+    }
+
+    #[tokio::test]
+    async fn read_body_capped_rejects_oversized_body() {
+        // The response advertises a known body size (its Content-Length), which
+        // exceeds the cap, so it is rejected with a network error.
+        let response =
+            reqwest::Response::from(http::Response::new("x".repeat(MAX_RESPONSE_BODY_BYTES + 1)));
+        let err = read_body_capped(response, MAX_RESPONSE_BODY_BYTES)
+            .await
+            .expect_err("oversized body rejected");
+        assert_eq!(err.code, ErrorCode::NetworkError);
+        assert!(err.message.contains("size limit"));
     }
 
     #[test]

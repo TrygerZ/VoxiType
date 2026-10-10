@@ -83,9 +83,11 @@ impl GroqSttEngine {
                         .await?;
 
                     let status = resp.status();
-                    // Capture the header before `text()` consumes the response.
+                    // Capture the header before the body reader consumes the response.
                     let retry_after = crate::util::retry_after_secs(resp.headers());
-                    let body = resp.text().await?;
+                    let body =
+                        crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES)
+                            .await?;
 
                     if status == reqwest::StatusCode::UNAUTHORIZED {
                         return Err(AppError::new(
