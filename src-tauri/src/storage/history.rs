@@ -239,7 +239,13 @@ impl<'a> HistoryRepository<'a> {
     }
 
     /// Prune unpinned history older than the specified number of days.
+    /// A `days` of `0` disables pruning: the SQL expression `'-0 days'` would
+    /// otherwise match every row, deleting all unpinned history.
     pub fn prune_old_history(&self, days: u32) -> Result<usize> {
+        if days == 0 {
+            tracing::debug!("History pruning disabled (retention days = 0)");
+            return Ok(0);
+        }
         self.db.with_conn(|c| {
             let n = c.execute(
                 "DELETE FROM transcriptions
@@ -475,5 +481,54 @@ mod tests {
         repo.insert(&sample("a", "satu")).unwrap();
         repo.insert(&sample("b", "dua")).unwrap();
         assert_eq!(repo.count().unwrap(), 2);
+    }
+
+    /// Insert a row with an explicit ancient timestamp so it falls outside any
+    /// realistic retention window.
+    fn insert_ancient(repo: &HistoryRepository, id: &str) {
+        repo.db
+            .with_conn(|c| {
+                c.execute(
+                    "INSERT INTO transcriptions (id, created_at, text_raw, text_formatted)
+                     VALUES (?1, '2000-01-01T00:00:00Z', 'x', 'x')",
+                    [id],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn prune_zero_days_is_disabled() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = HistoryRepository::new(&db);
+        insert_ancient(&repo, "old-1");
+        insert_ancient(&repo, "old-2");
+
+        assert_eq!(repo.prune_old_history(0).unwrap(), 0);
+        assert_eq!(
+            repo.count().unwrap(),
+            2,
+            "days = 0 must be treated as disabled, not delete-everything"
+        );
+    }
+
+    #[test]
+    fn prune_with_retention_days_deletes_ancient_unpinned_rows() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = HistoryRepository::new(&db);
+        insert_ancient(&repo, "old-1");
+        // Pinned ancient rows are always preserved.
+        insert_ancient(&repo, "old-pinned");
+        repo.set_pinned("old-pinned", true).unwrap();
+        // A fresh row is kept.
+        repo.insert(&sample("fresh", "baru")).unwrap();
+
+        assert_eq!(repo.prune_old_history(90).unwrap(), 1);
+        let remaining = repo.list(&HistoryFilter::default()).unwrap();
+        let ids: Vec<&str> = remaining.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"old-pinned"));
+        assert!(ids.contains(&"fresh"));
     }
 }
