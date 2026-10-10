@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
@@ -14,6 +15,11 @@ const SCHEMA_V1: &str = include_str!("schema.sql");
 
 /// Current database schema version.
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+
+/// How long a writer waits for a locked database before returning
+/// `SQLITE_BUSY`. A second process or future nested access waits briefly
+/// instead of failing immediately.
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Schema version that introduced the case-insensitive dictionary index.
 /// Databases below this version are backed up before the v3 migration runs.
@@ -77,6 +83,7 @@ impl Database {
     fn configure(conn: &Connection) -> Result<()> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.busy_timeout(SQLITE_BUSY_TIMEOUT)?;
         Ok(())
     }
 
@@ -116,6 +123,10 @@ impl Database {
     }
 
     /// Run a closure with locked access to the connection.
+    ///
+    /// The connection mutex is NOT reentrant: never call `with_conn` (or any
+    /// repository method, which locks the same mutex) from inside a `with_conn`
+    /// closure, or the call deadlocks.
     pub fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         let conn = self.conn.lock_recover();
         f(&conn)
@@ -329,6 +340,15 @@ fn migrate_to_v2(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configure_sets_busy_timeout() {
+        let db = Database::open_in_memory().unwrap();
+        let timeout: i64 = db
+            .with_conn(|c| Ok(c.query_row("PRAGMA busy_timeout", [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(timeout, 5000);
+    }
 
     #[test]
     fn migration_creates_tables() {
