@@ -36,6 +36,7 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
     // Processing, where a toggle is a silent no-op (`hotkey_toggle` ignores the
     // Processing state). The listener lives for the app lifetime (like the tray
     // itself), so no cleanup is required.
+    let listener_app = app.clone();
     app.listen("state_changed", move |event| {
         // A malformed payload must never leave the item stuck disabled.
         let enabled = serde_json::from_str::<serde_json::Value>(event.payload())
@@ -47,8 +48,17 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
                     .map(menu::record_item_enabled)
             })
             .unwrap_or(true);
-        if let Err(e) = record_item.set_enabled(enabled) {
-            tracing::warn!("Failed to update tray record item: {e}");
+        let item = record_item.clone();
+        // Never marshal to the main thread inline here: this callback runs on the
+        // emitting thread (hotkey dispatch holds the plugin's shortcuts mutex at
+        // that point), and a blocking marshal would invert lock order with a
+        // concurrent rebind. Queueing is non-blocking.
+        if let Err(e) = listener_app.run_on_main_thread(move || {
+            if let Err(e) = item.set_enabled(enabled) {
+                tracing::warn!("Failed to update tray record item: {e}");
+            }
+        }) {
+            tracing::warn!("Failed to queue tray record item update: {e}");
         }
     });
 
