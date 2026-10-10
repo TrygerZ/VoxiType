@@ -31,6 +31,8 @@
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
 | Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
 
+Dictionary uniqueness uses SQLite NOCASE, which folds ASCII only; non-ASCII case variants are not deduped (`src-tauri/src/storage/db.rs` is the source of truth).
+
 ## Global Rules
 
 ### RTK Proxy
