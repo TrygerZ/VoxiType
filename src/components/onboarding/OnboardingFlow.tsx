@@ -39,22 +39,89 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [hotkeyMode, setHotkeyMode] = useState(hotkey.mode);
   const [error, setError] = useState("");
   const [hotkeyError, setHotkeyError] = useState("");
+  const [busy, setBusy] = useState(false);
   const currentStepIdx = STEPS.indexOf(step);
 
-  const finish = async () => { try { await update("onboarding_completed", true); onComplete(); } catch (e: unknown) { setError(formatTauriError(e)); } };
-  const saveQuickSettings = async () => { try { setError(""); await update("language", language); await update("sound_cues", soundCues); setStep("microphone"); } catch (e: unknown) { setError(formatTauriError(e)); } };
-  const saveMicrophone = async () => { try { setError(""); if (micDevice) await update("mic_device", micDevice); setStep("stt_setup"); } catch (e: unknown) { setError(formatTauriError(e)); } };
-  const saveStt = async () => { try { setError(""); await update("stt_engine", sttEngine); await update("stt_language", sttLanguage); if (sttEngine === "groq" && apiKey.trim()) await update("groq_api_key", apiKey.trim()); if (sttEngine === "whisper_cpp") { await updateWhisperPaths(binary.trim(), model.trim()); await update("whisper_cpp_threads", threads); } setStep("data_directory"); } catch (e: unknown) { setError(formatTauriError(e)); } };
-  const saveHotkey = async () => { try { await setHotkey(hotkeyKey, hotkeyMode); await loadSettings(); setStep("smoke_test"); } catch (e: unknown) { setHotkeyError(formatTauriError(e)); } };
+  const finish = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await update("onboarding_completed", true);
+      onComplete();
+    } catch (e: unknown) {
+      setError(formatTauriError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveQuickSettings = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setError("");
+      await update("language", language);
+      await update("sound_cues", soundCues);
+      setStep("microphone");
+    } catch (e: unknown) {
+      setError(formatTauriError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveMicrophone = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setError("");
+      if (micDevice) await update("mic_device", micDevice);
+      setStep("stt_setup");
+    } catch (e: unknown) {
+      setError(formatTauriError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveStt = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setError("");
+      await update("stt_engine", sttEngine);
+      await update("stt_language", sttLanguage);
+      if (sttEngine === "groq" && apiKey.trim()) await update("groq_api_key", apiKey.trim());
+      if (sttEngine === "whisper_cpp") {
+        await updateWhisperPaths(binary.trim(), model.trim());
+        await update("whisper_cpp_threads", threads);
+      }
+      setStep("data_directory");
+    } catch (e: unknown) {
+      setError(formatTauriError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveHotkey = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await setHotkey(hotkeyKey, hotkeyMode);
+      await loadSettings();
+      setStep("smoke_test");
+    } catch (e: unknown) {
+      setHotkeyError(formatTauriError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  if (step === "welcome") return <WelcomeStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} onStart={() => setStep("quick_settings")} onSkip={() => void finish()} />;
-  if (step === "quick_settings") return <QuickSettingsStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} lang={language} soundCues={soundCues} onLanguageChange={(value) => { setLanguage(value); void invokeAction(() => update("language", value)); }} onSoundCuesChange={setSoundCues} onBack={() => setStep("welcome")} onContinue={saveQuickSettings} />;
-  if (step === "microphone") return <MicrophoneStep step={step} currentStepIdx={currentStepIdx} t={t} selectedDevice={micDevice} onDeviceChange={setMicDevice} onBack={() => setStep("quick_settings")} onContinue={() => void saveMicrophone()} onSkip={() => setStep("stt_setup")} />;
-  if (step === "stt_setup") return <SttSetupStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} sttEngine={sttEngine} sttLanguage={sttLanguage} apiKey={apiKey} whisperBinary={binary} whisperModel={model} whisperThreads={threads} onEngineChange={setSttEngine} onLanguageChange={setSttLanguage} onApiKeyChange={setApiKey} onThreadsChange={setThreads} onBinaryChange={setBinary} onModelChange={setModel} onSave={() => void saveStt()} onBack={() => setStep("quick_settings")} onSkip={() => setStep("data_directory")} />;
+  if (step === "welcome") return <WelcomeStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} onStart={() => setStep("quick_settings")} onSkip={() => void finish()} />;
+  if (step === "quick_settings") return <QuickSettingsStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} lang={language} soundCues={soundCues} onLanguageChange={(value) => { setLanguage(value); void invokeAction(() => update("language", value)); }} onSoundCuesChange={setSoundCues} onBack={() => setStep("welcome")} onContinue={saveQuickSettings} />;
+  if (step === "microphone") return <MicrophoneStep step={step} currentStepIdx={currentStepIdx} t={t} busy={busy} selectedDevice={micDevice} onDeviceChange={setMicDevice} onBack={() => setStep("quick_settings")} onContinue={() => void saveMicrophone()} onSkip={() => setStep("stt_setup")} />;
+  if (step === "stt_setup") return <SttSetupStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} sttEngine={sttEngine} sttLanguage={sttLanguage} apiKey={apiKey} whisperBinary={binary} whisperModel={model} whisperThreads={threads} onEngineChange={setSttEngine} onLanguageChange={setSttLanguage} onApiKeyChange={setApiKey} onThreadsChange={setThreads} onBinaryChange={setBinary} onModelChange={setModel} onSave={() => void saveStt()} onBack={() => setStep("quick_settings")} onSkip={() => setStep("data_directory")} />;
   if (step === "data_directory") return <DataDirectoryStep step={step} currentStepIdx={currentStepIdx} t={t} onBack={() => setStep("stt_setup")} onSkip={() => setStep("hotkey")} onContinue={() => setStep("hotkey")} />;
-  if (step === "hotkey") return <HotkeyStep step={step} currentStepIdx={currentStepIdx} t={t} error={hotkeyError} hotkeyKey={hotkeyKey} hotkeyMode={hotkeyMode} onKeyChange={setHotkeyKey} onModeChange={setHotkeyMode} onBack={() => setStep("data_directory")} onContinue={saveHotkey} />;
-  if (step === "smoke_test") return <SmokeTestStep step={step} currentStepIdx={currentStepIdx} t={t} hotkeyKey={hotkeyKey} onBack={() => setStep("hotkey")} onContinue={() => setStep("complete")} onSkip={() => setStep("complete")} />;
-  return <CompleteStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} hotkeyKey={hotkeyKey} onFinish={() => void finish()} />;
+  if (step === "hotkey") return <HotkeyStep step={step} currentStepIdx={currentStepIdx} t={t} error={hotkeyError} busy={busy} hotkeyKey={hotkeyKey} hotkeyMode={hotkeyMode} onKeyChange={setHotkeyKey} onModeChange={setHotkeyMode} onBack={() => setStep("data_directory")} onContinue={saveHotkey} />;
+  if (step === "smoke_test") return <SmokeTestStep step={step} currentStepIdx={currentStepIdx} t={t} busy={busy} hotkeyKey={hotkeyKey} onBack={() => setStep("hotkey")} onContinue={() => setStep("complete")} onSkip={() => setStep("complete")} />;
+  return <CompleteStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} hotkeyKey={hotkeyKey} onFinish={() => void finish()} />;
 }
 
 function setting(value: unknown, fallback: string) { return typeof value === "string" ? value : fallback; }

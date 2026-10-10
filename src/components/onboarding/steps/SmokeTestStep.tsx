@@ -14,6 +14,7 @@ interface Props {
   step: Step;
   currentStepIdx: number;
   t: TFunc;
+  busy: boolean;
   hotkeyKey: string;
   onBack: () => void;
   onContinue: () => void;
@@ -24,6 +25,7 @@ export function SmokeTestStep({
   step,
   currentStepIdx,
   t,
+  busy,
   hotkeyKey,
   onBack,
   onContinue,
@@ -76,7 +78,7 @@ export function SmokeTestStep({
           <Button
             variant="primary"
             size="lg"
-            disabled={!text}
+            disabled={!text || busy}
             onClick={onContinue}
           >
             {t("onboarding.smoke_test.continue")}

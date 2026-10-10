@@ -48,6 +48,7 @@ interface SttSetupStepProps {
   currentStepIdx: number;
   t: TFunc;
   error: string;
+  busy: boolean;
   sttEngine: SttEngine;
   sttLanguage: string;
   apiKey: string;
@@ -160,7 +161,7 @@ export function SttSetupStep(props: SttSetupStepProps) {
           <Button variant="ghost" size="lg" onClick={props.onSkip}>
             {t("onboarding.stt.skip")}
           </Button>
-          <Button variant="primary" size="lg" onClick={save}>
+          <Button variant="primary" size="lg" disabled={props.busy} onClick={save}>
             {t("onboarding.stt.save")}
             <ChevronRight className="h-4 w-4" />
           </Button>

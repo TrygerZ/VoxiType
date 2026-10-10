@@ -11,6 +11,7 @@ interface Props {
   currentStepIdx: number;
   t: TFunc;
   error: string;
+  busy: boolean;
   lang: string;
   soundCues: boolean;
   onLanguageChange: (value: string) => void;
@@ -24,6 +25,7 @@ export function QuickSettingsStep({
   currentStepIdx,
   t,
   error,
+  busy,
   lang,
   soundCues,
   onLanguageChange,
@@ -46,7 +48,7 @@ export function QuickSettingsStep({
             <ArrowLeft className="h-4 w-4" />
             {t("onboarding.back")}
           </Button>
-          <Button variant="primary" size="lg" onClick={onContinue}>
+          <Button variant="primary" size="lg" disabled={busy} onClick={onContinue}>
             {t("onboarding.step2.continue")}
             <ChevronRight className="h-4 w-4" />
           </Button>

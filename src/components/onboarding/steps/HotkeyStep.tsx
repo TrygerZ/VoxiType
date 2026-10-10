@@ -11,6 +11,7 @@ interface Props {
   currentStepIdx: number;
   t: TFunc;
   error: string;
+  busy: boolean;
   hotkeyKey: string;
   hotkeyMode: string;
   onKeyChange: (value: string) => void;
@@ -24,6 +25,7 @@ export function HotkeyStep({
   currentStepIdx,
   t,
   error,
+  busy,
   hotkeyKey,
   hotkeyMode,
   onKeyChange,
@@ -46,7 +48,7 @@ export function HotkeyStep({
             <ArrowLeft className="h-4 w-4" />
             {t("onboarding.back")}
           </Button>
-          <Button variant="primary" size="lg" onClick={onContinue}>
+          <Button variant="primary" size="lg" disabled={busy} onClick={onContinue}>
             {t("onboarding.step4.continue")}
             <ChevronRight className="h-4 w-4" />
           </Button>
