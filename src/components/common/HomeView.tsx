@@ -212,7 +212,8 @@ export function HomeView() {
             {t("app.name")}
           </div>
           <h2 className="mb-6 text-2xl font-bold tracking-tight text-vx-text-primary">
-            {greeting}, User!
+            {greeting}
+            {t("home.greeting.suffix")}
           </h2>
 
           {/* Voice Mic Button — calm brand tint, no glow */}

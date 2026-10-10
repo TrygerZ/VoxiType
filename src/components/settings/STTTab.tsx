@@ -135,7 +135,7 @@ export function STTTab() {
               placeholder="whisper-cli"
               value={whisperBinary}
               onBrowse={handlePickBinary}
-              browseLabel="Browse"
+              browseLabel={t("settings.stt.browse")}
               hint={t("settings.stt.binary_hint")}
             />
             <PathPickerField
@@ -143,7 +143,7 @@ export function STTTab() {
               placeholder="C:\\models\\ggml-base.bin"
               value={whisperModel}
               onBrowse={handlePickModel}
-              browseLabel="Browse"
+              browseLabel={t("settings.stt.browse")}
               hint={t("settings.stt.model_hint")}
             />
             <Input
@@ -167,6 +167,7 @@ export function STTTab() {
               okLabel={t("settings.stt.ready")}
               failLabel={t("settings.stt.check_setup")}
               errLabel={t("settings.stt.test_fail")}
+              testingLabel={t("settings.stt.testing")}
               onClick={handleTestWhisper}
               disabled={
                 whisperStatus === "testing" ||
@@ -194,6 +195,7 @@ export function STTTab() {
               okLabel={t("settings.stt.connected")}
               failLabel={t("settings.stt.invalid_key")}
               errLabel={t("settings.stt.conn_fail")}
+              testingLabel={t("settings.stt.testing")}
               onClick={handleTestApi}
               disabled={
                 groqStatus === "testing" || (!localKey.trim() && !groqKeySet)
@@ -290,6 +292,7 @@ function StatusButton({
   okLabel,
   failLabel,
   errLabel,
+  testingLabel,
   className = "",
   ...rest
 }: {
@@ -298,6 +301,7 @@ function StatusButton({
   okLabel: string;
   failLabel: string;
   errLabel: string;
+  testingLabel: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -314,7 +318,7 @@ function StatusButton({
       ) : status === "fail" || status === "err" ? (
         <XCircle className="h-4 w-4" />
       ) : null}
-      {statusLabel(status, idleLabel, okLabel, failLabel, errLabel)}
+      {statusLabel(status, idleLabel, okLabel, failLabel, errLabel, testingLabel)}
     </button>
   );
 }
@@ -325,8 +329,9 @@ function statusLabel(
   ok: string,
   fail: string,
   err: string,
+  testing: string,
 ) {
-  if (status === "testing") return "Testing...";
+  if (status === "testing") return testing;
   if (status === "ok") return ok;
   if (status === "fail") return fail;
   if (status === "err") return err;

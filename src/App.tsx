@@ -112,7 +112,7 @@ export default function App() {
   if (!loaded) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="text-sm text-vx-text-dim">Loading...</span>
+        <span className="text-sm text-vx-text-dim">{t("app.loading")}</span>
       </div>
     );
   }

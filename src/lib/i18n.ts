@@ -7,6 +7,7 @@ type Dict = Record<string, string>;
 
 export const id: Dict = {
   "app.name": "VoxiType",
+  "app.loading": "Memuat...",
   "notice.no_speech": "Tidak ada suara yang terdeteksi",
   "notice.translation_fallback": "Terjemahan gagal; teks asli dimasukkan",
   "notice.hotkey_unavailable":
@@ -18,6 +19,9 @@ export const id: Dict = {
   "error.snippets_load_failed": "Gagal memuat cuplikan",
   "error.stats_load_failed": "Gagal memuat statistik",
   "error.retry": "Coba lagi",
+  "error.title": "Terjadi kesalahan",
+  "error.unexpected": "Terjadi kesalahan tak terduga",
+  "error.reload": "Muat ulang",
   "nav.home": "Beranda",
   "nav.settings": "Pengaturan",
   "nav.history": "Riwayat",
@@ -141,6 +145,7 @@ export const id: Dict = {
   "settings.stt.ready": "Siap",
   "settings.stt.check_setup": "Cek setup",
   "settings.stt.test_fail": "Tes gagal",
+  "settings.stt.browse": "Telusuri",
 
   // LLM Tab
   "settings.llm.title": "Format AI",
@@ -200,6 +205,11 @@ export const id: Dict = {
   "settings.shortcuts.mode_desc": "Push-to-talk dengan menahan; toggle mulai/berhenti saat ditekan.",
   "settings.shortcuts.apply_btn": "Terapkan hotkey",
   "settings.shortcuts.applied": "Diterapkan",
+  "settings.shortcuts.recorder_label": "Kombinasi hotkey",
+  "settings.shortcuts.recorder_press": "Tekan shortcut Anda...",
+  "settings.shortcuts.recorder_hint": "Klik untuk merekam shortcut baru",
+  "settings.shortcuts.recorder_cancel_hint": "Tekan Escape untuk membatalkan",
+  "settings.preferences": "Preferensi",
 
   // About Tab
   "settings.about.title": "Tentang",
@@ -315,6 +325,7 @@ export const id: Dict = {
   "onboarding.stt.save": "Simpan & Lanjut",
   "onboarding.stt.skip": "Atur nanti",
   "onboarding.stt.test": "Tes Koneksi",
+  "onboarding.stt.testing": "Menguji...",
   "onboarding.stt.test_ok": "Siap dipakai",
   "onboarding.stt.test_err": "Tes gagal",
   "onboarding.stt.groq.choice_title": "Groq API",
@@ -434,6 +445,7 @@ export const id: Dict = {
   "home.greeting.afternoon": "Selamat Siang",
   "home.greeting.evening": "Selamat Malam",
   "home.greeting.generic": "Halo",
+  "home.greeting.suffix": ", Pengguna!",
   "home.active_mode": "Mode Aktif",
   "home.quick_settings": "Pengaturan Cepat",
   "home.recent_transcriptions": "Transkripsi Terakhir",
@@ -477,6 +489,7 @@ export const id: Dict = {
 
 export const en: Dict = {
   "app.name": "VoxiType",
+  "app.loading": "Loading...",
   "notice.no_speech": "No speech detected",
   "notice.translation_fallback": "Translation failed; inserted the original text",
   "notice.hotkey_unavailable":
@@ -488,6 +501,9 @@ export const en: Dict = {
   "error.snippets_load_failed": "Failed to load snippets",
   "error.stats_load_failed": "Failed to load stats",
   "error.retry": "Retry",
+  "error.title": "Something went wrong",
+  "error.unexpected": "An unexpected error occurred",
+  "error.reload": "Reload",
   "nav.home": "Home",
   "nav.settings": "Settings",
   "nav.history": "History",
@@ -611,6 +627,7 @@ export const en: Dict = {
   "settings.stt.ready": "Ready",
   "settings.stt.check_setup": "Check setup",
   "settings.stt.test_fail": "Test failed",
+  "settings.stt.browse": "Browse",
 
   // LLM Tab
   "settings.llm.title": "AI Formatting",
@@ -670,6 +687,11 @@ export const en: Dict = {
   "settings.shortcuts.mode_desc": "Push-to-talk holds; toggle starts/stops on press.",
   "settings.shortcuts.apply_btn": "Apply hotkey",
   "settings.shortcuts.applied": "Applied",
+  "settings.shortcuts.recorder_label": "Hotkey combination",
+  "settings.shortcuts.recorder_press": "Press your shortcut...",
+  "settings.shortcuts.recorder_hint": "Click to record a new shortcut",
+  "settings.shortcuts.recorder_cancel_hint": "Press Escape to cancel",
+  "settings.preferences": "Preferences",
 
   // About Tab
   "settings.about.title": "About",
@@ -785,6 +807,7 @@ export const en: Dict = {
   "onboarding.stt.save": "Save & Continue",
   "onboarding.stt.skip": "Set up later",
   "onboarding.stt.test": "Test Connection",
+  "onboarding.stt.testing": "Testing...",
   "onboarding.stt.test_ok": "Ready",
   "onboarding.stt.test_err": "Test failed",
   "onboarding.stt.groq.choice_title": "Groq API",
@@ -904,6 +927,7 @@ export const en: Dict = {
   "home.greeting.afternoon": "Good Afternoon",
   "home.greeting.evening": "Good Evening",
   "home.greeting.generic": "Hello",
+  "home.greeting.suffix": ", User!",
   "home.active_mode": "Active Mode",
   "home.quick_settings": "Quick Settings",
   "home.recent_transcriptions": "Recent Transcriptions",

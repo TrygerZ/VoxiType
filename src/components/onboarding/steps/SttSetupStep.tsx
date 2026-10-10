@@ -337,6 +337,7 @@ function GroqSetup({
           okLabel={t("onboarding.stt.test_ok")}
           failLabel={t("onboarding.stt.groq.test_fail")}
           errLabel={t("onboarding.stt.test_err")}
+          testingLabel={t("onboarding.stt.testing")}
           onClick={onTest}
           disabled={!apiKey.trim() || status === "testing"}
         />
@@ -458,6 +459,7 @@ function OfflineSetup({
           okLabel={t("onboarding.stt.offline.test_ok")}
           failLabel={t("onboarding.stt.offline.test_fail")}
           errLabel={t("onboarding.stt.test_err")}
+          testingLabel={t("onboarding.stt.testing")}
           onClick={onTest}
           disabled={
             status === "testing" || !binaryPath.trim() || !modelPath.trim()
@@ -637,6 +639,7 @@ function StatusButton({
   okLabel,
   failLabel,
   errLabel,
+  testingLabel,
   ...rest
 }: {
   status: TestStatus;
@@ -644,10 +647,11 @@ function StatusButton({
   okLabel: string;
   failLabel: string;
   errLabel: string;
+  testingLabel: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const label =
     status === "testing"
-      ? "Testing..."
+      ? testingLabel
       : status === "ok"
         ? okLabel
         : status === "fail"
