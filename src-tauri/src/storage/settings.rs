@@ -24,11 +24,7 @@ impl<'a> SettingsManager<'a> {
             let mut stmt = c.prepare("SELECT value FROM settings WHERE key = ?1")?;
             let mut rows = stmt.query_map([key], |r| r.get::<_, String>(0))?;
             match rows.next() {
-                Some(s) => {
-                    let raw = s?;
-                    let v: Value = serde_json::from_str(&raw)?;
-                    Ok(Some(v))
-                }
+                Some(s) => Ok(Some(parse_stored_value(&s?))),
                 None => Ok(None),
             }
         })
@@ -84,15 +80,23 @@ impl<'a> SettingsManager<'a> {
             let mut map = serde_json::Map::new();
             for row in rows {
                 let (k, v) = row?;
-                let parsed: Value = serde_json::from_str(&v).unwrap_or_else(|e| {
-                    tracing::warn!("Failed to parse setting value, storing as string: {e}");
-                    Value::String(v.clone())
-                });
-                map.insert(k, parsed);
+                map.insert(k, parse_stored_value(&v));
             }
             Ok(Value::Object(map))
         })
     }
+}
+
+/// Parse a stored JSON value, falling back to the raw string on corrupt JSON.
+///
+/// Shared by [`SettingsManager::get_raw`] and [`SettingsManager::all`] so the
+/// same row surfaces identically through both readers. A typed
+/// [`SettingsManager::get`] still errors via `from_value` on the coerced string.
+fn parse_stored_value(raw: &str) -> Value {
+    serde_json::from_str(raw).unwrap_or_else(|e| {
+        tracing::warn!("Failed to parse setting value, storing as string: {e}");
+        Value::String(raw.to_string())
+    })
 }
 
 #[cfg(test)]
@@ -132,5 +136,26 @@ mod tests {
             mgr.get::<String>("key_b").unwrap(),
             Some("val_b".to_string())
         );
+    }
+
+    #[test]
+    fn corrupt_value_reads_back_identically_through_both_readers() {
+        let db = Database::open_in_memory().unwrap();
+        let mgr = SettingsManager::new(&db);
+        mgr.set_raw("broken", "not-json").unwrap();
+
+        let coerced = Value::String("not-json".to_string());
+        assert_eq!(mgr.get_raw("broken").unwrap(), Some(coerced.clone()));
+        assert_eq!(mgr.all().unwrap()["broken"], coerced);
+    }
+
+    #[test]
+    fn corrupt_value_fails_typed_read() {
+        let db = Database::open_in_memory().unwrap();
+        let mgr = SettingsManager::new(&db);
+        mgr.set_raw("broken", "not-json").unwrap();
+
+        // The coerced string does not deserialize into the requested type.
+        assert!(mgr.get::<u32>("broken").is_err());
     }
 }
