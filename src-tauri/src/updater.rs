@@ -62,7 +62,7 @@ pub async fn check(current: &str) -> Result<UpdateInfo> {
         .await?;
 
     let status = resp.status().as_u16();
-    let body = resp.text().await?;
+    let body = crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES).await?;
     interpret(status, &body, current)
 }
 
@@ -121,7 +121,9 @@ fn interpret(status: u16, body: &str, current: &str) -> Result<UpdateInfo> {
     }
 
     let release: GitHubRelease = serde_json::from_str(body)?;
-    let latest = release.tag_name.trim_start_matches('v').to_string();
+    // A version string beyond the error-body cap is nonsense; sanitize and cap
+    // it so a hostile tag cannot flood logs or the UI.
+    let latest = crate::util::sanitize_error_body(release.tag_name.trim_start_matches('v'));
     let available = !release.draft && !release.prerelease && is_newer(&latest, current);
 
     Ok(UpdateInfo {
@@ -227,6 +229,22 @@ mod tests {
         let body = r#"{"tag_name":"v0.5.0","draft":true,"prerelease":false}"#;
         let info = interpret(200, body, "0.4.2").unwrap();
         assert!(!info.available);
+    }
+
+    #[test]
+    fn interpret_caps_oversized_tag_name() {
+        let body = serde_json::json!({
+            "tag_name": format!("v{}", "9".repeat(10_000)),
+            "draft": false,
+            "prerelease": false,
+        })
+        .to_string();
+        let info = interpret(200, &body, "0.4.2").unwrap();
+        assert!(
+            info.latest_version.chars().count() <= crate::util::MAX_ERROR_BODY_LEN + 32,
+            "latest_version must be capped near MAX_ERROR_BODY_LEN, got {}",
+            info.latest_version.chars().count()
+        );
     }
 
     #[test]
