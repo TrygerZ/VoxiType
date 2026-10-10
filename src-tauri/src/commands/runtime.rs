@@ -706,7 +706,7 @@ pub async fn process_audio<R: Runtime>(
                 out.transcription.duration_ms as i64,
             );
             events::emit_state(&app, state.pipeline.state_tag());
-            if out.translation_fell_back {
+            if out.translation_fell_back && !out.formatted_text.is_empty() {
                 events::emit_notice(
                     &app,
                     "translation_fallback",
