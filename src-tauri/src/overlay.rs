@@ -657,19 +657,6 @@ pub fn start_idle_monitor<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-/// Persist the widget's current position to settings.
-pub fn persist_position<R: Runtime>(app: &AppHandle<R>) {
-    let Some(win) = app.get_webview_window(LABEL) else {
-        return;
-    };
-    let Ok(pos) = win.outer_position() else {
-        return;
-    };
-    let state = app.state::<AppStateInner>();
-    let _ = SettingsManager::new(&state.db)
-        .set("floating_widget_pos", &WidgetPos { x: pos.x, y: pos.y });
-}
-
 fn clamp_and_persist_position<R: Runtime>(app: &AppHandle<R>, mut saved: WidgetPos) {
     let Some(win) = app.get_webview_window(LABEL) else {
         return;

@@ -111,6 +111,7 @@ pub fn parse_shortcut(accelerator: &str) -> Result<Shortcut> {
 }
 
 /// Check whether two accelerator strings represent identical key combinations.
+#[cfg(test)]
 pub fn accelerators_equal(a: &str, b: &str) -> bool {
     match (parse_shortcut(a), parse_shortcut(b)) {
         (Ok(sc_a), Ok(sc_b)) => sc_a == sc_b,
