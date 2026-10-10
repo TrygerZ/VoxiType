@@ -147,6 +147,8 @@ fn sanitize_release_url(html_url: &str) -> String {
 }
 
 /// Compare dotted numeric versions: is `latest` strictly newer than `current`?
+/// Suffix stripping means a same-core prerelease-to-stable promotion (`0.5.0-beta`
+/// running, `0.5.0` published) reports equal. Accepted: prerelease builds are not shipped.
 fn is_newer(latest: &str, current: &str) -> bool {
     let parse = |s: &str| -> Vec<u64> {
         s.split('.')
