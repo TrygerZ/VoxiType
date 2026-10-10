@@ -407,10 +407,10 @@ export const id: Dict = {
   "onboarding.welcome.how.step2_desc": "Suara Anda direkam lalu ditranskripsi",
   "onboarding.welcome.how.step3": "Teks muncul",
   "onboarding.welcome.how.step3_desc": "Hasil otomatis diketik ke aplikasi aktif",
-  // Welcome prep (heuristic: error prevention — set expectations before setup)
+  // Welcome prep (heuristic: error prevention - set expectations before setup)
   "onboarding.welcome.prep_title": "Yang perlu disiapkan",
   "onboarding.welcome.prep_body": "Setup cepat, sekitar 2 menit. Anda akan memilih mesin transkripsi lalu menetapkan hotkey. Semua bisa diubah nanti dari Pengaturan.",
-  // STT recommendation (heuristic: match real world — guide the beginner)
+  // STT recommendation (heuristic: match real world - guide the beginner)
   "onboarding.stt.recommended": "Direkomendasikan",
   "onboarding.stt.groq.recommend_note": "Paling mudah untuk pemula, setup kurang dari 1 menit.",
   "onboarding.stt.offline.recommend_note": "Cocok jika ingin transkripsi tanpa koneksi internet.",
@@ -890,10 +890,10 @@ export const en: Dict = {
   "onboarding.welcome.how.step2_desc": "Your voice is recorded and transcribed",
   "onboarding.welcome.how.step3": "Text appears",
   "onboarding.welcome.how.step3_desc": "The result is typed into the active app",
-  // Welcome prep (heuristic: error prevention — set expectations before setup)
+  // Welcome prep (heuristic: error prevention - set expectations before setup)
   "onboarding.welcome.prep_title": "What you will need",
   "onboarding.welcome.prep_body": "Quick setup, about 2 minutes. You will pick a transcription engine then set a hotkey. Everything can be changed later in Settings.",
-  // STT recommendation (heuristic: match real world — guide the beginner)
+  // STT recommendation (heuristic: match real world - guide the beginner)
   "onboarding.stt.recommended": "Recommended",
   "onboarding.stt.groq.recommend_note": "Easiest for beginners, under 1 minute to set up.",
   "onboarding.stt.offline.recommend_note": "Best when you want transcription without internet.",
@@ -1022,7 +1022,7 @@ if (typeof initialLang === "string") {
   setLanguage(initialLang);
 }
 
-// ponytail: minimal reactive hook — upgrade to react-i18next if >5 languages
+// ponytail: minimal reactive hook - upgrade to react-i18next if >5 languages
 export function useT() {
   const lang = useSettingsStore((s) => s.settings.language);
   const activeLang = lang && dictionaries[lang] ? lang : currentLang;
