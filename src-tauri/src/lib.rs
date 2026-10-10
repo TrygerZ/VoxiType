@@ -153,6 +153,11 @@ fn init_app_state(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // The macOS launcher argument is ignored on Windows; `None` args.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let handle = app.handle();
             let default_app_data_dir = handle
@@ -231,6 +236,18 @@ pub fn run() {
             create_window_from_config(handle, FLOATING_WIDGET_LABEL)?;
 
             apply_window_icon(handle);
+
+            // Reconcile the persisted auto_start preference with the OS startup
+            // entry. The DB is the source of truth; a failed apply is warned
+            // only, never fatal, and retried on the next launch.
+            let auto_start = SettingsManager::new(&handle.state::<AppStateInner>().db)
+                .get::<bool>("auto_start")
+                .ok()
+                .flatten()
+                .unwrap_or(false);
+            if let Err(e) = commands::apply_autostart(handle, auto_start) {
+                tracing::warn!("Autostart reconciliation failed: {e}");
+            }
 
             // System tray.
             if let Err(e) = tray::setup(handle) {

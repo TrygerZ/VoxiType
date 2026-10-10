@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 # --- Tauri core + plugins ---
 tauri = { version = "2", features = ["image-png", "tray-icon"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
 
 # --- Serialization ---
 serde = { version = "1", features = ["derive"] }

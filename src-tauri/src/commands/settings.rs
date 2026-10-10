@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_autostart::ManagerExt;
 
 use crate::commands::runtime::{MAX_WHISPER_THREADS, MIN_WHISPER_THREADS};
 use crate::error::AppError;
@@ -75,7 +76,34 @@ pub fn update_setting<R: Runtime>(
     if key == "floating_widget_auto_hide_seconds" {
         crate::overlay::reset_idle_timer_and_reconcile(&app);
     }
+    if key == "auto_start" {
+        // The setting is persisted first; startup reconciliation retries the
+        // apply, so a failure here self-heals on the next launch.
+        let enabled = value
+            .as_bool()
+            .ok_or_else(|| AppError::invalid_input("Setting 'auto_start' must be a boolean"))?;
+        apply_autostart(&app, enabled)?;
+    }
     Ok(())
+}
+
+/// Apply the desired Windows startup registration. No-ops in debug builds so
+/// `tauri dev` binaries never pollute the user's Run registry key.
+pub(crate) fn apply_autostart<R: Runtime>(
+    app: &AppHandle<R>,
+    enabled: bool,
+) -> std::result::Result<(), AppError> {
+    if cfg!(debug_assertions) {
+        tracing::debug!("Skipping autostart change in debug build (enabled={enabled})");
+        return Ok(());
+    }
+    let manager = app.autolaunch();
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    result.map_err(|e| AppError::internal(format!("Failed to update autostart: {e}")))
 }
 
 pub(crate) fn validate_auto_hide_seconds(value: &Value) -> std::result::Result<u64, AppError> {
