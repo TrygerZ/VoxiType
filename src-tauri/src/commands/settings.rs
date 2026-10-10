@@ -78,7 +78,8 @@ pub fn update_setting<R: Runtime>(
     }
     if key == "auto_start" {
         // The setting is persisted first; startup reconciliation retries the
-        // apply, so a failure here self-heals on the next launch.
+        // apply, so a failure here self-heals on the next launch. Validation
+        // above already rejects non-bools; this guard is defense in depth.
         let enabled = value
             .as_bool()
             .ok_or_else(|| AppError::invalid_input("Setting 'auto_start' must be a boolean"))?;
@@ -174,8 +175,20 @@ fn validate_setting_value(key: &str, value: &Value) -> std::result::Result<(), A
         }
         "floating_widget_auto_hide_seconds" => validate_auto_hide_seconds(value).map(|_| ()),
         "whisper_cpp_threads" => validate_whisper_threads(value),
+        "auto_start" | "auto_update" => validate_bool(key, value),
         _ => Ok(()),
     }
+}
+
+/// Reject a value that is not a JSON boolean for `key`. This runs before the
+/// value is encoded and persisted, so a non-bool can never reach the store.
+fn validate_bool(key: &str, value: &Value) -> std::result::Result<(), AppError> {
+    if value.is_boolean() {
+        return Ok(());
+    }
+    Err(AppError::invalid_input(format!(
+        "Setting '{key}' must be a boolean"
+    )))
 }
 
 /// Reject a value that is not one of the known strings for `key`.
@@ -441,6 +454,45 @@ mod tests {
         assert!(validate_setting_value("whisper_cpp_threads", &serde_json::json!(32)).is_ok());
         assert_invalid("whisper_cpp_threads", serde_json::json!(0));
         assert_invalid("whisper_cpp_threads", serde_json::json!(33));
+    }
+
+    #[test]
+    fn validate_setting_bool_keys_accept_booleans() {
+        for key in ["auto_start", "auto_update"] {
+            assert!(
+                validate_setting_value(key, &serde_json::json!(true)).is_ok(),
+                "{key} true"
+            );
+            assert!(
+                validate_setting_value(key, &serde_json::json!(false)).is_ok(),
+                "{key} false"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_setting_bool_keys_reject_non_booleans() {
+        for key in ["auto_start", "auto_update"] {
+            for bad in [
+                serde_json::json!("yes"),
+                serde_json::json!(1),
+                serde_json::json!(0),
+                serde_json::json!(null),
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ] {
+                let err = validate_setting_value(key, &bad).unwrap_err();
+                assert_eq!(err.code, crate::error::ErrorCode::InvalidInput, "key {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn non_bool_auto_start_is_rejected_before_persist() {
+        // `update_setting` validates before `set_raw`; a non-bool must fail at
+        // validation so it can never reach the store.
+        let err = validate_setting_value("auto_start", &serde_json::json!("yes")).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
     }
 
     #[test]
