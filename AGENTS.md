@@ -6,10 +6,10 @@
 | Desktop | Tauri 2.x | src-tauri/ |
 | Frontend | React 19 + Vite 7 + Tailwind 4 | src/ |
 | Frontend testing | Vitest + React Testing Library | vitest.config.ts, src/test/ |
-| Backend | Rust 1.85+ | src-tauri/src/ |
+| Backend | Rust 1.90+ | src-tauri/src/ |
 | State | Zustand 5.x | src/stores/ |
 | Storage | SQLite 3.53.2 via rusqlite 0.40.2 | src-tauri/src/storage/ |
-| Audio | cpal + rubato + ringbuf; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
+| Audio | cpal + rubato; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
 | VAD | None; block-level noise gate + post-hoc voice check (no VAD module) | src-tauri/src/audio/capture.rs |
 | STT | Groq Whisper (REST primary) + whisper.cpp (external CLI) | src-tauri/src/stt/ |
 | LLM | Ollama Qwen2.5 3B, Groq Llama 3.1 8B, rule-based fallback, Off mode | src-tauri/src/llm/ |
@@ -169,7 +169,7 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
 
 ## Architecture Rules
-1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, TextInjector
+1. **Modules = traits + factories** - SttEngine, LlmFormatter, TextInjector
 2. **Pipeline orchestrates** - state_machine.rs controls all flow, modules do not call each other
 3. **IPC only** - frontend uses invoke/events, never touches system APIs
 4. **Storage isolated** - only `storage/` module accesses SQLite
@@ -222,7 +222,7 @@ mod.rs exports:
 ## CI/CD
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
-| CI | Push/PR to `main` | tsc, vite build, cargo fmt, clippy, test (all `--no-default-features`) |
+| CI | Push/PR to `main` | tsc, vite build, frontend tests, cargo fmt, clippy, test (all `--no-default-features`) |
 | Release | Push tag `v*` | tauri-action unsigned build, creates GitHub Release draft with NSIS installer, manual publish required, fallback to local build if CI fails |
 
 ## Release Procedure
