@@ -35,6 +35,8 @@ export function HistoryPanel() {
   const error = useHistoryStore((s) => s.error);
   const query = useHistoryStore((s) => s.query);
   const load = useHistoryStore((s) => s.load);
+  const loadMore = useHistoryStore((s) => s.loadMore);
+  const hasMore = useHistoryStore((s) => s.hasMore);
   const search = useHistoryStore((s) => s.search);
   const remove = useHistoryStore((s) => s.remove);
   const clear = useHistoryStore((s) => s.clear);
@@ -274,6 +276,14 @@ export function HistoryPanel() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {!query && hasMore && (
+          <div className="flex justify-center py-4">
+            <Button size="sm" disabled={loading} onClick={() => void loadMore()}>
+              {t("history.load_more")}
+            </Button>
           </div>
         )}
       </div>

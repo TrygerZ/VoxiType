@@ -10,12 +10,17 @@ import {
   searchHistory,
 } from "../lib/tauri";
 
+/** Page size for the non-search history list; also the load-more step. */
+const HISTORY_PAGE_SIZE = 100;
+
 interface HistoryStore {
   items: TranscriptionEntry[];
   loading: boolean;
   error: string | null;
   query: string;
+  hasMore: boolean;
   load: () => Promise<void>;
+  loadMore: () => Promise<void>;
   search: (query: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   clear: (keepPinned?: boolean) => Promise<void>;
@@ -34,9 +39,16 @@ export const useHistoryStore = create<HistoryStore>((set, get) => {
     try {
       const items = trimmed
         ? await searchHistory(trimmed)
-        : await getHistory();
+        : await getHistory({ limit: HISTORY_PAGE_SIZE, offset: 0 });
       if (seq === requestSeq) {
-        set({ items, loading: false, error: null });
+        set({
+          items,
+          loading: false,
+          error: null,
+          // A full page means another page may exist; search returns every
+          // match at once, so it never has more.
+          hasMore: !trimmed && items.length === HISTORY_PAGE_SIZE,
+        });
       }
     } catch (err: unknown) {
       if (seq === requestSeq) {
@@ -54,10 +66,35 @@ export const useHistoryStore = create<HistoryStore>((set, get) => {
     loading: false,
     error: null,
     query: "",
+    hasMore: false,
 
     load: async () => {
       doSearch.cancel();
       await fetchItems(get().query, ++requestSeq);
+    },
+
+    loadMore: async () => {
+      if (get().loading || !get().hasMore) return;
+      const seq = ++requestSeq;
+      set({ loading: true, error: null });
+      try {
+        const page = await getHistory({
+          limit: HISTORY_PAGE_SIZE,
+          offset: get().items.length,
+        });
+        if (seq === requestSeq) {
+          set((s) => ({
+            items: [...s.items, ...page],
+            loading: false,
+            error: null,
+            hasMore: page.length === HISTORY_PAGE_SIZE,
+          }));
+        }
+      } catch (err: unknown) {
+        if (seq === requestSeq) {
+          set({ loading: false, error: formatTauriError(err) });
+        }
+      }
     },
 
     search: async (query) => {

@@ -60,8 +60,8 @@ export const revealFloatingWidget = () =>
   invoke<void>("reveal_floating_widget");
 
 // --- History ---
-export const getHistory = () =>
-  invoke<TranscriptionEntry[]>("get_history");
+export const getHistory = (filter?: { limit?: number; offset?: number }) =>
+  invoke<TranscriptionEntry[]>("get_history", { filter });
 export const searchHistory = (query: string) =>
   invoke<TranscriptionEntry[]>("search_history", { query });
 export const deleteHistory = (id: string) =>
