@@ -876,12 +876,20 @@ fn announce_capture_ready(state: &AppStateInner, started_at: Instant) {
 }
 
 fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>) {
+    // Capture the recording identity once: a stop+start inside one 50 ms sleep
+    // would otherwise let this emitter wake, see Recording again, and keep
+    // running beside the new emitter. Comparing against the captured generation
+    // exits on stop, error, and supersession alike.
+    let initial_generation = match app.state::<AppStateInner>().pipeline.recording_generation() {
+        Some(generation) => generation,
+        None => return,
+    };
     tauri::async_runtime::spawn(async move {
         loop {
             let mut stop = false;
             {
                 let state = app.state::<AppStateInner>();
-                if state.pipeline.state_tag() != crate::pipeline::AppStateTag::Recording {
+                if state.pipeline.recording_generation() != Some(initial_generation) {
                     break;
                 }
                 if let Some(dur) = state.pipeline.recording_duration() {

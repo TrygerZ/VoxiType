@@ -173,7 +173,12 @@ impl PipelineOrchestrator {
             && self.generation.load(Ordering::SeqCst) == target_gen
     }
 
-    fn recording_generation(&self) -> Option<u64> {
+    /// The generation of the active recording, or `None` when not Recording.
+    ///
+    /// The level emitter captures this once at start and exits when it changes,
+    /// so a stop+start within one emitter tick supersedes the old emitter
+    /// instead of letting it run beside the new one.
+    pub fn recording_generation(&self) -> Option<u64> {
         let guard = self.state.lock_recover();
         if matches!(*guard, AppState::Recording { .. }) {
             Some(self.generation.load(Ordering::SeqCst))
@@ -384,6 +389,36 @@ mod tests {
             })
             .unwrap();
         assert_eq!(pipeline.state_tag(), AppStateTag::Recording);
+    }
+
+    #[test]
+    fn recording_generation_changes_across_stop_start_and_is_none_when_idle() {
+        let pipeline = PipelineOrchestrator::new();
+        assert_eq!(pipeline.recording_generation(), None);
+
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        let first = pipeline.recording_generation().expect("recording");
+
+        // Stop then start again: the generation must change so an emitter that
+        // captured `first` can tell its session was superseded.
+        pipeline.apply(StateEvent::StopRecording).unwrap();
+        assert_eq!(pipeline.recording_generation(), None);
+        let session_generation = pipeline.current_generation();
+        pipeline.finish_processing(session_generation).unwrap();
+
+        pipeline
+            .apply(StateEvent::StartRecording {
+                active_app: None,
+                active_window_id: None,
+            })
+            .unwrap();
+        let second = pipeline.recording_generation().expect("recording");
+        assert_ne!(first, second);
     }
 
     #[test]
