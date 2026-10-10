@@ -1,6 +1,6 @@
 //! History commands.
 
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::error::AppError;
 use crate::injection::{HybridInjector, TextInjector};
@@ -115,10 +115,25 @@ fn format_csv_export(items: &[TranscriptionEntry]) -> String {
     out
 }
 
+/// Exports the history as CSV or JSON. Reading up to `MAX_EXPORT_RECORDS`
+/// rows and serializing them is blocking IO, so the work runs off the main
+/// thread.
 #[tauri::command]
-pub fn export_history(
-    state: State<'_, AppStateInner>,
+pub async fn export_history<R: Runtime>(
+    app: AppHandle<R>,
     format: String,
+) -> std::result::Result<String, AppError> {
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppStateInner>();
+        export_history_blocking(&state, &format)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("export_history task failed: {e}")))?
+}
+
+fn export_history_blocking(
+    state: &AppStateInner,
+    format: &str,
 ) -> std::result::Result<String, AppError> {
     let repo = HistoryRepository::new(&state.db);
     let total = repo.count()? as usize;
@@ -127,7 +142,7 @@ pub fn export_history(
         limit: Some(MAX_EXPORT_RECORDS as u32),
         ..Default::default()
     })?;
-    match format.as_str() {
+    match format {
         "csv" => Ok(format_csv_export(&items)),
         _ => serde_json::to_string_pretty(&items).map_err(AppError::from),
     }

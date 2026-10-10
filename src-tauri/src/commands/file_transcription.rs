@@ -160,20 +160,36 @@ pub struct TranscriptExport {
 
 /// Writes one file per transcript into a folder chosen via
 /// `pick_export_directory`. Returns the written paths.
+///
+/// Writing many files is blocking IO, so the work runs off the main thread.
 #[tauri::command]
-pub fn export_transcripts(
-    state: State<'_, AppStateInner>,
+pub async fn export_transcripts<R: Runtime>(
+    app: AppHandle<R>,
     directory: String,
     format: ExportFormat,
     items: Vec<TranscriptExport>,
 ) -> std::result::Result<Vec<String>, AppError> {
-    ensure_picker_backed_path(&state, PICKER_KIND_EXPORT_DIRECTORY, &directory)?;
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppStateInner>();
+        export_transcripts_blocking(&state, &directory, format, &items)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("export_transcripts task failed: {e}")))?
+}
+
+fn export_transcripts_blocking(
+    state: &AppStateInner,
+    directory: &str,
+    format: ExportFormat,
+    items: &[TranscriptExport],
+) -> std::result::Result<Vec<String>, AppError> {
+    ensure_picker_backed_path(state, PICKER_KIND_EXPORT_DIRECTORY, directory)?;
     if items.len() > MAX_BATCH_FILES {
         return Err(AppError::invalid_input(format!(
             "Export at most {MAX_BATCH_FILES} transcripts at a time"
         )));
     }
-    for item in &items {
+    for item in items {
         super::check_len("export item text", &item.text, super::MAX_TEXT_BLOB_LEN)?;
         super::check_len(
             "export item source path",
@@ -181,7 +197,7 @@ pub fn export_transcripts(
             super::MAX_IDENTIFIER_LEN,
         )?;
     }
-    let dir = Path::new(&directory);
+    let dir = Path::new(directory);
     items
         .iter()
         .map(|item| {
