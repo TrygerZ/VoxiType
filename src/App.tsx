@@ -81,7 +81,9 @@ export default function App() {
       const message =
         payload.code === "no_speech_detected"
           ? t("notice.no_speech")
-          : payload.message;
+          : payload.code === "translation_fallback"
+            ? t("notice.translation_fallback")
+            : payload.message;
       toast(message, "info");
     });
     return () => {

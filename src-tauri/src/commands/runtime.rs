@@ -668,6 +668,13 @@ pub async fn process_audio<R: Runtime>(
                 out.transcription.duration_ms as i64,
             );
             events::emit_state(&app, state.pipeline.state_tag());
+            if out.translation_fell_back {
+                events::emit_notice(
+                    &app,
+                    "translation_fallback",
+                    "Translation failed; inserted the original text",
+                );
+            }
             crate::overlay::reset_idle_timer(&state);
             hide_overlay_soon(app.clone());
         }

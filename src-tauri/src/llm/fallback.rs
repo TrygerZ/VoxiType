@@ -18,6 +18,9 @@ pub struct FallbackFormatter {
     fallback: Arc<dyn LlmFormatter>,
     /// Whether the most recent completed call was produced by the fallback.
     used_fallback: AtomicBool,
+    /// Whether the most recent completed `translate` silently returned the
+    /// input unchanged because the winning engine cannot translate.
+    translate_fell_back: AtomicBool,
 }
 
 impl FallbackFormatter {
@@ -26,11 +29,16 @@ impl FallbackFormatter {
             primary,
             fallback,
             used_fallback: AtomicBool::new(false),
+            translate_fell_back: AtomicBool::new(false),
         }
     }
 
     fn record(&self, used_fallback: bool) {
         self.used_fallback.store(used_fallback, Ordering::Relaxed);
+    }
+
+    fn record_translate_fell_back(&self, fell_back: bool) {
+        self.translate_fell_back.store(fell_back, Ordering::Relaxed);
     }
 }
 
@@ -59,6 +67,7 @@ impl LlmFormatter for FallbackFormatter {
         match self.primary.translate(text, source, target).await {
             Ok(out) => {
                 self.record(false);
+                self.record_translate_fell_back(false);
                 Ok(out)
             }
             Err(e) => {
@@ -69,6 +78,12 @@ impl LlmFormatter for FallbackFormatter {
                 );
                 let out = self.fallback.translate(text, source, target).await;
                 self.record(out.is_ok());
+                // The fallback "succeeds" but cannot translate, so it returns
+                // the input unchanged: flag the silent fallback so the user
+                // learns the text was not actually translated.
+                self.record_translate_fell_back(
+                    out.is_ok() && !self.fallback.supports_translation(),
+                );
                 out
             }
         }
@@ -82,6 +97,14 @@ impl LlmFormatter for FallbackFormatter {
         } else {
             self.primary.name()
         }
+    }
+
+    fn supports_translation(&self) -> bool {
+        self.primary.supports_translation()
+    }
+
+    fn last_translate_fell_back(&self) -> bool {
+        self.translate_fell_back.load(Ordering::Relaxed)
     }
 }
 
@@ -167,5 +190,77 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(f.name(), "flaky");
+    }
+
+    #[tokio::test]
+    async fn translate_fell_back_true_when_fallback_cannot_translate() {
+        use super::super::{LlmFactory, RuleBasedConfig};
+        let primary: Arc<dyn LlmFormatter> = Arc::new(AlwaysFails);
+        let fallback = LlmFactory::rule_based(RuleBasedConfig::default());
+        let f = FallbackFormatter::new(primary, fallback);
+
+        let out = f.translate("halo dunia", "id", "en").await.unwrap();
+        // The rule-based fallback returned the input unchanged.
+        assert_eq!(out, "halo dunia");
+        assert!(f.last_translate_fell_back());
+    }
+
+    #[tokio::test]
+    async fn translate_fell_back_false_when_primary_succeeds() {
+        use super::super::{LlmFactory, RuleBasedConfig};
+        let primary: Arc<dyn LlmFormatter> = Arc::new(FailsOnce::new());
+        let fallback = LlmFactory::rule_based(RuleBasedConfig::default());
+        let f = FallbackFormatter::new(primary, fallback);
+
+        f.translate("halo dunia", "id", "en").await.unwrap();
+        assert!(!f.last_translate_fell_back());
+    }
+
+    /// Primary whose translation support is configurable, to prove the wrapper
+    /// delegates rather than hard-coding `true`.
+    struct TranslateSupport(bool);
+    #[async_trait]
+    impl LlmFormatter for TranslateSupport {
+        async fn format(&self, text: &str, _m: &LlmMode, _l: &str) -> Result<String> {
+            Ok(text.to_string())
+        }
+        async fn translate(&self, text: &str, _s: &str, _d: &str) -> Result<String> {
+            Ok(text.to_string())
+        }
+        fn name(&self) -> &'static str {
+            "support"
+        }
+        fn supports_translation(&self) -> bool {
+            self.0
+        }
+    }
+
+    #[tokio::test]
+    async fn supports_translation_delegates_to_primary() {
+        use super::super::{LlmFactory, RuleBasedConfig};
+        let make = |support| {
+            FallbackFormatter::new(
+                Arc::new(TranslateSupport(support)) as Arc<dyn LlmFormatter>,
+                LlmFactory::rule_based(RuleBasedConfig::default()),
+            )
+        };
+        assert!(make(true).supports_translation());
+        assert!(!make(false).supports_translation());
+    }
+
+    #[tokio::test]
+    async fn format_does_not_touch_translate_fell_back() {
+        use super::super::{LlmFactory, RuleBasedConfig};
+        let primary: Arc<dyn LlmFormatter> = Arc::new(AlwaysFails);
+        let fallback = LlmFactory::rule_based(RuleBasedConfig::default());
+        let f = FallbackFormatter::new(primary, fallback);
+
+        f.translate("halo dunia", "id", "en").await.unwrap();
+        assert!(f.last_translate_fell_back());
+        // A subsequent `format` must leave the translate flag untouched.
+        f.format("halo dunia", &LlmMode::Dictation, "id")
+            .await
+            .unwrap();
+        assert!(f.last_translate_fell_back());
     }
 }

@@ -32,6 +32,10 @@ impl LlmFormatter for OffFormatter {
     fn name(&self) -> &'static str {
         "off"
     }
+
+    fn supports_translation(&self) -> bool {
+        false
+    }
 }
 
 pub struct LlmFactory;
