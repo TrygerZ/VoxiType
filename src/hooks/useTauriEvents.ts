@@ -71,9 +71,9 @@ export function useTauriEvents(options: UseTauriEventsOptions = {}) {
 
     return () => {
       clearTimer();
-      Promise.all(unlisteners)
-        .then((fns) => fns.forEach((fn) => fn()))
-        .catch(() => {});
+      // Unlisten independently: one rejected registration must not stop the
+      // siblings that did register from being torn down (leak on unmount).
+      unlisteners.forEach((p) => p.then((fn) => fn()).catch(() => {}));
     };
   }, [
     setState,

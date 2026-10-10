@@ -48,9 +48,9 @@ export function SmokeTestStep({
     const timeout = window.setTimeout(() => setTimedOut(true), 30_000);
     return () => {
       window.clearTimeout(timeout);
-      void Promise.all(listeners)
-        .then((fns) => fns.forEach((fn) => fn()))
-        .catch(() => {});
+      // Unlisten independently: one rejected registration must not stop the
+      // siblings that did register from being torn down (leak on unmount).
+      listeners.forEach((p) => p.then((fn) => fn()).catch(() => {}));
     };
   }, []);
 

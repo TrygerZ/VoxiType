@@ -57,4 +57,27 @@ describe("useTauriEvents", () => {
     expect(tauri.getHistory).toHaveBeenCalled();
     expect(tauri.getUsageStats).toHaveBeenCalled();
   });
+
+  it("unlistens the surviving registrations when one listen rejects", async () => {
+    const stateUnlisten = vi.fn();
+    const completeUnlisten = vi.fn();
+    vi.mocked(tauri.onEvent).mockImplementation((event) => {
+      if (event === "state_changed") {
+        return Promise.reject(new Error("listen failed"));
+      }
+      return Promise.resolve(event === "transcription_complete"
+        ? completeUnlisten
+        : stateUnlisten);
+    });
+
+    const { unmount } = renderHook(() => useTauriEvents());
+    unmount();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(completeUnlisten).toHaveBeenCalledTimes(1);
+    expect(stateUnlisten).toHaveBeenCalledTimes(1);
+  });
 });
