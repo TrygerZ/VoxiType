@@ -39,6 +39,9 @@ zip = { version = "=7.2.0", default-features = false }
 
 # --- HTTP client (Ollama, Groq) ---
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+# URL parsing for the open_url host allowlist (H-1): a hand-rolled split
+# misreads an `@` inside a fragment/query as userinfo.
+url = "2"
 # shellexecute-on-windows: open URLs via ShellExecuteW instead of `cmd /c start`,
 # removing the cmd percent-expansion surface (L-25).
 open = { version = "5", features = ["shellexecute-on-windows"] }

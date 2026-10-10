@@ -202,38 +202,42 @@ pub fn open_url(url: String) -> std::result::Result<(), AppError> {
 /// Only allow http(s) URLs to a fixed host allowlist. The OS shell handler
 /// honors `file://`, `smb://`, and bare local paths, so rejecting those
 /// prevents launching arbitrary executables.
-/// ponytail: hand-rolled parse instead of the `url` crate to avoid a new dep;
-/// upgrade to `url::Url` if query/fragment/auth validation ever matters.
+///
+/// The host is read from a real URL parse rather than a hand-rolled split: an
+/// `@` inside a fragment or query (`https://evil.com#@github.com`) would be
+/// misread as userinfo and let an attacker-supplied host pass the allowlist.
+/// The canonicalized `Url` is returned so exactly what was validated is opened.
 fn validate_open_url(url: &str) -> std::result::Result<String, AppError> {
-    let (scheme, rest) = url
-        .split_once("://")
-        .ok_or_else(|| AppError::internal("Invalid URL: missing scheme"))?;
-    if scheme != "http" && scheme != "https" {
-        return Err(AppError::internal(format!(
-            "Refused URL with scheme '{scheme}': only http/https allowed"
-        )));
-    }
-    if rest.contains('\\') {
+    // Reject raw backslashes before parsing: the `url` crate normalizes `\` to
+    // `/` for special schemes, so `https://evil.com\@github.com` would parse as
+    // host `github.com` after normalization.
+    if url.contains('\\') {
         return Err(AppError::internal(
             "Refused URL: backslash not permitted in URL",
         ));
     }
-    // Strip userinfo, port, path, query, fragment to isolate the host.
-    let authority = rest.split('/').next().unwrap_or("");
-    let host = authority
-        .split('@')
-        .next_back()
-        .unwrap_or("")
-        .split(':')
-        .next()
-        .unwrap_or("");
+    let parsed =
+        url::Url::parse(url).map_err(|e| AppError::internal(format!("Invalid URL: {e}")))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(AppError::internal(format!(
+                "Refused URL with scheme '{other}': only http/https allowed"
+            )));
+        }
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AppError::internal("Invalid URL: missing host"))?;
     const ALLOWED: &[&str] = &["console.groq.com", "github.com", "huggingface.co"];
+    // The url crate lowercases the host for special (http/https) schemes, so a
+    // direct compare against the lowercase allowlist is sufficient.
     if !ALLOWED.contains(&host) {
         return Err(AppError::internal(format!(
             "Refused URL to host '{host}': not in allowlist"
         )));
     }
-    Ok(url.to_string())
+    Ok(parsed.to_string())
 }
 
 /// Reveal the floating-widget window once its page has mounted. The frontend
@@ -809,6 +813,35 @@ mod tests {
         assert!(validate_open_url(r"https://github.com\path").is_err());
         assert!(validate_open_url("https://github.com").is_ok());
         assert!(validate_open_url("file:///C:/Windows/System32/cmd.exe").is_err());
+    }
+
+    #[test]
+    fn rejects_at_sign_hidden_in_fragment_or_query() {
+        // A hand-rolled userinfo split would read the trailing `@github.com` as
+        // the host and let the real host (`evil.com`) through.
+        assert!(validate_open_url("https://evil.com#@github.com").is_err());
+        assert!(validate_open_url("https://evil.com?x=@github.com").is_err());
+    }
+
+    #[test]
+    fn accepts_userinfo_and_explicit_port() {
+        assert!(validate_open_url("https://user@github.com").is_ok());
+        assert!(validate_open_url("https://github.com:443/path").is_ok());
+    }
+
+    #[test]
+    fn accepts_mixed_case_host() {
+        // The url crate lowercases special-scheme hosts before the compare.
+        assert!(validate_open_url("https://GitHub.com").is_ok());
+    }
+
+    #[test]
+    fn returns_canonicalized_url() {
+        // The value opened is the value validated, so it is the canonical form.
+        assert_eq!(
+            validate_open_url("https://GitHub.com:443/path").unwrap(),
+            "https://github.com/path"
+        );
     }
 
     /// Create a unique scratch dir with one file inside; returns the
