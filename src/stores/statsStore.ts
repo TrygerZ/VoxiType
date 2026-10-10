@@ -29,19 +29,31 @@ const normalizeStats = (stats?: Partial<UsageStats> | null): UsageStats => ({
     typeof stats?.total_sessions === "number" ? stats.total_sessions : 0,
 });
 
-export const useStatsStore = create<StatsStore>((set) => ({
-  totals: EMPTY,
-  loaded: false,
-  error: null,
+export const useStatsStore = create<StatsStore>((set) => {
+  // Monotonic token: every load captures the current value and only commits
+  // its result if it is still the latest. Prevents a slow in-flight request
+  // from overwriting fresher totals out of order.
+  let requestSeq = 0;
 
-  load: async () => {
-    try {
-      const totals = await getUsageStats();
-      set({ totals: normalizeStats(totals), loaded: true, error: null });
-    } catch (err: unknown) {
-      // Leave the last-known totals in place on failure rather than zeroing
-      // the dashboard, but record error for UI retry.
-      set({ loaded: true, error: formatTauriError(err) });
-    }
-  },
-}));
+  return {
+    totals: EMPTY,
+    loaded: false,
+    error: null,
+
+    load: async () => {
+      const seq = ++requestSeq;
+      try {
+        const totals = await getUsageStats();
+        if (seq === requestSeq) {
+          set({ totals: normalizeStats(totals), loaded: true, error: null });
+        }
+      } catch (err: unknown) {
+        // Leave the last-known totals in place on failure rather than zeroing
+        // the dashboard, but record error for UI retry.
+        if (seq === requestSeq) {
+          set({ loaded: true, error: formatTauriError(err) });
+        }
+      }
+    },
+  };
+});
