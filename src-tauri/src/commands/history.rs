@@ -60,7 +60,7 @@ pub fn clear_history(
 /// interleaving the two produces garbled output.
 fn re_inject_allowed(state: AppStateTag) -> std::result::Result<(), AppError> {
     match state {
-        AppStateTag::Recording | AppStateTag::Processing => Err(AppError::invalid_input(
+        AppStateTag::Recording | AppStateTag::Processing => Err(AppError::invalid_transition(
             "Cannot re-inject while dictation is recording or processing",
         )),
         AppStateTag::Idle | AppStateTag::Error => Ok(()),
@@ -169,8 +169,8 @@ mod tests {
         assert!(re_inject_allowed(AppStateTag::Idle).is_ok());
         assert!(re_inject_allowed(AppStateTag::Error).is_ok());
         let rec = re_inject_allowed(AppStateTag::Recording).unwrap_err();
-        assert_eq!(rec.code, crate::error::ErrorCode::InvalidInput);
+        assert_eq!(rec.code, crate::error::ErrorCode::InvalidTransition);
         let proc = re_inject_allowed(AppStateTag::Processing).unwrap_err();
-        assert_eq!(proc.code, crate::error::ErrorCode::InvalidInput);
+        assert_eq!(proc.code, crate::error::ErrorCode::InvalidTransition);
     }
 }
