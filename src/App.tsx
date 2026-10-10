@@ -69,7 +69,7 @@ export default function App() {
 
     return () => {
       active = false;
-      unsub.then((fn) => fn());
+      unsub.then((fn) => fn()).catch(() => {});
     };
   }, []);
 
@@ -90,7 +90,7 @@ export default function App() {
     });
     return () => {
       active = false;
-      unsub.then((fn) => fn());
+      unsub.then((fn) => fn()).catch(() => {});
     };
   }, [t]);
 
