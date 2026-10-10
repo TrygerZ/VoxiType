@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HistoryPanel } from "./HistoryPanel";
 import { useHistoryStore } from "../../stores/historyStore";
 import * as tauri from "../../lib/tauri";
+import { t } from "../../lib/i18n";
 import type { TranscriptionEntry } from "../../types/app";
 
 const createMockItem = (id: string, text: string): TranscriptionEntry => ({
@@ -51,6 +52,14 @@ describe("HistoryPanel load more", () => {
     expect(
       screen.queryByRole("button", { name: "Load more" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("exposes an accessible name on the search input", () => {
+    render(<HistoryPanel />);
+
+    expect(
+      screen.getByRole("textbox", { name: t("history.search_placeholder") }),
+    ).toBeInTheDocument();
   });
 
   it("calls loadMore when the button is clicked", async () => {

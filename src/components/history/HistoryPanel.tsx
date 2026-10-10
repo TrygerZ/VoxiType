@@ -163,6 +163,7 @@ export function HistoryPanel() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
           <input
             className="w-full rounded-lg bg-vx-bg-tertiary py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
+            aria-label={t("history.search_placeholder")}
             placeholder={t("history.search_placeholder")}
             value={query}
             onChange={(e) => void search(e.target.value)}
