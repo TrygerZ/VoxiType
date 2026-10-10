@@ -86,8 +86,6 @@ libc = "0.2"
 
 [features]
 default = []
-local-stt = []
-local-vad = []
 
 [profile.release]
 codegen-units = 1

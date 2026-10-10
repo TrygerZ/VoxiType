@@ -54,7 +54,6 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 | Backend | Rust 1.85+ |
 | Storage | SQLite (rusqlite) |
 | Audio | cpal + rubato + ringbuf; symphonia for file decode |
-| VAD | Energy-based (default) |
 | Export | TXT, DOCX (zip), PDF (built-in Helvetica) |
 | STT | Groq Whisper API + whisper.cpp (selectable via `stt_engine` setting) |
 | LLM | Ollama (Qwen2.5 3B), Groq (Llama 3.1 8B), rule-based, off |
@@ -193,7 +192,7 @@ src/                  # React frontend
 
 src-tauri/src/        # Rust backend
 ├── active_window.rs  # Per-app mode detection via Win32 API
-├── audio/            # Audio capture (cpal) + resampler (rubato) + VAD + file decode (symphonia)
+├── audio/            # Audio capture (cpal) + resampler (rubato) + file decode (symphonia)
 ├── commands/         # Tauri IPC handlers (49 commands across 9 modules + runtime helpers)
 ├── crypto.rs         # AES-256-GCM API key encryption
 ├── data_dir.rs       # Data directory marker resolution, validation, copy-on-migrate

@@ -10,8 +10,8 @@
 | State | Zustand 5.x | src/stores/ |
 | Storage | SQLite 3.53.2 via rusqlite 0.40.2 | src-tauri/src/storage/ |
 | Audio | cpal + rubato + ringbuf; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
-| VAD | Energy-based (default) + Silero ONNX (feature-gated `local-vad`) | src-tauri/src/audio/capture.rs |
-| STT | Groq Whisper (REST primary) + whisper.cpp (feature-gated `local-stt`) | src-tauri/src/stt/ |
+| VAD | None; block-level noise gate + post-hoc voice check (no VAD module) | src-tauri/src/audio/capture.rs |
+| STT | Groq Whisper (REST primary) + whisper.cpp (external CLI) | src-tauri/src/stt/ |
 | LLM | Ollama Qwen2.5 3B, Groq Llama 3.1 8B, rule-based fallback, Off mode | src-tauri/src/llm/ |
 | Dictionary | Word/replacement pairs with hotword boosting | src-tauri/src/storage/dictionary.rs |
 | Snippets | Trigger phrase expansion | src-tauri/src/storage/snippets.rs |
@@ -167,23 +167,24 @@ Data-directory selection is not a key-value setting. The marker file `data_dir.t
 | `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
 
 ## Architecture Rules
-1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, VAD, TextInjector
+1. **Modules = traits + factories** - SttEngine, LlmFormatter, AudioCapture, TextInjector
 2. **Pipeline orchestrates** - state_machine.rs controls all flow, modules do not call each other
 3. **IPC only** - frontend uses invoke/events, never touches system APIs
 4. **Storage isolated** - only `storage/` module accesses SQLite
 5. **Module error types** - unified `AppError` in `error.rs` with typed `ErrorCode`
 6. **Post-processing pipeline** - dictionary replacements → snippet expansion applied after LLM + translation
 7. **Per-app mode routing** - active window detection overrides default mode when `per_app_mode` enabled
-8. **Feature gates** - `local-stt` (whisper.cpp), `local-vad` (Silero ONNX) behind Cargo features, requires cmake/libclang
 
 ## State Machine
 ```
-IDLE -(hotkey press)> RECORDING -(vad end / stop)> PROCESSING -(done)> IDLE
+IDLE -(hotkey press)> RECORDING -(stop)> PROCESSING -(done)> IDLE
   ^                        |                                               |
   |                        '--(cancel)--> IDLE                             |
   '----(start_recording)---<---- ERROR <------------(fail)-----------------'
 ```
 Transitions: Idle→Recording, Recording→Processing, Recording→Idle (cancel), Processing→Idle, Processing→Error, Error→Recording (retry).
+
+Recording ends on PTT release, toggle press, UI stop, or the 300 s capture cap; there is no automatic VAD stop.
 
 ## Storage Module (`src-tauri/src/storage/`)
 ```
