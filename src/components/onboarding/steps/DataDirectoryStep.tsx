@@ -89,6 +89,7 @@ export function DataDirectoryStep(props: Props) {
       } else {
         setError(formatDirectoryError(e, t));
       }
+    } finally {
       setBusy(false);
     }
   };

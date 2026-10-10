@@ -102,6 +102,27 @@ describe("DataDirectoryStep", () => {
     expect(tauri.restartApp).toHaveBeenCalledOnce();
   });
 
+  it("re-enables the restart button when restartApp resolves without restarting", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: "/pending/restart/dir",
+      lastError: null,
+    });
+    vi.mocked(tauri.restartApp).mockResolvedValueOnce(undefined);
+
+    render(<DataDirectoryStep {...defaultProps} />);
+
+    const restartBtn = await screen.findByTestId("restart-app-button");
+    await user.click(restartBtn);
+
+    // The app kept running (Ok without restart); busy must not stay stuck.
+    await waitFor(() => {
+      expect(screen.getByTestId("restart-app-button")).toBeEnabled();
+    });
+  });
+
   it("asks for confirmation when restart is refused with WorkInProgress", async () => {
     const user = userEvent.setup();
     vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
