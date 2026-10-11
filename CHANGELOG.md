@@ -6,6 +6,135 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.20] - 2026-10-11
+
+### Fixed
+- Fixed a lock-order inversion between push-to-talk dispatch and hotkey rebinding that could deadlock. Dispatch now acquires the event lock without blocking and skips the press on contention.
+- Fixed the tray record item update blocking the hotkey thread while the shortcut plugin lock was held. The update is now queued to the main thread.
+- Fixed the translation fallback notice appearing when the output was empty and nothing was inserted.
+- Fixed the target language being recorded when translation fell back to the original text.
+- Fixed the history search input lacking an accessible name.
+- Fixed the Home screen translation target option carrying an inconsistent label.
+- Fixed interrupted data-directory migration recovery aborting when the source directory had no master key.
+- Fixed `auto_start` and `auto_update` accepting non-boolean values before they were persisted.
+- Fixed Settings status timers (pending hotkey status and shortcuts applied reset) surviving unmount, reschedule, or a repeated hotkey apply.
+- Fixed the onboarding STT language select lacking an accessible name.
+- Fixed the updater reading the latest version and the release body without size limits.
+- Fixed event listener cleanup stopping at the first rejected registration, and unhandled promise rejections from listener registration and unlisten chains.
+- Fixed the hotkey recorder consuming Tab and Escape. Escape now cancels recording and Tab moves focus.
+- Fixed the data-directory onboarding step leaving its primary button disabled after a failed attempt.
+- Fixed duplicate identical toasts stacking while an earlier copy was still visible.
+- Fixed the sound module decoding WAV samples with a deprecated iterator.
+
+### Changed
+- Raised the declared minimum Rust version to 1.90, required by the autostart plugin.
+- Corrected the ring buffer description in the agent instructions and README.
+
+### Security
+- Upgraded rustls to 0.23.45, fixing RUSTSEC-2026-0285, a TLS 1.3 handshake issue.
+
+## [0.6.19] - 2026-10-10
+
+### Changed
+- Removed dead overlay and hotkey helpers.
+- Removed the unused raw response field from the speech-to-text engine.
+
+### Fixed
+- Fixed usage statistics applying stale load results. Loads now carry a monotonic request token.
+- Fixed dictionary batch upserts reporting the wrong number of changed entries.
+- Fixed the tray Toggle Recording item staying enabled while a transcription was processing.
+- Fixed re-inject reporting a generic error when refused during recording or processing. It now reports an invalid state transition.
+- Fixed history pruning deleting entries when retention was set to zero days. Zero now disables pruning.
+- Fixed snippet expansion re-expanding text inserted by an earlier trigger. Triggers now expand in a single left-to-right pass.
+- Fixed translation requests using the formatting prompt prefix instead of a dedicated translation prefix.
+
+### Security
+- Capped HTTP response bodies before buffering in the Groq STT, Groq LLM, and Ollama clients.
+
+## [0.6.18] - 2026-10-10
+
+### Added
+- Added clipboard image restore. An image on the clipboard now survives dictation and is restored after the text is injected.
+
+### Changed
+- Reused capture and resample buffers in the audio hot path, reducing per-callback allocations.
+
+### Fixed
+- Fixed the microphone meter holding its lock while joining the capture thread, which could stall a device change.
+- Fixed file-transcription chunk boundaries cutting through words. Chunks now cut at windows below a silence threshold and extend up to 5 seconds through uniform speech before a forced cut at the quietest window.
+
+## [0.6.17] - 2026-10-10
+
+### Changed
+- Corrected the agent instructions and README claims about VAD, STT, and feature gates to match the code.
+- Removed the empty `local-stt` and `local-vad` Cargo features and the unused unix `libc` dependency.
+- Declared backend-written settings keys (`stt_model`, `auto_start`, `auto_update`, `floating_widget_pos`) in the frontend types.
+- Extended the i18n test to reject en and em dashes across the whole catalog source.
+- Documented the accepted prerelease comparison edge in the updater and the ASCII-only behavior of dictionary uniqueness.
+
+## [0.6.16] - 2026-10-10
+
+### Added
+- Added a Load more control to history, using the existing limit and offset support.
+
+### Changed
+- Moved hardcoded UI strings into the i18n catalogs (en and id).
+
+### Fixed
+- Fixed onboarding not rendering the toast container, hiding notices during first-run setup.
+- Fixed unnamed switches and selects in Settings and History lacking accessible names.
+- Fixed onboarding primary actions accepting repeated dispatch while an action was in flight.
+- Fixed the whisper.cpp binary path defaulting to a seeded placeholder value that could be treated as a real path. The path now defaults to empty with a placeholder hint, and existing seeded values are cleared on startup.
+
+## [0.6.15] - 2026-10-10
+
+### Added
+- Added automatic startup registration for the `auto_start` setting through the Tauri autostart plugin.
+- Added a startup update check when `auto_update` is enabled. An available update now shows a notice with the new version.
+
+### Changed
+- Release builds now log at info level by default. `RUST_LOG` opts into debug.
+- CI now runs the frontend test suite after the frontend build.
+
+### Fixed
+- Capped the release body the updater surfaces to the frontend.
+
+## [0.6.14] - 2026-10-10
+
+### Changed
+- Set a 5-second SQLite busy timeout on every connection.
+
+### Fixed
+- Fixed dictation injecting into the wrong window when the user switched windows while the text was processing. The target window is re-verified immediately before injection and injection aborts with a visible error on mismatch.
+- Fixed hotkey rebinding racing a push-to-talk press. Rebinding now verifies the old binding is released, retries once, and rolls back on failure, and the press path is serialized with rebind.
+- Fixed a stale audio level emitter surviving a stop and start within one tick.
+
+## [0.6.13] - 2026-10-10
+
+### Added
+- Added a user-visible notice when translation is skipped because the selected engine does not support it, or falls back to the original text.
+
+### Changed
+- Moved transcript export, history export, and dictionary import off the main thread so large operations no longer freeze the window.
+
+### Fixed
+- Fixed file-transcription jobs continuing to format later segments after an STT timeout. Remaining segments keep their raw text.
+- Fixed file-transcription progress not advancing on stopped segments after a cancellation.
+
+## [0.6.12] - 2026-10-10
+
+### Changed
+- API keys are now trimmed of surrounding whitespace before they are encrypted. Keys saved before this version with surrounding whitespace must be re-entered.
+
+### Fixed
+- Fixed the keystroke fallback not handling tabs. Text is now split at tabs as well as newlines, a Tab key is emitted between segments, and the character count matches the injected text.
+- Fixed list loading indicators staying active when a mutation failed.
+- Fixed data-directory migration failing when the master key is absent. The database now migrates independently and a missing key is logged as a warning.
+- Fixed corrupt setting values reading back differently through the two settings readers.
+
+### Security
+- Fixed an `open_url` allowlist bypass where crafted URLs could present a different authority than the one opened. URLs are now parsed with the `url` crate.
+
 ## [0.6.11] - 2026-10-07
 
 ### Fixed
