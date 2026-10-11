@@ -38,6 +38,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "VoxiType ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install this version. Builds are unsigned; Windows SmartScreen may warn on first run."
+          releaseBody: "See the assets below to download and install this version."
           releaseDraft: true
           prerelease: false

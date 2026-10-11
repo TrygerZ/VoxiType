@@ -249,7 +249,7 @@ mod.rs exports:
 - Source: `git log <previous tag>..HEAD --oneline` plus CHANGELOG section for this version.
 - Format follows previous releases: heading `### VoxiType vX.Y.Z`, then subsections `#### New Features`, `#### Bug Fixes`, `#### Improvements` (add `#### Security` only if relevant).
 - One bullet per user-facing change; use past tense ("Fixed...", "Added..."); mention source version if fixing regression.
-- Professional English, no emoji, prose uses only single ASCII hyphen; end with line: `Builds are unsigned; Windows SmartScreen may warn on first run.`
+- Professional English, no emoji, prose uses only single ASCII hyphen. Do not add an unsigned-builds or SmartScreen note.
 - Save notes in temporary file and use `--notes-file` to avoid shell quoting issues.
 
 ### Post-release

@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.6.11** - Open-source voice-to-text for every app.
+**Version 0.6.20** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
