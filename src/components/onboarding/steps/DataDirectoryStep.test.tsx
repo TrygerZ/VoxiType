@@ -151,6 +151,63 @@ describe("DataDirectoryStep", () => {
     });
   });
 
+  it("offers to restrict permissions when the folder is writable by another account", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: null,
+      lastError: null,
+    });
+    vi.mocked(tauri.pickDataDirectory).mockResolvedValueOnce("D:\\VoxiType");
+    vi.mocked(tauri.setDataDirectory).mockRejectedValueOnce({
+      code: "DataDirectoryAcl",
+      message: "grants write or control access to 'Authenticated Users'",
+    });
+    vi.mocked(tauri.restrictDataDirectory).mockResolvedValueOnce(undefined);
+
+    render(<DataDirectoryStep {...defaultProps} />);
+
+    await user.click(await screen.findByRole("button", { name: /Choose folder/i }));
+    await user.click(screen.getByRole("button", { name: /Apply/i }));
+
+    const prompt = await screen.findByTestId("acl-restrict-prompt");
+    expect(prompt).toBeInTheDocument();
+    // The raw backend sentence must not leak as the primary message.
+    expect(screen.queryByText(/Authenticated Users/)).toBeNull();
+
+    await user.click(screen.getByTestId("acl-restrict-confirm"));
+
+    await waitFor(() => {
+      expect(tauri.restrictDataDirectory).toHaveBeenCalledWith("D:\\VoxiType");
+    });
+    expect(await screen.findByTestId("restart-app-button")).toBeInTheDocument();
+  });
+
+  it("keeps the folder selected when the user declines to restrict it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: null,
+      lastError: null,
+    });
+    vi.mocked(tauri.pickDataDirectory).mockResolvedValueOnce("D:\\VoxiType");
+    vi.mocked(tauri.setDataDirectory).mockRejectedValueOnce({
+      code: "DataDirectoryAcl",
+      message: "grants write or control access",
+    });
+
+    render(<DataDirectoryStep {...defaultProps} />);
+
+    await user.click(await screen.findByRole("button", { name: /Choose folder/i }));
+    await user.click(screen.getByRole("button", { name: /Apply/i }));
+    await user.click(await screen.findByTestId("acl-restrict-cancel"));
+
+    expect(screen.queryByTestId("acl-restrict-prompt")).not.toBeInTheDocument();
+    expect(tauri.restrictDataDirectory).not.toHaveBeenCalled();
+  });
+
   it("cancelling the restart confirmation does not restart", async () => {
     const user = userEvent.setup();
     vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({

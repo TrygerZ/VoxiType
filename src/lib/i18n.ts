@@ -453,6 +453,11 @@ export const id: Dict = {
   "data_directory.fallback_error": "Pemindahan folder gagal: {reason}",
   "data_directory.error_network": "Network drive tidak didukung. Pilih folder lokal.",
   "data_directory.error_unwritable": "Folder tidak dapat ditulis. Pilih folder lain yang memiliki izin tulis.",
+  "data_directory.error_acl": "Folder ini dapat ditulis akun lain di komputer ini. VoxiType menyimpan database dan kunci enkripsi di sini, jadi aksesnya harus dibatasi.",
+  "data_directory.acl_confirm": "Batasi akses folder ini ke akun Anda saja? Akun lain di komputer ini akan kehilangan akses, termasuk ke file lain di dalam folder ini.",
+  "data_directory.acl_apply": "Batasi akses dan lanjutkan",
+  "data_directory.acl_cancel": "Pilih folder lain",
+  "data_directory.acl_failed": "Gagal membatasi akses folder: {reason}",
   // Complete next steps (heuristic: help users recognize what to do next)
   "onboarding.complete.next_title": "Langkah berikutnya",
   "onboarding.complete.next.tip1": "Buka aplikasi apa pun, tekan {key}, lalu bicara.",
@@ -958,6 +963,11 @@ export const en: Dict = {
   "data_directory.fallback_error": "Folder migration failed: {reason}",
   "data_directory.error_network": "Network drives are not supported. Choose a local folder.",
   "data_directory.error_unwritable": "This folder is not writable. Choose another folder with write permission.",
+  "data_directory.error_acl": "Another account on this computer can write to this folder. VoxiType keeps its database and encryption key here, so access must be restricted.",
+  "data_directory.acl_confirm": "Restrict this folder to your account? Other accounts on this computer will lose access, including to other files inside this folder.",
+  "data_directory.acl_apply": "Restrict access and continue",
+  "data_directory.acl_cancel": "Choose another folder",
+  "data_directory.acl_failed": "Could not restrict the folder permissions: {reason}",
   // Complete next steps (heuristic: help users recognize what to do next)
   "onboarding.complete.next_title": "Next steps",
   "onboarding.complete.next.tip1": "Open any app, press {key}, then speak.",
