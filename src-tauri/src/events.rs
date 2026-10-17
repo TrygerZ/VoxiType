@@ -16,6 +16,11 @@ pub struct TranscriptionComplete {
     pub text: String,
     pub word_count: u32,
     pub duration_ms: i64,
+    /// Whether the text actually reached the focused application. False means
+    /// the entry exists only in History.
+    pub injected: bool,
+    /// Process name of the injection target, when known.
+    pub app_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +74,8 @@ pub fn emit_transcription_complete<R: Runtime>(
     text: &str,
     word_count: u32,
     duration_ms: i64,
+    injected: bool,
+    app_context: Option<&str>,
 ) {
     if let Err(e) = app.emit(
         "transcription_complete",
@@ -77,6 +84,8 @@ pub fn emit_transcription_complete<R: Runtime>(
             text: text.to_string(),
             word_count,
             duration_ms,
+            injected,
+            app_context: app_context.map(str::to_string),
         },
     ) {
         tracing::warn!("Failed to emit transcription_complete: {e}");

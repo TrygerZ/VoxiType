@@ -11,6 +11,10 @@ export interface TranscriptionCompleteEvent {
   text: string;
   word_count: number;
   duration_ms: number;
+  /** False when the text never reached the focused app (saved to History only). */
+  injected: boolean;
+  /** Process name of the injection target, when known. */
+  app_context?: string | null;
 }
 
 export interface TranscriptionErrorEvent {
