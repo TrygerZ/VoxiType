@@ -84,7 +84,7 @@ export function FileTranscriptionPanel() {
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col">
-      <PanelHeader title={t("file.title")} subtitle={t("file.subtitle")} icon={<FileAudio className="h-4.5 w-4.5" />} />
+      <PanelHeader title={t("file.title")} subtitle={t("file.subtitle")} icon={<FileAudio className="h-4 w-4" />} />
 
       <div className="flex flex-col gap-5 px-10 pb-8">
         <div className="flex flex-col gap-1.5">

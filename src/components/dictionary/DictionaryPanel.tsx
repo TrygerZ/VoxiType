@@ -118,7 +118,7 @@ export function DictionaryPanel() {
       <PanelHeader
         title={t("dictionary.title")}
         subtitle={t("dictionary.subtitle")}
-        icon={<BookOpen className="h-4.5 w-4.5" />}
+        icon={<BookOpen className="h-4 w-4" />}
         actions={
           <>
             <Button
@@ -145,7 +145,7 @@ export function DictionaryPanel() {
 
       <div className="flex gap-2 px-10 pb-4">
         <input
-          className="flex-1 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
+          className="flex-1 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent"
           placeholder={t("dictionary.placeholder_word")}
           value={word}
           onChange={(e) => setWord(e.target.value)}
@@ -154,7 +154,7 @@ export function DictionaryPanel() {
           }}
         />
         <input
-          className="w-44 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
+          className="w-44 rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent"
           placeholder={t("dictionary.placeholder_rep")}
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
@@ -193,6 +193,9 @@ export function DictionaryPanel() {
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <BookOpen className="h-10 w-10 text-vx-text-dim/40" />
             <p className="text-sm text-vx-text-dim">{t("dictionary.empty")}</p>
+            <p className="max-w-sm text-xs text-vx-text-dim">
+              {t("dictionary.empty_hint")}
+            </p>
           </div>
         )}
 
@@ -215,25 +218,25 @@ export function DictionaryPanel() {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                <div className="flex gap-1.5 opacity-40 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
                     disabled={togglingId === e.id}
                     onClick={() => void handleToggle(e.id, e.is_active)}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={e.is_active ? t("dictionary.deactivate_tooltip") : t("dictionary.activate_tooltip")}
                     aria-label={e.is_active ? t("dictionary.deactivate_word", { word: e.word }) : t("dictionary.activate_word", { word: e.word })}
                   >
                     {e.is_active ? (
-                      <ToggleRight className="h-4.5 w-4.5 text-vx-success" />
+                      <ToggleRight className="h-4 w-4 text-vx-success" />
                     ) : (
-                      <ToggleLeft className="h-4.5 w-4.5" />
+                      <ToggleLeft className="h-4 w-4" />
                     )}
                   </button>
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => remove(e.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={t("dictionary.delete_tooltip")}
                     aria-label={t("dictionary.delete_word", { word: e.word })}
                   >

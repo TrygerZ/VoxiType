@@ -71,7 +71,7 @@ describe("FileTranscriptionPanel", () => {
     });
     render(<FileTranscriptionPanel />);
 
-    expect(screen.getByText("2 file(s) selected")).toBeInTheDocument();
+    expect(screen.getByText("Selected: 2")).toBeInTheDocument();
     expect(screen.getByText("meeting.mp3")).toBeInTheDocument();
     expect(screen.getByText("lecture.wav")).toBeInTheDocument();
     expect(screen.getByText("01:05")).toBeInTheDocument();

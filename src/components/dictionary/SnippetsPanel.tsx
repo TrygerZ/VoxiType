@@ -49,14 +49,14 @@ export function SnippetsPanel() {
   };
 
   const inputCls =
-    "rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40";
+    "rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent";
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col">
       <PanelHeader
         title={t("snippets.title")}
         subtitle={t("snippets.subtitle")}
-        icon={<Zap className="h-4.5 w-4.5" />}
+        icon={<Zap className="h-4 w-4" />}
       />
 
       <div className="flex flex-col gap-2 px-10 pb-4">
@@ -129,7 +129,7 @@ export function SnippetsPanel() {
                 <button
                   type="button"
                   onClick={() => void invokeAction(() => remove(s.id))}
-                  className="rounded-lg p-1.5 text-vx-text-dim opacity-0 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                  className="rounded-lg p-1.5 text-vx-text-dim opacity-40 transition-opacity duration-200 hover:bg-vx-error/15 hover:text-vx-error group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                   title={t("snippets.delete_tooltip")}
                   aria-label={t("snippets.delete_snippet", { phrase: s.trigger_phrase })}
                 >
