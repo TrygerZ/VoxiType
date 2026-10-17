@@ -99,6 +99,33 @@ describe("HomeView recording actions", () => {
     });
   });
 
+  it("names the injection target after a session reaches the app", () => {
+    useAppStore.setState({
+      wordCount: 4,
+      outcome: { injected: true, appContext: "winword" },
+    });
+
+    render(<HomeView />);
+
+    expect(screen.getByText("Inserted into winword")).toHaveAttribute(
+      "role",
+      "status",
+    );
+  });
+
+  it("says the text stayed in History when injection failed", () => {
+    useAppStore.setState({
+      wordCount: 4,
+      outcome: { injected: false, appContext: "winword" },
+    });
+
+    render(<HomeView />);
+
+    expect(
+      screen.getByText("The text did not reach the target app. It is saved in History."),
+    ).toHaveAttribute("role", "status");
+  });
+
   it("avoids duplicate recording invocations on rapid toggles", async () => {
     let resolveFirst!: () => void;
     const pendingPromise = new Promise<void>((resolve) => {

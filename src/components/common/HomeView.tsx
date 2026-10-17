@@ -41,6 +41,8 @@ export function HomeView() {
   // App store states
   const state = useAppStore((s) => s.state);
   const durationSec = useAppStore((s) => s.durationSec);
+  const wordCount = useAppStore((s) => s.wordCount);
+  const outcome = useAppStore((s) => s.outcome);
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
 
@@ -304,9 +306,27 @@ export function HomeView() {
                 {t("processing")}
               </span>
             ) : (
-              <span className="text-sm font-medium tracking-wide text-vx-text-secondary">
-                {t("idle.hint", { shortcut: shortcutKey })}
-              </span>
+              <>
+                <span className="text-sm font-medium tracking-wide text-vx-text-secondary">
+                  {t("idle.hint", { shortcut: shortcutKey })}
+                </span>
+                {state === "idle" && wordCount !== null && (
+                  <span
+                    role="status"
+                    className={`text-xs ${
+                      outcome?.injected === false
+                        ? "text-vx-error"
+                        : "text-vx-success"
+                    }`}
+                  >
+                    {outcome?.injected === false
+                      ? t("notice.saved_to_history")
+                      : outcome?.appContext
+                        ? t("home.inserted_into", { app: outcome.appContext })
+                        : t("home.inserted")}
+                  </span>
+                )}
+              </>
             )}
           </div>
 

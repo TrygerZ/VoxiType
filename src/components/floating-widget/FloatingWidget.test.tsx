@@ -291,6 +291,20 @@ describe("FloatingWidget", () => {
     expect(pill).toHaveAttribute("data-animation-phase", "hidden");
   });
 
+  it("does not show the success tint when the text missed the target app", () => {
+    useAppStore.setState({
+      state: "idle",
+      wordCount: 4,
+      outcome: { injected: false, appContext: "winword" },
+    });
+
+    render(<FloatingWidget alwaysRender />);
+
+    expect(screen.getByTestId("floating-widget-pill")).not.toHaveClass(
+      "border-vx-success/30",
+    );
+  });
+
   it("unregisters listeners immediately if resolved after effect unmount (disposed flag)", async () => {
     let resolveHideListener!: (unlisten: () => void) => void;
     const hideUnlistenMock = vi.fn();
