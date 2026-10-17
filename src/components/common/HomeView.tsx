@@ -33,6 +33,7 @@ import {
 import { Waveform } from "../floating-widget/Waveform";
 import { Button } from "../ui/Button";
 import { toast } from "../ui/Toast";
+import { openOnboarding } from "../../lib/navigate";
 
 export function HomeView() {
   const t = useT();
@@ -150,6 +151,13 @@ export function HomeView() {
     return historyItems.slice(0, 3);
   }, [historyItems]);
 
+  // Reached only when onboarding was skipped or completed without an engine:
+  // dictation would fail on the first press with no hint why.
+  const engineMissing =
+    settings.stt_engine === "whisper_cpp"
+      ? !getStringSetting(settings.whisper_cpp_model_path, "")
+      : settings.groq_api_key_set !== true;
+
   // Per-session avg WPM over the 20 most-recent sessions. historyItems is
   // newest-first (ORDER BY created_at DESC), so the most recent sessions are at
   // the HEAD — use slice(0, 20), not slice(-20) which would pick the oldest 20.
@@ -203,6 +211,25 @@ export function HomeView() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
+      {engineMissing && (
+        <div
+          role="status"
+          className="mb-6 flex flex-col gap-3 rounded-2xl border border-vx-warning/30 bg-vx-warning/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p className="text-sm font-semibold text-vx-text-primary">
+              {t("home.setup_banner_title")}
+            </p>
+            <p className="text-xs text-vx-text-dim">
+              {t("home.setup_banner_body")}
+            </p>
+          </div>
+          <Button size="sm" variant="primary" onClick={openOnboarding}>
+            {t("home.setup_banner_action")}
+          </Button>
+        </div>
+      )}
+
       {/* Grid Dashboard */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
 
@@ -211,17 +238,16 @@ export function HomeView() {
           <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-vx-accent">
             {t("app.name")}
           </div>
-          <h2 className="mb-6 text-2xl font-bold tracking-tight text-vx-text-primary">
+          <h1 className="mb-6 text-2xl font-bold tracking-tight text-vx-text-primary">
             {greeting}
-            {t("home.greeting.suffix")}
-          </h2>
+          </h1>
 
           {/* Voice Mic Button — calm brand tint, no glow */}
           <button
             type="button"
             onClick={handleMicClick}
             disabled={isProcessing}
-            className="group relative mb-6 flex h-40 w-40 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-primary disabled:cursor-not-allowed"
+            className="group relative mb-6 flex h-40 w-40 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-primary disabled:cursor-not-allowed"
             title={isRecording ? t("home.mic_recording_tooltip") : t("home.mic_tooltip")}
             aria-label={isRecording ? t("home.mic_recording_tooltip") : t("home.mic_tooltip")}
           >
@@ -310,10 +336,10 @@ export function HomeView() {
             />
 
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
                 <BarChart3 className="h-4 w-4 text-vx-accent" />
                 {t("home.usage_stats")}
-              </h3>
+              </h2>
               <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-vx-text-dim">
                 {t("home.lifetime")}
               </span>
@@ -399,10 +425,10 @@ export function HomeView() {
 
           {/* Quick Settings Card */}
           <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
               <Zap className="h-4 w-4 text-vx-accent" />
               {t("home.quick_settings")}
-            </h3>
+            </h2>
 
             {/* Mode selection row */}
             <div className="mb-6">
@@ -419,7 +445,7 @@ export function HomeView() {
                     key={m.id}
                     type="button"
                     onClick={() => void invokeAction(() => updateSetting("active_mode", m.id))}
-                    className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       activeMode === m.id
                         ? "border-vx-accent/50 bg-vx-accent/5 text-vx-text-primary"
                         : "border-vx-border/30 bg-vx-bg-tertiary/30 text-vx-text-dim hover:text-vx-text-secondary hover:border-vx-border/60"
@@ -439,9 +465,9 @@ export function HomeView() {
                   <Languages className="h-5 w-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium text-vx-text-primary">
+                  <h3 className="text-sm font-medium text-vx-text-primary">
                     {t("home.translate_to", { target: translationTarget === "en" ? "English" : "Bahasa Indonesia" })}
-                  </h4>
+                  </h3>
                   <p className="text-xs text-vx-text-dim">{t("home.translate_desc")}</p>
                 </div>
               </div>
@@ -450,7 +476,7 @@ export function HomeView() {
                   <select
                     value={translationTarget}
                     onChange={(e) => void invokeAction(() => updateSetting("translation_target", e.target.value))}
-                    className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     aria-label={t("settings.general.lang")}
                   >
                     <option value="en">English</option>
@@ -463,7 +489,7 @@ export function HomeView() {
                   aria-checked={translationEnabled}
                   aria-label={t("home.translate_desc")}
                   onClick={() => void invokeAction(() => updateSetting("translation_enabled", !translationEnabled))}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                     translationEnabled ? "bg-vx-accent" : "bg-vx-border-strong"
                   }`}
                 >
@@ -479,10 +505,10 @@ export function HomeView() {
 
           {/* Recent Dictations Card */}
           <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md flex-1 flex flex-col">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
               <FileText className="h-4 w-4 text-vx-accent" />
               {t("home.recent_transcriptions")}
-            </h3>
+            </h2>
 
             {historyError ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
@@ -519,7 +545,7 @@ export function HomeView() {
                         <button
                           type="button"
                           onClick={() => void handleCopy(item.id, item.text_formatted || item.text_raw)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                           title={t("history.copy_tooltip")}
                           aria-label={t("history.copy_tooltip")}
                         >
@@ -534,7 +560,7 @@ export function HomeView() {
                         <button
                           type="button"
                           onClick={() => void handleReInject(item.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                           title={t("history.re_inject_tooltip")}
                           aria-label={t("history.re_inject_tooltip")}
                         >
@@ -549,7 +575,7 @@ export function HomeView() {
                         <button
                           type="button"
                           onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                             item.is_pinned
                               ? "text-vx-accent"
                               : "text-vx-text-secondary hover:text-vx-text-primary"
