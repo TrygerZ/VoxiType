@@ -17,6 +17,8 @@ export const id: Dict = {
     "Teks tidak masuk ke aplikasi tujuan. Tersimpan di Riwayat.",
   "notice.copy_text": "Salin teks",
   "notice.open_settings": "Buka Pengaturan",
+  "toast.success_label": "Berhasil:",
+  "toast.info_label": "Info:",
   "error.settings_load_failed": "Gagal memuat pengaturan",
   "error.startup_title": "VoxiType tidak dapat dimulai",
   "error.startup_body":
@@ -518,6 +520,8 @@ export const en: Dict = {
     "The text did not reach the target app. It is saved in History.",
   "notice.copy_text": "Copy text",
   "notice.open_settings": "Open Settings",
+  "toast.success_label": "Success:",
+  "toast.info_label": "Info:",
   "error.settings_load_failed": "Failed to load settings",
   "error.startup_title": "VoxiType could not start",
   "error.startup_body":

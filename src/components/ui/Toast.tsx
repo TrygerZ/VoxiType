@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Check, AlertCircle } from "lucide-react";
 
+import { useT } from "../../lib/i18n";
 import {
   useToastStore,
   toast,
@@ -25,6 +26,8 @@ function ToastItemRow({
   item: ToastItem;
   onDismiss: (id: number) => void;
 }) {
+  const t = useT();
+
   // An actionable toast stays until the user acts or dismisses it; auto-hiding
   // the recovery path is worse than a lingering message.
   useEffect(() => {
@@ -45,8 +48,12 @@ function ToastItemRow({
       role={item.type === "error" ? "alert" : undefined}
       className={`vx-scale-in flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-vx-md transition-all ${colorClasses}`}
     >
-      {item.type === "success" && <Check className="h-4 w-4" />}
-      {item.type === "error" && <AlertCircle className="h-4 w-4" />}
+      {item.type === "success" && <Check className="h-4 w-4" aria-hidden />}
+      {item.type === "error" && <AlertCircle className="h-4 w-4" aria-hidden />}
+      {/* The type is visual-only (color plus icon); name it for screen readers. */}
+      {item.type !== "error" && (
+        <span className="sr-only">{t(`toast.${item.type}_label`)}</span>
+      )}
       {item.message}
       {item.action && (
         <button

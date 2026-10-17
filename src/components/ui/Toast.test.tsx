@@ -52,6 +52,16 @@ describe("ToastContainer", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("announces the toast type for non-error toasts", () => {
+    render(<ToastContainer />);
+
+    act(() => {
+      toast("saved", "success");
+    });
+
+    expect(screen.getByText("Success:")).toHaveClass("sr-only");
+  });
+
   it("removes a success toast after 3 s", () => {
     render(<ToastContainer />);
 
