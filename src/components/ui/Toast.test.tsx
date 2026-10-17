@@ -33,6 +33,25 @@ describe("ToastContainer", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("keeps an actionable toast until the action runs", () => {
+    const onAction = vi.fn();
+    render(<ToastContainer />);
+
+    act(() => {
+      toast("insert failed", "error", { label: "Open Settings", onClick: onAction });
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    act(() => {
+      screen.getByRole("button", { name: "Open Settings" }).click();
+    });
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("removes a success toast after 3 s", () => {
     render(<ToastContainer />);
 

@@ -32,9 +32,15 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
-export function SettingsPanel() {
+function isTabId(value: string | undefined): value is TabId {
+  return tabs.some((tab) => tab.id === value);
+}
+
+export function SettingsPanel({ initialTab }: { initialTab?: string }) {
   const t = useT();
-  const [active, setActive] = useState<TabId>("general");
+  const [active, setActive] = useState<TabId>(
+    isTabId(initialTab) ? initialTab : "general",
+  );
 
   return (
     <div className="mx-auto flex h-full max-w-4xl">
@@ -49,7 +55,7 @@ export function SettingsPanel() {
             role="tab"
             aria-selected={active === id}
             onClick={() => setActive(id)}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
               active === id
                 ? "font-medium text-vx-text-primary bg-vx-bg-tertiary shadow-vx-sm"
                 : "font-normal text-vx-text-dim hover:text-vx-text-secondary hover:bg-vx-bg-tertiary/50"

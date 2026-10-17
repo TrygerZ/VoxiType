@@ -31,6 +31,8 @@ describe("useTauriEvents", () => {
         text: "hello overlay",
         word_count: 7,
         duration_ms: 1500,
+        injected: true,
+        app_context: "winword",
       });
     });
 
@@ -50,6 +52,8 @@ describe("useTauriEvents", () => {
         text: "hello main window",
         word_count: 4,
         duration_ms: 800,
+        injected: true,
+        app_context: "winword",
       });
     });
 
