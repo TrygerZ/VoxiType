@@ -27,7 +27,7 @@
 | Updater | GitHub Releases version checker | src-tauri/src/updater.rs |
 | Util | Shared HTTP client, retry/backoff, atomic file writes | src-tauri/src/util.rs |
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
-| Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
+| Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation and one-click restriction for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
 | Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
 
@@ -102,7 +102,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, notice, floating_widget_hide_requested, floating_widget_reveal_requested)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
-- `src-tauri/src/data_dir_acl.rs` - Windows ACL validation for custom data directories
+- `src-tauri/src/data_dir_acl.rs` - Windows ACL validation and one-click restriction for custom data directories
 - `src-tauri/src/util.rs` - Shared HTTP client, retry/backoff, and atomic file writes
 - `src-tauri/src/error.rs` - Unified AppError with typed ErrorCode
 - `src-tauri/src/injection/mod.rs` - TextInjector trait (clipboard, keystroke, command)
@@ -114,7 +114,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 ## Frontend Components
 | Module | Files |
 |--------|-------|
-| `ui/` | Button, Input, Select, Switch, Toast |
+| `ui/` | Button, Input, Select, Switch, Toast, AclRestrictPrompt |
 | `common/` | FloatingDock, HomeView, PanelHeader, WpmHalfRing |
 | `floating-widget/` | FloatingWidget, Waveform |
 | `settings/` | SettingsLayout, SettingsPanel, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
@@ -155,11 +155,13 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 
 Data-directory selection is not a key-value setting. The marker file `data_dir.txt` lives in the default app-data directory; it stores JSON `current`/`pending` paths, while plain-path markers remain supported for backward compatibility. On first use, migration copies the active previous directory's DB, `master.key`, and logs; DB/key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. A selected directory takes effect after restart.
 
+A custom directory is rejected when its DACL grants write access to any principal other than the current user, SYSTEM, Administrators, or CREATOR OWNER. `FILE_GENERIC_WRITE` carries `READ_CONTROL` and `SYNCHRONIZE`, so read grants such as `BUILTIN\Users:(RX)` are rejected too, by design: the database and wrapped key must not be readable by other local accounts. Every fresh folder on a non-system drive inherits `Authenticated Users:(M)` and `Users:(RX)` from the volume root, so the picker fails there by default. `restrict_data_directory` offers the repair: it resets the DACL, then grants the current user, SYSTEM, and Administrators, recursively. The repair must stay recursive and must give each trustee both an `(OI)(CI)` entry and a bare `F` entry, because `(OI)(CI)` never applies to an existing file and a non-recursive run leaves every existing file with an empty DACL.
+
 ## Events (backend → frontend)
 | Event | Payload | Description |
 |-------|---------|-------------|
 | `state_changed` | `{ state: "idle"\|"recording"\|"processing"\|"error" }` | Pipeline state transition |
-| `transcription_complete` | `{ id, text, word_count, duration_ms }` | Successful transcription result |
+| `transcription_complete` | `{ id, text, word_count, duration_ms, injected, app_context }` | Successful transcription result; `injected` is false when the text never reached the focused app, `app_context` names that app when known |
 | `transcription_error` | `{ message, code }` | Transcription failure |
 | `audio_level` | `{ level: f32 }` | Real-time microphone input level (0.0 to 1.0) |
 | `floating_widget_hide_requested` | `{ id }` | Overlay requests animated hide before window hide |
