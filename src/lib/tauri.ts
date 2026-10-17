@@ -123,6 +123,11 @@ export const pickDataDirectory = () =>
   invoke<string | null>("pick_data_directory");
 export const setDataDirectory = (path: string) =>
   invoke<void>("set_data_directory", { path });
+// Fails with DataDirectoryAcl when the folder grants write access to another
+// local account. The caller asks the user, then retries through this command,
+// which restricts the folder to the current user and writes the marker.
+export const restrictDataDirectory = (path: string) =>
+  invoke<void>("restrict_data_directory", { path });
 export const getDataDirectory = () =>
   invoke<DataDirectoryStatus>("get_data_directory");
 // restart_app refuses (WorkInProgress) while a job or recording is active

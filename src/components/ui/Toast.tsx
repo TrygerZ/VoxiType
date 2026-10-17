@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Check, AlertCircle } from "lucide-react";
 
+import { useT } from "../../lib/i18n";
 import {
   useToastStore,
   toast,
@@ -25,10 +26,15 @@ function ToastItemRow({
   item: ToastItem;
   onDismiss: (id: number) => void;
 }) {
+  const t = useT();
+
+  // An actionable toast stays until the user acts or dismisses it; auto-hiding
+  // the recovery path is worse than a lingering message.
   useEffect(() => {
+    if (item.action) return;
     const timer = setTimeout(() => onDismiss(item.id), timeoutFor(item.type));
     return () => clearTimeout(timer);
-  }, [item.id, item.type, onDismiss]);
+  }, [item.id, item.type, item.action, onDismiss]);
 
   const colorClasses =
     item.type === "success"
@@ -42,9 +48,25 @@ function ToastItemRow({
       role={item.type === "error" ? "alert" : undefined}
       className={`vx-scale-in flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-vx-md transition-all ${colorClasses}`}
     >
-      {item.type === "success" && <Check className="h-4 w-4" />}
-      {item.type === "error" && <AlertCircle className="h-4 w-4" />}
+      {item.type === "success" && <Check className="h-4 w-4" aria-hidden />}
+      {item.type === "error" && <AlertCircle className="h-4 w-4" aria-hidden />}
+      {/* The type is visual-only (color plus icon); name it for screen readers. */}
+      {item.type !== "error" && (
+        <span className="sr-only">{t(`toast.${item.type}_label`)}</span>
+      )}
       {item.message}
+      {item.action && (
+        <button
+          type="button"
+          onClick={() => {
+            item.action?.onClick();
+            onDismiss(item.id);
+          }}
+          className="ml-1 shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold underline underline-offset-2 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent"
+        >
+          {item.action.label}
+        </button>
+      )}
     </div>
   );
 }

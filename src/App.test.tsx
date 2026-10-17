@@ -25,11 +25,12 @@ describe("App onboarding gating", () => {
 
     render(<App />);
 
-    // Wait for store to complete load with error
+    // Wait for store to complete load with error. The raw IPC message is
+    // tucked behind "Technical details" instead of being the headline.
+    expect(await screen.findByText("VoxiType could not start")).toBeInTheDocument();
     expect(
-      await screen.findByText("Failed to load settings"),
+      screen.getByText("Technical details"),
     ).toBeInTheDocument();
-    expect(screen.getByText("IPC communication failed")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Retry" }),
     ).toBeInTheDocument();
@@ -90,7 +91,7 @@ describe("App onboarding gating", () => {
     expect(
       await screen.findByRole("button", { name: "Home" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Failed to load settings")).not.toBeInTheDocument();
+    expect(screen.queryByText("VoxiType could not start")).not.toBeInTheDocument();
     consoleSpy.mockRestore();
   });
 

@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.23] - 2026-10-18
+
+### Added
+- Added a recovery path when a chosen data directory grants write access to another local account. The app explains the problem and, with confirmation, restricts the folder to the current user, SYSTEM, and Administrators, then continues. A fresh folder on any non-system drive inherits that broader access, so the feature was previously unusable there.
+
+### Fixed
+- Fixed the data directory permission check reporting a valid database as invalid when its files were unreadable. The ACL failure now carries its own error code instead of a generic data directory error.
+
+## [0.6.22] - 2026-10-18
+
+### Added
+- Added a recovery action to error toasts. A transcription error offers the settings tab that fixes the reported cause, and a hotkey conflict offers the shortcuts tab.
+- Added the injection result to the `transcription_complete` event. Home and the floating widget now name the application that received the text, and show the error tint instead of a success tint when it never arrived. The toast in that case offers a copy action.
+- Added a banner on Home when no transcription engine is configured, with a button that reopens setup.
+- Added a plain-language startup failure screen with a retry action. The raw message moved behind an expandable technical details section.
+
+### Fixed
+- Fixed duplicate toasts keeping the first toast's action, which could copy an older transcript. The newest action now wins, and an existing action is kept when a repeated toast arrives without one.
+- Fixed success and info toasts announcing their type only through color and icon. A screen-reader-only prefix now names it.
+- Fixed the greeting rendering a hardcoded ", User!" or ", Pengguna!" suffix.
+- Fixed the floating dock covering the bottom hint at short window heights.
+- Fixed the Home greeting rendering as a second-level heading with no first-level heading on the page.
+
+## [0.6.21] - 2026-10-18
+
+### Fixed
+- Fixed body and placeholder text failing the WCAG AA contrast minimum. The dim text token moved from `#7a7268` to `#9a938a`, raising contrast from 3.95:1 to 6.16:1 on the primary background.
+- Fixed the focus indicator failing the non-text contrast minimum. The ring moved from 40 percent accent to full accent, raising contrast from 1.93:1 to 5.99:1.
+- Fixed reduced-motion preferences being honored only for the widget pill. Every animation and transition now collapses under `prefers-reduced-motion: reduce`.
+- Fixed row actions in History, Dictionary, and Snippets being invisible until hover. They now render at 40 percent opacity by default.
+- Fixed filtered-empty History showing the first-use empty message. It now names the search that matched nothing and offers a clear filters button.
+- Fixed the Dictionary empty state not pointing at the add row above it.
+- Fixed the file selection count reading "{count} file(s) selected".
+- Fixed the Indonesian statistics empty state using the informal "statistikmu" beside formal "Anda" elsewhere.
+- Fixed icon sizing using fractional spacing values inconsistent with the rest of the app.
+
 ## [0.6.20] - 2026-10-11
 
 ### Fixed

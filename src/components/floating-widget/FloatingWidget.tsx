@@ -50,6 +50,7 @@ export function FloatingWidget({
   const state = useAppStore((s) => s.state);
   const wordCount = useAppStore((s) => s.wordCount);
   const errorMessage = useAppStore((s) => s.errorMessage);
+  const outcome = useAppStore((s) => s.outcome);
   const reset = useAppStore((s) => s.reset);
 
   const [phase, setPhase] = useState<WidgetPhase>("normal");
@@ -219,21 +220,27 @@ export function FloatingWidget({
   };
 
   const isSuccess = state === "idle" && wordCount !== null;
+  // A green pill would claim the text landed in the target app. When the
+  // backend reports it did not, show the error tint instead; the toast carries
+  // the copy action.
+  const reachedTarget = outcome?.injected !== false;
   const currentStyle = errorMessage
     ? stateStyles.error
-    : isSuccess
-      ? stateStyles.success
-      : state === "recording"
-        ? stateStyles.recording
-        : state === "processing"
-          ? stateStyles.processing
-          : stateStyles.idle;
+    : isSuccess && !reachedTarget
+      ? stateStyles.error
+      : isSuccess
+        ? stateStyles.success
+        : state === "recording"
+          ? stateStyles.recording
+          : state === "processing"
+            ? stateStyles.processing
+            : stateStyles.idle;
 
   // Select color and state configuration for the waveform bars
   let barClassName = "bg-vx-accent";
   let waveformActive = false;
 
-  if (errorMessage || state === "error") {
+  if (errorMessage || state === "error" || (isSuccess && !reachedTarget)) {
     barClassName = "bg-vx-error";
   } else if (isSuccess) {
     barClassName = "bg-vx-success";

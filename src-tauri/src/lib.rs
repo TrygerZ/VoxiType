@@ -355,6 +355,7 @@ pub fn run() {
             commands::set_whisper_cpp_paths,
             commands::pick_data_directory,
             commands::set_data_directory,
+            commands::restrict_data_directory,
             commands::get_data_directory,
             commands::restart_app,
             commands::test_groq_api,

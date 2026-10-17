@@ -430,6 +430,21 @@ pub fn set_data_directory(
 }
 
 #[tauri::command]
+/// Restrict a picked directory to the current user, then write the marker.
+///
+/// Offered as an explicit second step: rewriting another folder's permissions
+/// is a change the user should agree to, so `set_data_directory` fails with
+/// `DataDirectoryAcl` and the frontend asks before calling this.
+pub fn restrict_data_directory(
+    state: State<'_, AppStateInner>,
+    path: String,
+) -> std::result::Result<(), AppError> {
+    ensure_picker_backed_path(&state, PICKER_KIND_DATA_DIRECTORY, &path)?;
+    crate::data_dir_acl::restrict_to_current_user(Path::new(&path))?;
+    set_data_directory(state, path)
+}
+
+#[tauri::command]
 pub fn get_data_directory(state: State<'_, AppStateInner>) -> crate::data_dir::DataDirectoryStatus {
     crate::data_dir::get_status(&state.default_app_data_dir, &state.app_data_dir)
 }

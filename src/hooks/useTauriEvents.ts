@@ -4,6 +4,10 @@ import { onEvent } from "../lib/tauri";
 import { useAppStore } from "../stores/appStore";
 import { useHistoryStore } from "../stores/historyStore";
 import { useStatsStore } from "../stores/statsStore";
+import { t } from "../lib/i18n";
+import { toast } from "../stores/toastStore";
+import { errorCopy } from "../lib/errorCopy";
+import { navigate } from "../lib/navigate";
 import type {
   StateChangedEvent,
   TranscriptionCompleteEvent,
@@ -56,17 +60,36 @@ export function useTauriEvents(options: UseTauriEventsOptions = {}) {
     );
     unlisteners.push(
       onEvent<TranscriptionCompleteEvent>("transcription_complete", (p) => {
-        setResult(p.word_count);
+        setResult(p.word_count, {
+          injected: p.injected !== false,
+          appContext: p.app_context ?? null,
+        });
         if (reloadData) {
           void reloadHistory();
           void reloadStats();
+          // The text never reached the target app: say so instead of showing
+          // a plain success, and offer a one-click copy of the transcript.
+          if (p.injected === false && p.text) {
+            toast(t("notice.saved_to_history"), "info", {
+              label: t("notice.copy_text"),
+              onClick: () => void navigator.clipboard.writeText(p.text),
+            });
+          }
         }
       }),
     );
     unlisteners.push(
-      onEvent<TranscriptionErrorEvent>("transcription_error", (p) =>
-        setError(p.message),
-      ),
+      onEvent<TranscriptionErrorEvent>("transcription_error", (p) => {
+        setError(p.message);
+        if (!reloadData) return;
+        // Name the cause in user language and, when it has one, offer the
+        // settings screen that fixes it.
+        const copy = errorCopy(p.code, p.message);
+        toast(copy.message, "error", {
+          label: t("notice.open_settings"),
+          onClick: () => navigate("settings", copy.settingsTab),
+        });
+      }),
     );
 
     return () => {

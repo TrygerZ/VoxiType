@@ -102,7 +102,7 @@ export function HistoryPanel() {
       <PanelHeader
         title={t("history.title")}
         subtitle={t("history.subtitle")}
-        icon={<HistoryIcon className="h-4.5 w-4.5" />}
+        icon={<HistoryIcon className="h-4 w-4" />}
         actions={
           <>
             <Button
@@ -162,7 +162,7 @@ export function HistoryPanel() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
           <input
-            className="w-full rounded-lg bg-vx-bg-tertiary py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
+            className="w-full rounded-lg bg-vx-bg-tertiary py-2.5 pl-9 pr-3 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow focus:outline-none focus:ring-2 focus:ring-vx-accent"
             aria-label={t("history.search_placeholder")}
             placeholder={t("history.search_placeholder")}
             value={query}
@@ -204,7 +204,26 @@ export function HistoryPanel() {
         {filtered.length === 0 && !loading && !error && (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <HistoryIcon className="h-10 w-10 text-vx-text-dim/40" />
-            <p className="text-sm text-vx-text-dim">{t("history.empty")}</p>
+            {items.length === 0 ? (
+              <p className="text-sm text-vx-text-dim">{t("history.empty")}</p>
+            ) : (
+              <>
+                <p className="text-sm text-vx-text-dim">
+                  {query.trim()
+                    ? t("history.no_results", { query })
+                    : t("history.no_results_mode")}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setModeFilter("");
+                    void search("");
+                  }}
+                >
+                  {t("history.clear_search")}
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -229,11 +248,11 @@ export function HistoryPanel() {
                   </div>
                 </div>
 
-                <div className="flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                <div className="flex gap-1.5 opacity-40 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
-                    className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+                    className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       item.is_pinned
                         ? "bg-vx-accent-soft text-vx-accent"
                         : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
@@ -246,7 +265,7 @@ export function HistoryPanel() {
                   <button
                     type="button"
                     onClick={() => void handleCopy(item.id, item.text_formatted || item.text_raw)}
-                    className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+                    className={`rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
                       copied === item.id
                         ? "bg-vx-success/15 text-vx-success"
                         : "text-vx-text-dim hover:bg-vx-bg-tertiary hover:text-vx-text-primary"
@@ -259,7 +278,7 @@ export function HistoryPanel() {
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => reInject(item.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-bg-tertiary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={t("history.re_inject_tooltip")}
                     aria-label={t("history.re_inject_tooltip")}
                   >
@@ -268,7 +287,7 @@ export function HistoryPanel() {
                   <button
                     type="button"
                     onClick={() => void invokeAction(() => remove(item.id))}
-                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+                    className="rounded-lg p-1.5 text-vx-text-dim transition-colors hover:bg-vx-error/15 hover:text-vx-error focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
                     title={t("history.delete_tooltip")}
                     aria-label={t("history.delete_tooltip")}
                   >

@@ -17,6 +17,7 @@ import { onEvent } from "./lib/tauri";
 import { toast } from "./stores/toastStore";
 import type { NoticeEvent } from "./types/events";
 import { setLanguage, useT } from "./lib/i18n";
+import { navigate, setNavigator, setOnboardingHandler } from "./lib/navigate";
 import { ToastContainer } from "./components/ui/Toast";
 
 export default function App() {
@@ -30,11 +31,25 @@ export default function App() {
     error: s.error,
   })));
   const [view, setView] = useState<View>("home");
+  const [settingsTab, setSettingsTab] = useState<string | undefined>(undefined);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  // Let non-React callers (toast actions, event handlers) drive navigation.
+  useEffect(() => {
+    setNavigator((next, tab) => {
+      setView(next);
+      setSettingsTab(tab);
+    });
+    setOnboardingHandler(() => setShowOnboarding(true));
+    return () => {
+      setNavigator(null);
+      setOnboardingHandler(null);
+    };
+  }, []);
 
   // Apply the saved UI language once settings are loaded.
   useEffect(() => {
@@ -105,7 +120,10 @@ export default function App() {
       !hotkeyNoticeShown.current
     ) {
       hotkeyNoticeShown.current = true;
-      toast(t("notice.hotkey_unavailable"), "error");
+      toast(t("notice.hotkey_unavailable"), "error", {
+        label: t("notice.open_settings"),
+        onClick: () => navigate("settings", "shortcuts"),
+      });
     }
   }, [loaded, error, settings.hotkey_unavailable, t]);
 
@@ -121,14 +139,20 @@ export default function App() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
         <div className="max-w-md space-y-2">
-          <h2 className="text-base font-semibold text-vx-text-primary">
-            {t("error.settings_load_failed")}
-          </h2>
-          <p className="text-sm text-vx-text-dim font-mono break-all">{error}</p>
+          <h1 className="text-base font-semibold text-vx-text-primary">
+            {t("error.startup_title")}
+          </h1>
+          <p className="text-sm text-vx-text-secondary">{t("error.startup_body")}</p>
         </div>
         <Button onClick={() => void loadSettings()}>
           {t("error.retry")}
         </Button>
+        <details className="max-w-md text-left">
+          <summary className="cursor-pointer text-xs text-vx-text-dim hover:text-vx-text-secondary">
+            {t("error.technical_details")}
+          </summary>
+          <p className="mt-2 font-mono text-xs break-all text-vx-text-dim">{error}</p>
+        </details>
       </div>
     );
   }
@@ -147,9 +171,11 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="flex h-full w-full flex-col vx-app-bg relative">
-        <main className="flex-1 overflow-y-auto pb-28">
+        <main className="flex-1 overflow-y-auto pb-36">
           {view === "home" && <HomeView />}
-          {view === "settings" && <SettingsPanel />}
+          {view === "settings" && (
+            <SettingsPanel key={settingsTab ?? "general"} initialTab={settingsTab} />
+          )}
           {view === "history" && <HistoryPanel />}
           {view === "dictionary" && <DictionaryPanel />}
           {view === "snippets" && <SnippetsPanel />}

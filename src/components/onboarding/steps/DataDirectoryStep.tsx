@@ -10,13 +10,19 @@ import {
 
 import {
   errorCode,
+  formatTauriError,
   getDataDirectory,
   pickDataDirectory,
   restartApp,
+  restrictDataDirectory,
   setDataDirectory,
 } from "../../../lib/tauri";
-import { formatDirectoryError } from "../../../lib/dataDirectory";
+import {
+  formatDirectoryError,
+  isAclRejection,
+} from "../../../lib/dataDirectory";
 import { Button } from "../../ui/Button";
+import { AclRestrictPrompt } from "../../ui/AclRestrictPrompt";
 import { StepShell } from "../shared/StepShell";
 import type { Step, TFunc } from "../types";
 
@@ -38,6 +44,7 @@ export function DataDirectoryStep(props: Props) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [aclRejected, setAclRejected] = useState(false);
 
   useEffect(() => {
     void getDataDirectory()
@@ -64,12 +71,38 @@ export function DataDirectoryStep(props: Props) {
     setBusy(true);
     try {
       setError("");
+      setAclRejected(false);
       await setDataDirectory(selectedPath);
       setPendingRestart(selectedPath);
       setSelectedPath("");
       setStatus(t("data_directory.success"));
     } catch (e: unknown) {
-      setError(formatDirectoryError(e, t));
+      // A folder on another drive inherits write access for every local
+      // account. Offer the fix instead of dead-ending the user.
+      if (isAclRejection(e)) {
+        setAclRejected(true);
+        setError("");
+      } else {
+        setError(formatDirectoryError(e, t));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restrictAndApply = async () => {
+    if (!selectedPath || busy) return;
+    setBusy(true);
+    try {
+      setError("");
+      await restrictDataDirectory(selectedPath);
+      setAclRejected(false);
+      setPendingRestart(selectedPath);
+      setSelectedPath("");
+      setStatus(t("data_directory.success"));
+    } catch (e: unknown) {
+      setAclRejected(false);
+      setError(t("data_directory.acl_failed", { reason: formatTauriError(e) }));
     } finally {
       setBusy(false);
     }
@@ -208,6 +241,18 @@ export function DataDirectoryStep(props: Props) {
               {t("data_directory.pending_restart", { path: pendingRestart })}
             </p>
           </div>
+        )}
+        {aclRejected && (
+          <AclRestrictPrompt
+            message={t("data_directory.acl_confirm")}
+            onConfirm={() => void restrictAndApply()}
+            onCancel={() => {
+              setAclRejected(false);
+              setSelectedPath("");
+            }}
+            busy={busy}
+            t={t}
+          />
         )}
         <p className="mt-4 text-xs leading-relaxed text-vx-text-dim">
           {t("data_directory.restart")}

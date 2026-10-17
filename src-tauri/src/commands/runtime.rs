@@ -569,6 +569,9 @@ pub async fn process_audio<R: Runtime>(
                         &format!("[command] {}", tr.text.trim()),
                         0,
                         0,
+                        // A command keystroke was executed successfully above.
+                        true,
+                        None,
                     );
                     events::emit_state(&app, state.pipeline.state_tag());
                     crate::overlay::reset_idle_timer(&state);
@@ -704,6 +707,8 @@ pub async fn process_audio<R: Runtime>(
                 &out.formatted_text,
                 word_count,
                 out.transcription.duration_ms as i64,
+                out.inject.success,
+                active_app.as_deref(),
             );
             events::emit_state(&app, state.pipeline.state_tag());
             if out.translation_fell_back && !out.formatted_text.is_empty() {

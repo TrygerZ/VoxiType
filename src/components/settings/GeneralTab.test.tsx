@@ -130,6 +130,37 @@ describe("GeneralTab data directory settings", () => {
     expect(screen.queryByTestId("selected-data-directory")).not.toBeInTheDocument();
   });
 
+  it("offers to restrict permissions when another account can write the folder", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: null,
+      lastError: null,
+    });
+    vi.mocked(tauri.pickDataDirectory).mockResolvedValueOnce("D:\\VoxiType");
+    vi.mocked(tauri.setDataDirectory).mockRejectedValueOnce({
+      code: "DataDirectoryAcl",
+      message: "grants write or control access to 'Authenticated Users'",
+    });
+    vi.mocked(tauri.restrictDataDirectory).mockResolvedValueOnce(undefined);
+
+    render(<GeneralTab />);
+
+    await screen.findByTestId("active-data-directory");
+    await user.click(screen.getByRole("button", { name: /Pilih folder/i }));
+    await user.click(screen.getByRole("button", { name: "Terapkan" }));
+
+    expect(await screen.findByTestId("acl-restrict-prompt")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("acl-restrict-confirm"));
+
+    await waitFor(() => {
+      expect(tauri.restrictDataDirectory).toHaveBeenCalledWith("D:\\VoxiType");
+    });
+    expect(await screen.findByTestId("restart-app-button")).toBeInTheDocument();
+  });
+
   it("renders loading state while data directory is fetching", () => {
     vi.mocked(tauri.getDataDirectory).mockReturnValueOnce(new Promise(() => {}));
 

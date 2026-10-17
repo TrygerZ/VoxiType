@@ -6,11 +6,15 @@ import {
   getDataDirectory,
   pickDataDirectory,
   restartApp,
+  restrictDataDirectory,
   setDataDirectory,
   setFloatingWidgetEnabled,
   type DataDirectoryStatus,
 } from "../../lib/tauri";
-import { formatDirectoryError } from "../../lib/dataDirectory";
+import {
+  formatDirectoryError,
+  isAclRejection,
+} from "../../lib/dataDirectory";
 import { invokeAction } from "../../lib/invokeAction";
 import {
   getBooleanSetting,
@@ -22,6 +26,7 @@ import { Switch } from "../ui/Switch";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
+import { AclRestrictPrompt } from "../ui/AclRestrictPrompt";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { useT } from "../../lib/i18n";
 
@@ -38,6 +43,7 @@ export function GeneralTab() {
   const [dataError, setDataError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [aclRejected, setAclRejected] = useState(false);
 
   const widgetEnabled = getBooleanSetting(settings.floating_widget, true);
   const autoHideRaw = getNumberSetting(
@@ -131,13 +137,42 @@ export function GeneralTab() {
     setBusy(true);
     try {
       setDataError("");
+      setAclRejected(false);
       await setDataDirectory(selectedDirectory);
       setPendingRestart(selectedDirectory);
       setSelectedDirectory("");
       setLastError(null);
       setDataStatus(t("data_directory.success"));
     } catch (e: unknown) {
-      setDataError(formatDirectoryError(e, t));
+      // A folder on another drive inherits write access for every local
+      // account. Offer the fix instead of dead-ending the user.
+      if (isAclRejection(e)) {
+        setAclRejected(true);
+        setDataError("");
+      } else {
+        setDataError(formatDirectoryError(e, t));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restrictAndApply = async () => {
+    if (!selectedDirectory || busy) return;
+    setBusy(true);
+    try {
+      setDataError("");
+      await restrictDataDirectory(selectedDirectory);
+      setAclRejected(false);
+      setPendingRestart(selectedDirectory);
+      setSelectedDirectory("");
+      setLastError(null);
+      setDataStatus(t("data_directory.success"));
+    } catch (e: unknown) {
+      setAclRejected(false);
+      setDataError(
+        t("data_directory.acl_failed", { reason: formatTauriError(e) }),
+      );
     } finally {
       setBusy(false);
     }
@@ -355,6 +390,18 @@ export function GeneralTab() {
               >
                 {dataStatus}
               </span>
+            )}
+            {aclRejected && (
+              <AclRestrictPrompt
+                message={t("data_directory.acl_confirm")}
+                onConfirm={() => void restrictAndApply()}
+                onCancel={() => {
+                  setAclRejected(false);
+                  setSelectedDirectory("");
+                }}
+                busy={busy}
+                t={t}
+              />
             )}
             {dataError && (
               <span
