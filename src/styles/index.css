@@ -20,7 +20,7 @@
   /* Text — warm off-white descending to dim stone */
   --color-vx-text-primary: #EBEBF2;
   --color-vx-text-secondary: #A3A8B2;
-  --color-vx-text-dim: #7a7268;
+  --color-vx-text-dim: #9a938a;
 
   /* Lines — hairline dividers, used sparingly */
   --color-vx-border: #313840;
@@ -203,6 +203,17 @@ html.vx-transparent #root {
   .vx-widget-pill--hidden {
     transform: none !important;
     opacity: 0;
+  }
+  /* Every remaining animation (spinners, pulses, fades) collapses to a single
+     near-instant frame. Iteration is pinned to 1 so an infinite spinner does
+     not restart thousands of times per second. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

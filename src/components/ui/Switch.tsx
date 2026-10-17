@@ -28,7 +28,7 @@ export function Switch({
           onChange(!checked);
         }
       }}
-      className={`inline-flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+      className={`inline-flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
         disabled ? "opacity-40 cursor-not-allowed" : ""
       }`}
     >

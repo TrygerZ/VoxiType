@@ -160,7 +160,7 @@ export function FileQueueItem({ item, locked, exporting, defaultOpen, onRemove, 
             readOnly
             aria-label={`${t("file.result_label")}: ${name}`}
             value={result.text}
-            className="min-h-48 resize-y rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm leading-relaxed text-vx-text-primary focus:outline-none focus:ring-2 focus:ring-vx-accent/40"
+            className="min-h-48 resize-y rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm leading-relaxed text-vx-text-primary focus:outline-none focus:ring-2 focus:ring-vx-accent"
           />
         </div>
       )}
