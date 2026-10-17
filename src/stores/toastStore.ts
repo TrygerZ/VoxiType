@@ -30,10 +30,21 @@ export const useToastStore = create<ToastStore>((set, get) => ({
     // Collapse an identical visible toast: repeated failures (e.g. retrying
     // the same action) must not stack N copies. The existing toast's
     // auto-dismiss timer keeps running.
-    const duplicate = get().toasts.some(
+    const duplicate = get().toasts.find(
       (t) => t.message === message && t.type === type,
     );
-    if (duplicate) return;
+    if (duplicate) {
+      // The newer failure carries newer recovery data (e.g. the latest
+      // transcript to copy). Keep the old action when the new one has none so
+      // the recovery path is never removed.
+      if (!action) return;
+      set((s) => ({
+        toasts: s.toasts.map((t) =>
+          t.id === duplicate.id ? { ...t, action } : t,
+        ),
+      }));
+      return;
+    }
     const id = ++nextToastId;
     set((s) => ({ toasts: [...s.toasts, { id, message, type, action }] }));
   },

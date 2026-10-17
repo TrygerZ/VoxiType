@@ -65,4 +65,33 @@ describe("ToastContainer", () => {
     });
     expect(screen.queryByText("saved")).toBeNull();
   });
+
+  it("replaces the collapsed toast action with the newest one", () => {
+    const stale = vi.fn();
+    const latest = vi.fn();
+    render(<ToastContainer />);
+
+    act(() => {
+      toast("insert failed", "error", { label: "Copy", onClick: stale });
+      toast("insert failed", "error", { label: "Copy", onClick: latest });
+    });
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+
+    act(() => {
+      screen.getByRole("button", { name: "Copy" }).click();
+    });
+    expect(stale).not.toHaveBeenCalled();
+    expect(latest).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the existing action when a duplicate arrives without one", () => {
+    const onAction = vi.fn();
+    render(<ToastContainer />);
+
+    act(() => {
+      toast("insert failed", "error", { label: "Copy", onClick: onAction });
+      toast("insert failed", "error");
+    });
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+  });
 });
