@@ -32,6 +32,9 @@ pub enum ErrorCode {
     HotkeyConflict,
     StorageError,
     DataDirectoryError,
+    /// The chosen directory grants write access to another local account. The
+    /// frontend offers to restrict it to the current user and retry.
+    DataDirectoryAcl,
     UpdateError,
     // Pipeline
     InvalidTransition,
@@ -133,6 +136,9 @@ impl AppError {
     }
     pub fn data_directory(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::DataDirectoryError, msg)
+    }
+    pub fn data_directory_acl(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::DataDirectoryAcl, msg)
     }
     pub fn network(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::NetworkError, msg)

@@ -22,6 +22,23 @@ pub(crate) fn validate_custom_dir_acl(path: &Path) -> Result<()> {
     platform::validate(path)
 }
 
+/// Rewrite the directory DACL to grant only the current user, SYSTEM, and
+/// Administrators, then re-validate.
+///
+/// A fresh folder on any non-system drive inherits `Authenticated Users:
+/// Modify` and `Users: Read` from the volume root, so a user who picks a
+/// folder there is rejected with no way to proceed. Restricting is always
+/// tightening: the result is strictly less access than before.
+///
+/// Recursive on purpose. `(OI)(CI)` never applies to an existing file, and
+/// `icacls /inheritance:r` strips the inherited ACEs first, so a non-recursive
+/// run would leave every existing file with an empty DACL. That is not
+/// theoretical: it is the state that made a valid database report as invalid.
+pub(crate) fn restrict_to_current_user(path: &Path) -> Result<()> {
+    platform::restrict(path)?;
+    platform::validate(path)
+}
+
 /// The current user's SID rendered as a string (for example `S-1-5-21-...`).
 ///
 /// Used by tests to pin a scratch directory to the current user. Windows only.
@@ -40,9 +57,9 @@ mod platform {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub(super) fn current_user_sid_string() -> Result<String> {
-        Ok(String::new())
+    /// No-op: the ACL model this repairs is Windows-specific.
+    pub(super) fn restrict(_path: &Path) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -163,11 +180,52 @@ mod platform {
     }
 
     /// The current user's SID rendered as a string.
-    #[cfg(test)]
     pub(super) fn current_user_sid_string() -> Result<String> {
         let sid = current_user_sid()?;
         sid_to_string(PSID(sid.as_ptr().cast_mut().cast()))
             .ok_or_else(|| acl_error("failed to render the current user SID"))
+    }
+
+    /// Rewrite the DACL with `icacls`, naming trustees by SID so the command
+    /// works on any display language.
+    ///
+    /// Two passes, both required:
+    ///
+    /// 1. `/reset /T` drops every explicit ACE and re-inherits from the parent.
+    ///    `/grant:r` alone replaces only the trustees it names, so an explicit
+    ///    grant someone added earlier (for example `icacls /grant Users:(M)`)
+    ///    would survive and keep the directory rejected.
+    /// 2. `/inheritance:r` plus explicit grants, recursively. Each trustee needs
+    ///    two entries: `(OI)(CI)` for the directory and a bare `F` for the files
+    ///    already inside it. Without the second, `/T` leaves every existing file
+    ///    with an empty DACL and the user cannot read their own data.
+    pub(super) fn restrict(path: &Path) -> Result<()> {
+        let user_sid = current_user_sid_string()?;
+        run_icacls(path, &["/reset", "/T"])?;
+
+        let trustees = [user_sid.as_str(), "S-1-5-18", "S-1-5-32-544"];
+        let mut args: Vec<String> = vec!["/inheritance:r".into(), "/grant:r".into()];
+        args.extend(trustees.iter().map(|sid| format!("*{sid}:(OI)(CI)F")));
+        args.extend(trustees.iter().map(|sid| format!("*{sid}:F")));
+        args.push("/T".into());
+        let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_icacls(path, &borrowed)
+    }
+
+    fn run_icacls(path: &Path, args: &[&str]) -> Result<()> {
+        let output = std::process::Command::new("icacls")
+            .arg(path)
+            .args(args)
+            .output()
+            .map_err(|error| AppError::data_directory(format!("failed to run icacls: {error}")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(AppError::data_directory(format!(
+            "failed to restrict the data directory permissions: {}",
+            stderr.trim()
+        )))
     }
 
     /// The current process user's SID as owned bytes.
@@ -369,7 +427,9 @@ mod platform {
     const MAX_ACCOUNT_CHARS: usize = 256;
 
     fn acl_violation(detail: &str) -> AppError {
-        AppError::invalid_input(format!(
+        // A typed code lets the frontend offer the one-click repair instead of
+        // showing this sentence to a user who cannot act on it.
+        AppError::data_directory_acl(format!(
             "data directory is accessible by another local account: it {detail}"
         ))
     }
@@ -432,6 +492,69 @@ mod platform {
                 command.arg("/grant").arg(grant);
             }
             command.status().map(|s| s.success()).unwrap_or(false)
+        }
+
+        /// A file whose DACL is protected and empty: exactly what
+        /// `icacls /inheritance:r` alone produces on an existing file.
+        fn strip_file_dacl(path: &Path) {
+            let status = std::process::Command::new("icacls")
+                .arg(path)
+                .arg("/inheritance:r")
+                .status()
+                .expect("icacls should run");
+            assert!(status.success(), "could not strip the file DACL");
+        }
+
+        #[test]
+        fn restrict_repairs_a_directory_another_account_can_write() {
+            let dir = TempDir::new("restrict-repair");
+            let data = dir.0.join("data");
+            std::fs::create_dir_all(&data).expect("data dir");
+            let database = data.join("voxitype.db");
+            std::fs::write(&database, b"SQLite format 3\0payload").expect("seed db");
+
+            let grant = format!("{USERS_GROUP_SID}:(OI)(CI)(M)");
+            if !set_acl(&dir.0, Some(&grant)) {
+                eprintln!("skipping: could not grant write to BUILTIN\\Users");
+                return;
+            }
+            assert!(
+                validate(&dir.0).is_err(),
+                "precondition: the directory must start rejected"
+            );
+
+            crate::data_dir_acl::restrict_to_current_user(&dir.0).expect("restrict should succeed");
+
+            assert!(
+                validate(&dir.0).is_ok(),
+                "the repaired directory must pass validation"
+            );
+            assert_eq!(
+                std::fs::read(&database).expect("existing file must stay readable"),
+                b"SQLite format 3\0payload",
+                "restricting must not lock the user out of existing files"
+            );
+        }
+
+        #[test]
+        fn restrict_recovers_a_file_left_with_an_empty_dacl() {
+            let dir = TempDir::new("restrict-empty-file-dacl");
+            let data = dir.0.join("data");
+            std::fs::create_dir_all(&data).expect("data dir");
+            let database = data.join("voxitype.db");
+            std::fs::write(&database, b"SQLite format 3\0payload").expect("seed db");
+            strip_file_dacl(&database);
+            assert!(
+                std::fs::read(&database).is_err(),
+                "precondition: the stripped file must be unreadable"
+            );
+
+            crate::data_dir_acl::restrict_to_current_user(&dir.0).expect("restrict should succeed");
+
+            assert_eq!(
+                std::fs::read(&database).expect("restrict must restore read access"),
+                b"SQLite format 3\0payload"
+            );
         }
 
         #[test]
