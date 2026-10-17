@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Added a recovery path when a chosen data directory grants write access to another local account. The app explains the problem and, with confirmation, restricts the folder to the current user, SYSTEM, and Administrators, then continues. A fresh folder on any non-system drive inherits that broader access, so the feature was previously unusable there.
+
+### Fixed
+- Fixed the data directory permission check reporting a valid database as invalid when its files were unreadable. The ACL failure now carries its own error code instead of a generic data directory error.
+
 ## [0.6.20] - 2026-10-11
 
 ### Fixed
