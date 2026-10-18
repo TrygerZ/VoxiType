@@ -2,7 +2,7 @@
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
-use super::KeyGuard;
+use super::{letter_key, KeyGuard};
 use crate::error::{AppError, Result};
 
 /// One step in a keystroke plan: a run of printable text, or a named key press.
@@ -102,7 +102,7 @@ pub fn paste() -> Result<()> {
     // non-Latin layouts.
     _guard
         .enigo
-        .key(Key::V, Direction::Click)
+        .key(letter_key('v'), Direction::Click)
         .map_err(|e| AppError::injection(format!("V click failed: {e}")))?;
     Ok(())
 }

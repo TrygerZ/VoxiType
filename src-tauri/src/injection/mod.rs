@@ -16,6 +16,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 
+/// A letter key for keyboard shortcuts, independent of the active layout.
+///
+/// enigo 0.2.1 exposes named letter keys (`Key::V`) only on Windows. Windows
+/// virtual-key codes for A-Z are contiguous from `VK_A`, so the same positional
+/// key is built with `Key::Other` there. Other platforms accept a Unicode
+/// character, which enigo maps to a keysym on Linux and a keycode on macOS.
+pub(crate) fn letter_key(letter: char) -> Key {
+    #[cfg(windows)]
+    {
+        const VK_A: u32 = 0x41;
+        let offset = u32::from(letter.to_ascii_uppercase()) - u32::from('A');
+        Key::Other(VK_A + offset)
+    }
+    #[cfg(not(windows))]
+    {
+        Key::Unicode(letter.to_ascii_lowercase())
+    }
+}
+
 /// RAII guard that releases a key on drop, preventing keyboard state corruption
 /// if an error occurs mid-sequence.
 pub(crate) struct KeyGuard<'a> {
