@@ -12,6 +12,8 @@ export const id: Dict = {
   "notice.translation_fallback": "Terjemahan gagal; teks asli dimasukkan",
   "notice.hotkey_unavailable":
     "Hotkey tidak dapat didaftarkan. Pilih shortcut lain di Pengaturan.",
+  "notice.wayland_unsupported":
+    "Wayland belum didukung. Dikte memerlukan sesi X11.",
   "notice.update_available": "VoxiType {version} tersedia",
   "notice.saved_to_history":
     "Teks tidak masuk ke aplikasi tujuan. Tersimpan di Riwayat.",
@@ -522,6 +524,8 @@ export const en: Dict = {
   "notice.translation_fallback": "Translation failed; inserted the original text",
   "notice.hotkey_unavailable":
     "The hotkey could not be registered. Choose a different shortcut in Settings.",
+  "notice.wayland_unsupported":
+    "Wayland is not supported yet. Dictation requires an X11 session.",
   "notice.update_available": "VoxiType {version} is available",
   "notice.saved_to_history":
     "The text did not reach the target app. It is saved in History.",

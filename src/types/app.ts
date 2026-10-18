@@ -41,6 +41,8 @@ export interface AppInfo {
   name: string;
   version: string;
   tauri: string;
+  platform?: string;
+  is_wayland?: boolean;
   data_dir?: string;
   db_path?: string;
 }

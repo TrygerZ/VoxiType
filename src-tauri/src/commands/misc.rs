@@ -170,6 +170,9 @@ pub fn get_app_info<R: Runtime>(app: AppHandle<R>) -> Value {
         "name": "VoxiType",
         "version": app.package_info().version.to_string(),
         "tauri": "2",
+        "platform": std::env::consts::OS,
+        "is_wayland": std::env::var("XDG_SESSION_TYPE")
+            .is_ok_and(|v| v.eq_ignore_ascii_case("wayland")),
         "data_dir": state.app_data_dir.to_string_lossy(),
         "db_path": db_path.to_string_lossy(),
     })
