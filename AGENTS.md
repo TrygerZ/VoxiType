@@ -29,7 +29,10 @@
 | Tray | System tray icon + menu | src-tauri/src/tray/ |
 | Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation and one-click restriction for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
-| Export | TXT, DOCX (`zip` 7.2.0 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
+| Export | TXT, DOCX (`zip` 9.0.5 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
+| Platform Bundles | macOS `.dmg` (ad-hoc signed) and Linux `.AppImage`; per-platform Tauri config and Info.plist | src-tauri/tauri.macos.conf.json, src-tauri/tauri.linux.conf.json, src-tauri/Info.plist |
+| Non-Windows Pickers | tauri-plugin-dialog Rust API (`blocking_pick_folder`, `blocking_pick_files`) behind `#[cfg(not(windows))]` | src-tauri/src/commands/misc.rs |
+| Single Instance | Windows named mutex in main.rs; tauri-plugin-single-instance on macOS and Linux | src-tauri/src/main.rs, src-tauri/src/lib.rs |
 
 Dictionary uniqueness uses SQLite NOCASE, which folds ASCII only; non-ASCII case variants are not deduped (`src-tauri/src/storage/db.rs` is the source of truth).
 
@@ -150,7 +153,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `onboarding_completed` | bool | First-run onboarding completion flag |
 | `language` | string | UI language code ("en" or "id") |
 | `stt_model` | string | Model name for the selected STT engine |
-| `auto_start` | bool | Launch VoxiType at Windows sign-in |
+| `auto_start` | bool | Launch VoxiType at sign-in (Windows Run key, macOS LaunchAgent, Linux XDG autostart) |
 | `auto_update` | bool | Check for updates automatically |
 
 Data-directory selection is not a key-value setting. The marker file `data_dir.txt` lives in the default app-data directory; it stores JSON `current`/`pending` paths, while plain-path markers remain supported for backward compatibility. On first use, migration copies the active previous directory's DB, `master.key`, and logs; DB/key copies use SHA-256 verification and atomic rename. Remote, removable, and UNC targets are rejected. A selected directory takes effect after restart.
@@ -224,8 +227,11 @@ mod.rs exports:
 ## CI/CD
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
-| CI | Push/PR to `main` | tsc, vite build, frontend tests, cargo fmt, clippy, test (all `--no-default-features`) |
-| Release | Push tag `v*` | tauri-action unsigned build, creates GitHub Release draft with NSIS installer, manual publish required, fallback to local build if CI fails |
+| CI | Push/PR to `main` | `frontend` job on ubuntu-latest (tsc, build, tests) and `rust` matrix on windows-latest, macos-latest, ubuntu-22.04 (fmt, clippy, test); Linux tests run under `xvfb-run` |
+| Build Test | Manual `workflow_dispatch` | Four build jobs (Windows NSIS, macOS aarch64 dmg, macOS x64 dmg, Linux AppImage); uploads artifacts, never touches a release |
+| Release | Push tag `v*` | `create-release` creates the draft once, then four build jobs upload installers with `gh release upload`; macOS ad-hoc signed; manual publish required |
+
+Linux CI and release jobs install `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev libxkbcommon-dev libasound2-dev`. `libxdo-dev` is required by enigo's default `xdo` feature; `libxkbcommon-dev` is explicit so a GTK package split cannot break the build silently.
 
 ## Release Procedure
 
@@ -237,7 +243,7 @@ mod.rs exports:
 ### Primary path (CI)
 1. Create annotated tag: `git tag -a vX.Y.Z -m "VoxiType vX.Y.Z"`
 2. Push tag: `git push origin main vX.Y.Z`
-3. Tag `v*` triggers Release workflow (`.github/workflows/release.yml`): windows-latest, tauri-action unsigned build, creates GitHub Release DRAFT named "VoxiType vX.Y.Z" with NSIS asset `VoxiType_X.Y.Z_x64-setup.exe` and updater artifacts.
+3. Tag `v*` triggers Release workflow (`.github/workflows/release.yml`): creates a GitHub Release DRAFT named "VoxiType vX.Y.Z", then four build jobs upload `VoxiType_X.Y.Z_x64-setup.exe`, `VoxiType_X.Y.Z_aarch64.dmg`, `VoxiType_X.Y.Z_x64.dmg`, and `VoxiType_X.Y.Z_amd64.AppImage`. macOS builds are ad-hoc signed.
 4. Monitor: `gh run list --workflow=Release --limit 3` or `gh run watch <id>`.
 5. Publish draft: `gh release edit vX.Y.Z --draft=false`.
 6. Verify: `gh release view vX.Y.Z --json isDraft,assets --jq '{draft:.isDraft,assets:[.assets[].name]}'`.

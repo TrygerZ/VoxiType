@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-18
+
+### New Features
+- Added macOS support: `.dmg` installers for Apple Silicon and Intel, ad-hoc signed.
+- Added Linux support: `.AppImage` installer for x86_64, X11 sessions only.
+- Added native file and folder pickers on macOS and Linux.
+- Added single-instance guard on macOS and Linux.
+- Added dock-reopen handling on macOS (clicking the dock icon restores the main window).
+- Added a startup notice when the Linux session is Wayland, where dictation is not available yet.
+
+### Bug Fixes
+- Fixed text paste on macOS to use Command+V instead of Control+V.
+- Fixed the default hotkey on macOS to Super+Shift+Space (Ctrl+Space is reserved for input-source switching).
+- Fixed the active-window and clipboard tests so they compile and pass on macOS and Linux.
+- Fixed voice command letter shortcuts failing to compile outside Windows.
+
+### Improvements
+- CI now runs the full check suite on Windows, macOS, and Linux.
+- Startup setting label is no longer Windows-specific.
+- Onboarding whisper.cpp instructions match the host platform.
+- Upgraded `zip` to 9.0.5 and `rustls` to 0.23.46 to clear seven security advisories.
+
 ## [0.6.23] - 2026-10-18
 
 ### Added

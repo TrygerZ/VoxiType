@@ -88,8 +88,9 @@ pub fn update_setting<R: Runtime>(
     Ok(())
 }
 
-/// Apply the desired Windows startup registration. No-ops in debug builds so
-/// `tauri dev` binaries never pollute the user's Run registry key.
+/// Apply the desired startup registration (Windows Run key, macOS LaunchAgent,
+/// or Linux XDG autostart via the plugin). No-ops in debug builds so
+/// `tauri dev` binaries never pollute the user's startup entries.
 pub(crate) fn apply_autostart<R: Runtime>(
     app: &AppHandle<R>,
     enabled: bool,
