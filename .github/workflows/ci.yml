@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  lint-build-test:
-    runs-on: windows-latest
+  frontend:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -20,16 +20,6 @@ jobs:
         with:
           node-version: 20
           cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
 
       - name: Install frontend deps
         run: npm ci
@@ -43,6 +33,46 @@ jobs:
       - name: Frontend tests
         run: npm run test
 
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            display: "Windows"
+          - os: macos-latest
+            display: "macOS"
+          - os: ubuntu-22.04
+            display: "Linux"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libxkbcommon-dev \
+            libasound2-dev \
+            xvfb
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
       - name: Rust format check
         run: cargo fmt --all --check
         working-directory: src-tauri
@@ -51,7 +81,13 @@ jobs:
         run: cargo clippy --no-default-features -- -D warnings
         working-directory: src-tauri
 
+      - name: Rust tests (Linux, headless display)
+        if: matrix.os == 'ubuntu-22.04'
+        run: xvfb-run -a cargo test --no-default-features
+        working-directory: src-tauri
+
       - name: Rust tests
+        if: matrix.os != 'ubuntu-22.04'
         run: cargo test --no-default-features
         working-directory: src-tauri
 
@@ -74,4 +110,3 @@ jobs:
       - name: Run cargo audit
         run: cargo audit
         working-directory: src-tauri
-
