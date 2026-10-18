@@ -78,7 +78,6 @@ jobs:
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
         with:
@@ -101,12 +100,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          shopt -s nullglob
-          files=(
-            src-tauri/target/**/bundle/dmg/*.dmg
-            src-tauri/target/**/bundle/appimage/*.AppImage
-            src-tauri/target/**/bundle/nsis/*-setup.exe
-          )
+          # `find` instead of a `**` glob: the macOS runner's /bin/bash is 3.2,
+          # where `**` is a single `*` and cannot span `target/<triple>/release`.
+          files=()
+          while IFS= read -r path; do
+            files+=("$path")
+          done < <(find src-tauri/target -type f \( \
+            -path '*/bundle/dmg/*.dmg' -o \
+            -path '*/bundle/appimage/*.AppImage' -o \
+            -path '*/bundle/nsis/*-setup.exe' \
+          \))
           [ ${#files[@]} -gt 0 ] || { echo "no installers produced"; exit 1; }
           gh release upload "${{ github.ref_name }}" "${files[@]}" --clobber
         shell: bash
