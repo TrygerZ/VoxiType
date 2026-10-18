@@ -149,6 +149,10 @@ mod tests {
         assert_eq!(snap, ClipboardSnapshot::Unavailable);
     }
 
+    /// X11 clipboard content is owned by the writing process, so a value does
+    /// not survive the `Clipboard` instance that wrote it. Xvfb provides no
+    /// clipboard manager, making every write-then-read test fail there.
+    #[cfg(not(target_os = "linux"))]
     #[test]
     fn read_snapshot_returns_image_dimensions_and_bytes() {
         use crate::util::MutexExt;
