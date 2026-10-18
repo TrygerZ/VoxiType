@@ -118,20 +118,22 @@ pub struct FileTranscriptionResult {
 /// The dialog runs in a separate PowerShell process, so without this guard
 /// every click would spawn another explorer window.
 #[tauri::command]
-pub async fn pick_audio_files(
+pub async fn pick_audio_files<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppStateInner>,
     jobs: State<'_, FileJobState>,
 ) -> std::result::Result<Vec<String>, AppError> {
     let Some(_picking) = jobs.begin_picking() else {
         return Ok(Vec::new());
     };
-    pick_gated_files(&state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
+    pick_gated_files(&app, &state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
 }
 
 const EXPORT_DIRECTORY_TITLE: &str = "Select a folder for the exported transcripts";
 
 #[tauri::command]
-pub async fn pick_export_directory(
+pub async fn pick_export_directory<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppStateInner>,
     jobs: State<'_, FileJobState>,
 ) -> std::result::Result<Option<String>, AppError> {
@@ -140,9 +142,12 @@ pub async fn pick_export_directory(
     let Some(_picking) = jobs.begin_picking() else {
         return Ok(None);
     };
-    let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(EXPORT_DIRECTORY_TITLE))
-        .await
-        .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
+    let picker_app = app.clone();
+    let picked = tokio::task::spawn_blocking(move || {
+        pick_directory_blocking(&picker_app, EXPORT_DIRECTORY_TITLE)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
     let Some(path) = picked else {
         return Ok(None);
     };

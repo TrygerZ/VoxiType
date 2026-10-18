@@ -80,6 +80,10 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
 ] }
 
+# --- Non-Windows: native file/folder pickers (Windows keeps its PowerShell dialogs) ---
+[target.'cfg(not(windows))'.dependencies]
+tauri-plugin-dialog = "2"
+
 [dev-dependencies]
 # Builds synthetic `reqwest::Response` values for `read_body_capped` tests.
 http = "1"

@@ -178,7 +178,13 @@ fn init_app_state(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Non-Windows pickers run through the dialog plugin (Rust API only).
+    #[cfg(not(windows))]
+    let builder = builder.plugin(tauri_plugin_dialog::init());
+
+    builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // The macOS launcher argument is ignored on Windows; `None` args.
         .plugin(tauri_plugin_autostart::init(
