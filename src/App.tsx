@@ -131,12 +131,14 @@ export default function App() {
   // dependencies, so tell the user once instead of appearing to work.
   const waylandNoticeShown = useRef(false);
   useEffect(() => {
-    void getAppInfo().then((info) => {
-      if (info.platform === "linux" && info.is_wayland && !waylandNoticeShown.current) {
-        waylandNoticeShown.current = true;
-        toast(t("notice.wayland_unsupported"), "info");
-      }
-    });
+    void getAppInfo()
+      .then((info) => {
+        if (info.platform === "linux" && info.is_wayland && !waylandNoticeShown.current) {
+          waylandNoticeShown.current = true;
+          toast(t("notice.wayland_unsupported"), "info");
+        }
+      })
+      .catch(() => {});
   }, [t]);
 
   if (!loaded) {
