@@ -35,6 +35,18 @@ pub(crate) fn letter_key(letter: char) -> Key {
     }
 }
 
+/// The platform-appropriate modifier: Command on macOS, Control elsewhere.
+pub(crate) fn modifier_key() -> Key {
+    #[cfg(target_os = "macos")]
+    {
+        Key::Meta
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Key::Control
+    }
+}
+
 /// RAII guard that releases a key on drop, preventing keyboard state corruption
 /// if an error occurs mid-sequence.
 pub(crate) struct KeyGuard<'a> {

@@ -2,7 +2,7 @@
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
-use super::{letter_key, KeyGuard};
+use super::{letter_key, modifier_key, KeyGuard};
 use crate::error::{AppError, Result};
 
 /// One step in a keystroke plan: a run of printable text, or a named key press.
@@ -87,16 +87,17 @@ pub fn type_text(text: &str) -> Result<u32> {
     Ok(injected_count(&actions))
 }
 
-/// Simulate pressing Ctrl+V to paste.
+/// Simulate pressing Ctrl+V (Cmd+V on macOS) to paste.
 pub fn paste() -> Result<()> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|e| AppError::injection(format!("Enigo init failed: {e}")))?;
+    let modifier = modifier_key();
     enigo
-        .key(Key::Control, Direction::Press)
-        .map_err(|e| AppError::injection(format!("Ctrl press failed: {e}")))?;
+        .key(modifier, Direction::Press)
+        .map_err(|e| AppError::injection(format!("Paste modifier press failed: {e}")))?;
     let _guard = KeyGuard {
         enigo: &mut enigo,
-        key: Key::Control,
+        key: modifier,
     };
     // Named key: layout-independent, unlike Key::Unicode('v') which fails on
     // non-Latin layouts.
@@ -113,6 +114,14 @@ mod tests {
 
     fn text(value: &str) -> KeystrokeAction {
         KeystrokeAction::Text(value.to_string())
+    }
+
+    #[test]
+    fn paste_modifier_is_command_on_macos_only() {
+        #[cfg(target_os = "macos")]
+        assert_eq!(super::modifier_key(), enigo::Key::Meta);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(super::modifier_key(), enigo::Key::Control);
     }
 
     #[test]

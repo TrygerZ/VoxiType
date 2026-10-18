@@ -6,19 +6,8 @@
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
-use super::{letter_key, KeyGuard};
+use super::{letter_key, modifier_key, KeyGuard};
 use crate::error::{AppError, Result};
-
-/// Get the platform-appropriate modifier key (Cmd on macOS, Ctrl elsewhere).
-#[cfg(target_os = "macos")]
-fn modifier_key() -> Key {
-    Key::Meta
-}
-
-#[cfg(not(target_os = "macos"))]
-fn modifier_key() -> Key {
-    Key::Control
-}
 
 /// A recognized editing action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
