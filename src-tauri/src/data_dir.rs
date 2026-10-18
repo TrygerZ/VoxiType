@@ -7,6 +7,9 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{AppError, Result};
 
+/// Free space required before a directory may become the data directory.
+/// Only the Windows probe enforces it; other platforms skip the check.
+#[cfg(windows)]
 const MIN_FREE_SPACE_BYTES: u64 = 50 * 1024 * 1024;
 
 /// Marker filename stored in the default application data directory.

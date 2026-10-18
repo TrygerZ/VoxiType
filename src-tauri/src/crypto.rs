@@ -72,6 +72,10 @@ fn corrupt_key_file_error(actual_len: usize) -> AppError {
 }
 
 /// Enforce that an unprotected payload really is a 32-byte key.
+///
+/// Only the Windows DPAPI path and the tests call this; non-Windows stores the
+/// key raw and never decodes a protected payload.
+#[cfg(any(windows, test))]
 fn decode_raw_key(raw: &[u8]) -> Result<[u8; MASTER_KEY_LEN]> {
     let key: [u8; MASTER_KEY_LEN] = raw.try_into().map_err(|_| {
         AppError::internal(format!(
@@ -84,6 +88,9 @@ fn decode_raw_key(raw: &[u8]) -> Result<[u8; MASTER_KEY_LEN]> {
 }
 
 /// Serialize a DPAPI blob into the self-describing file format.
+///
+/// Only the Windows write path and the tests produce this format.
+#[cfg(any(windows, test))]
 fn encode_dpapi_key_file(blob: &[u8]) -> String {
     format!("{DPAPI_KEY_PREFIX}{}", B64.encode(blob))
 }
