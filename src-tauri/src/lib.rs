@@ -180,6 +180,13 @@ fn init_app_state(
 pub fn run() {
     let builder = tauri::Builder::default();
 
+    // Non-Windows single-instance guard (Windows keeps its named mutex in
+    // main.rs). Must be registered before other plugins.
+    #[cfg(not(windows))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        crate::tray::show_main_window(app);
+    }));
+
     // Non-Windows pickers run through the dialog plugin (Rust API only).
     #[cfg(not(windows))]
     let builder = builder.plugin(tauri_plugin_dialog::init());
