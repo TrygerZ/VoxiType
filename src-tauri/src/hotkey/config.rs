@@ -22,11 +22,39 @@ pub struct HotkeyConfig {
     pub mode: HotkeyMode,
 }
 
+/// The default accelerator. macOS uses Super+Shift+Space because Ctrl+Space
+/// is reserved for input-source switching; Windows keeps Ctrl+Space.
+fn default_accelerator() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Super+Shift+Space"
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Ctrl+Space"
+    }
+}
+
 impl Default for HotkeyConfig {
     fn default() -> Self {
         Self {
-            key: "Ctrl+Space".to_string(),
+            key: default_accelerator().to_string(),
             mode: HotkeyMode::Ptt,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_hotkey_is_platform_aware() {
+        let cfg = HotkeyConfig::default();
+        #[cfg(target_os = "macos")]
+        assert_eq!(cfg.key, "Super+Shift+Space");
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(cfg.key, "Ctrl+Space");
+        assert_eq!(cfg.mode, HotkeyMode::Ptt);
     }
 }
