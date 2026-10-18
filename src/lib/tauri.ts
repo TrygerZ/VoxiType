@@ -101,6 +101,16 @@ export const getMicrophones = () => invoke<DeviceInfo[]>("get_microphones");
 export const setMicMeter = (enabled: boolean, device: string | null) =>
   invoke<void>("set_mic_meter", { enabled, device });
 export const getAppInfo = () => invoke<AppInfo>("get_app_info");
+
+/** The host OS as reported by the backend, or "unknown" before it loads. */
+export async function getPlatform(): Promise<string> {
+  try {
+    const info = await getAppInfo();
+    return info.platform ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 export const checkUpdates = () => invoke<UpdateInfo>("check_updates");
 
 // --- Hotkey ---

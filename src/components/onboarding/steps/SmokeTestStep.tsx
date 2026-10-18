@@ -15,7 +15,7 @@ interface Props {
   currentStepIdx: number;
   t: TFunc;
   busy: boolean;
-  hotkeyKey: string;
+  hotkeyDisplay: string;
   onBack: () => void;
   onContinue: () => void;
   onSkip: () => void;
@@ -26,7 +26,7 @@ export function SmokeTestStep({
   currentStepIdx,
   t,
   busy,
-  hotkeyKey,
+  hotkeyDisplay,
   onBack,
   onContinue,
   onSkip,
@@ -64,7 +64,7 @@ export function SmokeTestStep({
       t={t}
       icon={<Mic className="h-7 w-7" />}
       title={t("onboarding.smoke_test.title")}
-      description={t("onboarding.smoke_test.body", { key: hotkeyKey })}
+      description={t("onboarding.smoke_test.body", { key: hotkeyDisplay })}
       error={inlineError}
       actions={
         <>

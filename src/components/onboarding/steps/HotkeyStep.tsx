@@ -14,6 +14,7 @@ interface Props {
   busy: boolean;
   hotkeyKey: string;
   hotkeyMode: string;
+  platform?: string;
   onKeyChange: (value: string) => void;
   onModeChange: (value: string) => void;
   onBack: () => void;
@@ -28,6 +29,7 @@ export function HotkeyStep({
   busy,
   hotkeyKey,
   hotkeyMode,
+  platform = "unknown",
   onKeyChange,
   onModeChange,
   onBack,
@@ -56,7 +58,11 @@ export function HotkeyStep({
       }
     >
       <div className="flex w-full max-w-sm flex-col gap-5 rounded-xl border border-vx-border bg-vx-bg-secondary p-5 text-left shadow-vx-sm">
-        <HotkeyRecorder value={hotkeyKey} onChange={onKeyChange} />
+        <HotkeyRecorder
+          value={hotkeyKey}
+          onChange={onKeyChange}
+          platform={platform}
+        />
         <Select
           label={t("onboarding.step4.mode_label")}
           options={[

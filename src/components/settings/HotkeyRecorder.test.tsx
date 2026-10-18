@@ -2,7 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { HotkeyRecorder } from "./HotkeyRecorder";
+import { formatAccelerator, HotkeyRecorder } from "./HotkeyRecorder";
 
 function dispatchKey(init: KeyboardEventInit): KeyboardEvent {
   const event = new KeyboardEvent("keydown", {
@@ -21,6 +21,20 @@ async function startRecording() {
   await user.click(screen.getByRole("button"));
   expect(screen.getByText("Press your shortcut...")).toBeInTheDocument();
 }
+
+describe("formatAccelerator", () => {
+  it("renders Super as Cmd on macOS", () => {
+    expect(formatAccelerator("Super+Shift+Space", "macos")).toBe(
+      "Cmd+Shift+Space",
+    );
+  });
+
+  it("keeps Super on other platforms", () => {
+    expect(formatAccelerator("Super+Shift+Space", "linux")).toBe(
+      "Super+Shift+Space",
+    );
+  });
+});
 
 describe("HotkeyRecorder", () => {
   it("does not prevent default for Tab so focus can move", async () => {

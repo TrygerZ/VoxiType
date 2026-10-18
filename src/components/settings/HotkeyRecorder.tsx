@@ -35,12 +35,30 @@ function toAccelerator(e: KeyboardEvent): string | null {
   return parts.join("+");
 }
 
+/** Render the stored accelerator for display. The Meta key is stored as
+ *  "Super" (the cross-platform token the backend parser understands) and is
+ *  shown as "Cmd" on macOS. */
+export function formatAccelerator(accelerator: string, platform: string): string {
+  if (platform === "macos") {
+    return accelerator
+      .split("+")
+      .map((k) => (k === "Super" ? "Cmd" : k))
+      .join("+");
+  }
+  return accelerator;
+}
+
 interface HotkeyRecorderProps {
   value: string;
   onChange: (combo: string) => void;
+  platform?: string;
 }
 
-export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
+export function HotkeyRecorder({
+  value,
+  onChange,
+  platform = "unknown",
+}: HotkeyRecorderProps) {
   const t = useT();
   const [recording, setRecording] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -86,7 +104,7 @@ export function HotkeyRecorder({ value, onChange }: HotkeyRecorderProps) {
     return () => window.removeEventListener("mousedown", handleClick, true);
   }, [recording]);
 
-  const parts = value.split("+");
+  const parts = formatAccelerator(value, platform).split("+");
 
   return (
     <div className="flex flex-col gap-1.5">

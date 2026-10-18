@@ -19,6 +19,7 @@ vi.mock("../lib/tauri", () => ({
   startRecording: vi.fn().mockResolvedValue(undefined),
   stopRecording: vi.fn().mockResolvedValue(undefined),
   getAppInfo: vi.fn().mockResolvedValue({ name: "VoxiType", version: "0.0.0", tauri: "2" }),
+  getPlatform: vi.fn().mockResolvedValue("unknown"),
   getSettings: vi.fn().mockResolvedValue({}),
   updateSetting: vi.fn().mockResolvedValue(undefined),
   setWhisperCppPaths: vi.fn().mockResolvedValue(undefined),
