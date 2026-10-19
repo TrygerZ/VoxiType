@@ -239,9 +239,9 @@ fn validate_open_url(url: &str) -> std::result::Result<String, AppError> {
     Ok(parsed.to_string())
 }
 
-/// Reveal the floating-widget window once its page has mounted. The frontend
-/// invokes this after render so the overlay only becomes visible once its
-/// transparent content is painted, avoiding a white-square flash in dev.
+/// Re-sync the floating widget after its page mounts. The window itself is
+/// revealed by the page-load hook; this call marks readiness and re-emits the
+/// current pipeline state so a reloaded widget rehydrates.
 #[tauri::command]
 pub fn reveal_floating_widget<R: Runtime>(app: AppHandle<R>) -> std::result::Result<(), AppError> {
     crate::overlay::reveal_if_enabled(&app);

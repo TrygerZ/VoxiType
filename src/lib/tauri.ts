@@ -53,9 +53,9 @@ export const ackWidgetHide = (id: number) =>
 export const ackWidgetReveal = (id: number) =>
   invoke<void>("ack_widget_reveal", { id });
 
-// Reveal the floating widget once its transparent content has mounted; the
-// backend keeps the overlay hidden until this is called to avoid a white
-// flash (see overlay::reveal_if_enabled).
+// Signal the backend that the floating page mounted so it can re-sync the
+// pipeline state. Window visibility is driven by the backend page-load hook
+// (see overlay::reveal_if_enabled).
 export const revealFloatingWidget = () =>
   invoke<void>("reveal_floating_widget");
 
