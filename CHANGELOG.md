@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-19
+
+### Bug Fixes
+- Fixed the floating widget never appearing on macOS and Linux. The overlay window is created hidden and waited for a frontend readiness signal that ran inside `requestAnimationFrame`, which WebKit suspends while the window is hidden. The backend now reveals the window from its page-load hook, so the white-flash mitigation is preserved on all platforms.
+- Fixed the reveal IPC documentation describing the frontend as the driver of window visibility.
+
+### Improvements
+- Added a regression test asserting the widget entry point never gates the reveal on `requestAnimationFrame`.
+
 ## [0.7.0] - 2026-10-18
 
 ### New Features
