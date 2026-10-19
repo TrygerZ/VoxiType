@@ -79,7 +79,7 @@ Download the latest installer from the [Releases page](https://github.com/Tryger
 
 1. Open the `.dmg` and drag VoxiType to Applications.
 2. Launch it with right-click > Open the first time. If macOS reports the app is damaged, run `xattr -cr /Applications/VoxiType.app` and try again.
-3. Grant Accessibility permission when prompted. Text injection needs it; the app opens System Settings at the right pane.
+3. Grant Accessibility permission on first dictation. macOS shows its prompt, and VoxiType reports the failure if the permission is still missing. Enable VoxiType under System Settings, Privacy and Security, Accessibility.
 
 ### Linux
 

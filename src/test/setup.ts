@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
+
+import { resetPlatformCache } from "../lib/usePlatform";
 
 vi.mock("../lib/tauri", () => ({
   formatTauriError: (error: unknown) => {
@@ -19,7 +21,7 @@ vi.mock("../lib/tauri", () => ({
   startRecording: vi.fn().mockResolvedValue(undefined),
   stopRecording: vi.fn().mockResolvedValue(undefined),
   getAppInfo: vi.fn().mockResolvedValue({ name: "VoxiType", version: "0.0.0", tauri: "2" }),
-  getPlatform: vi.fn().mockResolvedValue("unknown"),
+  getPlatform: vi.fn().mockResolvedValue("windows"),
   getSettings: vi.fn().mockResolvedValue({}),
   updateSetting: vi.fn().mockResolvedValue(undefined),
   setWhisperCppPaths: vi.fn().mockResolvedValue(undefined),
@@ -67,6 +69,10 @@ vi.mock("../lib/tauri", () => ({
     total_sessions: 0,
   }),
 }));
+
+beforeEach(() => {
+  resetPlatformCache();
+});
 
 vi.mock("../assets/icons/hourglass.svg?react", () => ({
   default: () => null,

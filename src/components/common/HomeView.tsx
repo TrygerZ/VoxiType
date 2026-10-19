@@ -23,7 +23,8 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useHistoryStore } from "../../stores/historyStore";
 import { useStatsStore } from "../../stores/statsStore";
 import { modeLabel, useT } from "../../lib/i18n";
-import { startRecording, stopRecording, reInject, getPlatform } from "../../lib/tauri";
+import { startRecording, stopRecording, reInject } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
 import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { invokeAction } from "../../lib/invokeAction";
 import {
@@ -67,11 +68,7 @@ export function HomeView() {
   const [greeting, setGreeting] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [injectedId, setInjectedId] = useState<string | null>(null);
-  const [platform, setPlatform] = useState("unknown");
-
-  useEffect(() => {
-    void getPlatform().then(setPlatform);
-  }, []);
+  const platform = usePlatform();
 
   // Timer refs for cleanup
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

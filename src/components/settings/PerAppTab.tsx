@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "../ui/Switch";
 import { invokeAction } from "../../lib/invokeAction";
 import { getBooleanSetting } from "../../lib/settingsGuards";
+import { usePlatform } from "../../lib/usePlatform";
 
 interface PerAppMode {
   id: number;
@@ -20,6 +21,11 @@ interface PerAppMode {
 
 export function PerAppTab() {
   const t = useT();
+  const platform = usePlatform();
+  // Per-app routing needs foreground window detection, which is Windows-only
+  // until Phase 2. Offering the rules here would silently do nothing.
+  // "unknown" keeps them visible so they do not flicker while it loads.
+  const supported = platform !== "macos" && platform !== "linux";
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const [modes, setModes] = useState<PerAppMode[]>([]);
@@ -102,6 +108,7 @@ export function PerAppTab() {
       />
 
       <SettingsGroup title={t("settings.app_rules.feature_group")}>
+        {supported ? (
         <SettingsRow
           label={t("settings.app_rules.enable")}
           description={t("settings.app_rules.enable_desc")}
@@ -112,9 +119,17 @@ export function PerAppTab() {
             ariaLabel={t("settings.app_rules.enable")}
           />
         </SettingsRow>
+        ) : (
+          <SettingsRow
+            label={t("settings.app_rules.unsupported")}
+            description={t("settings.app_rules.unsupported_desc")}
+          >
+            <span />
+          </SettingsRow>
+        )}
       </SettingsGroup>
 
-      <div className={`transition-opacity ${!perAppOn ? "pointer-events-none opacity-50" : ""}`}>
+      <div className={`transition-opacity ${!perAppOn || !supported ? "pointer-events-none opacity-50" : ""}`}>
         <SettingsGroup title={t("settings.app_rules.add_group")}>
           <div className="flex flex-col gap-3 px-4 py-3.5">
             <div className="flex items-end gap-2">

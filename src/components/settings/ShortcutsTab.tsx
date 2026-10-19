@@ -4,7 +4,8 @@ import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
-import { setHotkey, formatTauriError, getPlatform } from "../../lib/tauri";
+import { setHotkey, formatTauriError } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
 import { isHotkeyConfig } from "../../lib/settingsGuards";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { HotkeyRecorder } from "./HotkeyRecorder";
@@ -19,12 +20,8 @@ export function ShortcutsTab() {
   const [mode, setMode] = useState(hotkey?.mode ?? "ptt");
   const [status, setStatus] = useState<"idle" | "ok" | string>("idle");
   const [busy, setBusy] = useState(false);
-  const [platform, setPlatform] = useState("unknown");
+  const platform = usePlatform();
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    void getPlatform().then(setPlatform);
-  }, []);
 
   // Keep the editor in sync with the stored hotkey. Settings may load after
   // this tab mounts (or change elsewhere), so mirror the store whenever the

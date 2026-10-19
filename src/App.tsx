@@ -14,6 +14,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getAppInfo, onEvent } from "./lib/tauri";
+import { usePlatform } from "./lib/usePlatform";
 import { toast } from "./stores/toastStore";
 import type { NoticeEvent } from "./types/events";
 import { setLanguage, useT } from "./lib/i18n";
@@ -129,17 +130,19 @@ export default function App() {
 
   // Wayland has no global hotkey and no injection path with the current
   // dependencies, so tell the user once instead of appearing to work.
+  const platform = usePlatform();
   const waylandNoticeShown = useRef(false);
   useEffect(() => {
+    if (platform !== "linux") return;
     void getAppInfo()
       .then((info) => {
-        if (info.platform === "linux" && info.is_wayland && !waylandNoticeShown.current) {
+        if (info.is_wayland && !waylandNoticeShown.current) {
           waylandNoticeShown.current = true;
           toast(t("notice.wayland_unsupported"), "info");
         }
       })
       .catch(() => {});
-  }, [t]);
+  }, [platform, t]);
 
   if (!loaded) {
     return (

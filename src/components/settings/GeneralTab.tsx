@@ -29,9 +29,16 @@ import { Button } from "../ui/Button";
 import { AclRestrictPrompt } from "../ui/AclRestrictPrompt";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { useT } from "../../lib/i18n";
+import { usePlatform } from "../../lib/usePlatform";
 
 export function GeneralTab() {
   const t = useT();
+  const platform = usePlatform();
+  // Command mode verifies the target window before injecting; without window
+  // detection (macOS and Linux until Phase 2) every command aborts, so the
+  // switch is hidden rather than offered and broken. "unknown" keeps the
+  // switch visible so it does not flicker while the platform loads.
+  const commandModeSupported = platform !== "macos" && platform !== "linux";
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const [dataDirectory, setDataDirectoryStatus] =
@@ -467,16 +474,18 @@ export function GeneralTab() {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.privacy")}>
-        <SettingsRow
-          label={t("settings.general.command")}
-          description={t("settings.general.command.desc")}
-        >
-          <Switch
-            checked={getBooleanSetting(settings.command_mode, false)}
-            onChange={(v) => void invokeAction(() => update("command_mode", v))}
-            ariaLabel={t("settings.general.command")}
-          />
-        </SettingsRow>
+        {commandModeSupported && (
+          <SettingsRow
+            label={t("settings.general.command")}
+            description={t("settings.general.command.desc")}
+          >
+            <Switch
+              checked={getBooleanSetting(settings.command_mode, false)}
+              onChange={(v) => void invokeAction(() => update("command_mode", v))}
+              ariaLabel={t("settings.general.command")}
+            />
+          </SettingsRow>
+        )}
         <SettingsRow
           label={t("settings.general.stats")}
           description={t("settings.general.stats.desc")}

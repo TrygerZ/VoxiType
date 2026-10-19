@@ -456,7 +456,7 @@ function OfflineSetup({
           value={modelPath}
           onBrowse={onPickModel}
           browseLabel={t("onboarding.stt.offline.browse_model")}
-          hint={t("onboarding.stt.offline.model_hint")}
+          hint={t(`onboarding.stt.offline.model_hint${platformSuffix}`)}
         />
         <Input
           label={t("onboarding.stt.offline.threads")}

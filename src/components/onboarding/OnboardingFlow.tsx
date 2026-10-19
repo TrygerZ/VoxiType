@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { formatTauriError, getPlatform, setHotkey } from "../../lib/tauri";
+import { formatTauriError, setHotkey } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
 import { invokeAction } from "../../lib/invokeAction";
 import { useT } from "../../lib/i18n";
 import { getHotkeySetting } from "../../lib/settingsGuards";
@@ -41,12 +42,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [error, setError] = useState("");
   const [hotkeyError, setHotkeyError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [platform, setPlatform] = useState("unknown");
+  const platform = usePlatform();
   const currentStepIdx = STEPS.indexOf(step);
-
-  useEffect(() => {
-    void getPlatform().then(setPlatform);
-  }, []);
 
   // Stored accelerators use the cross-platform "Super" token; macOS shows Cmd.
   const hotkeyDisplay = formatAccelerator(hotkeyKey, platform);
