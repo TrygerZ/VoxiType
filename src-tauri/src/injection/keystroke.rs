@@ -1,8 +1,8 @@
 //! Keyboard simulation via enigo.
 
-use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use enigo::{Direction, Key, Keyboard};
 
-use super::{letter_key, modifier_key, KeyGuard};
+use super::{letter_key, modifier_key, new_enigo, KeyGuard};
 use crate::error::{AppError, Result};
 
 /// One step in a keystroke plan: a run of printable text, or a named key press.
@@ -66,8 +66,7 @@ fn injected_count(actions: &[KeystrokeAction]) -> u32 {
 /// The returned count reflects only characters actually injected: one per
 /// segment character plus one per key press between segments.
 pub fn type_text(text: &str) -> Result<u32> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| AppError::injection(format!("Enigo init failed: {e}")))?;
+    let mut enigo = new_enigo()?;
 
     let actions = keystroke_sequence(text);
     for action in &actions {
@@ -89,8 +88,7 @@ pub fn type_text(text: &str) -> Result<u32> {
 
 /// Simulate pressing Ctrl+V (Cmd+V on macOS) to paste.
 pub fn paste() -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| AppError::injection(format!("Enigo init failed: {e}")))?;
+    let mut enigo = new_enigo()?;
     let modifier = modifier_key();
     enigo
         .key(modifier, Direction::Press)
@@ -99,8 +97,8 @@ pub fn paste() -> Result<()> {
         enigo: &mut enigo,
         key: modifier,
     };
-    // Named key: layout-independent, unlike Key::Unicode('v') which fails on
-    // non-Latin layouts.
+    // Positional key: `letter_key` avoids the layout-dependent lookup that
+    // would resolve to the wrong key on a non-Latin layout.
     _guard
         .enigo
         .key(letter_key('v'), Direction::Click)
@@ -122,6 +120,16 @@ mod tests {
         assert_eq!(super::modifier_key(), enigo::Key::Meta);
         #[cfg(not(target_os = "macos"))]
         assert_eq!(super::modifier_key(), enigo::Key::Control);
+    }
+
+    #[test]
+    fn letter_keys_are_positional_on_windows_and_macos() {
+        #[cfg(windows)]
+        assert_eq!(letter_key('v'), enigo::Key::Other(0x56));
+        #[cfg(target_os = "macos")]
+        assert_eq!(letter_key('v'), enigo::Key::Other(0x09));
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        assert_eq!(letter_key('v'), enigo::Key::Unicode('v'));
     }
 
     #[test]

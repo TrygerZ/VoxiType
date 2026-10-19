@@ -48,7 +48,7 @@ url = "2"
 open = { version = "5", features = ["shellexecute-on-windows"] }
 
 # --- Text injection ---
-enigo = "0.2"
+enigo = "0.3"
 arboard = "3.4"
 
 # --- Storage ---

@@ -4,9 +4,9 @@
 //! of known commands ("new line", "baris baru", "delete that", ...) and the
 //! corresponding key action is simulated instead of injecting the literal text.
 
-use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use enigo::{Direction, Enigo, Key, Keyboard};
 
-use super::{letter_key, modifier_key, KeyGuard};
+use super::{letter_key, modifier_key, new_enigo, KeyGuard};
 use crate::error::{AppError, Result};
 
 /// A recognized editing action.
@@ -81,8 +81,7 @@ pub fn verify_target_window(expected: Option<isize>, current: Option<isize>) -> 
 
 /// Execute a voice command by simulating the corresponding keystrokes.
 pub fn execute(command: VoiceCommand) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| AppError::injection(format!("Enigo init failed: {e}")))?;
+    let mut enigo = new_enigo()?;
 
     let map_err = |e| AppError::injection(format!("Keystroke failed: {e}"));
 
