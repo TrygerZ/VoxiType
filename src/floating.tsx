@@ -10,17 +10,12 @@ document.documentElement.classList.add("vx-transparent");
 document.body.classList.add("vx-transparent");
 
 function FloatingApp() {
-  // Ask the backend to reveal the overlay window only once the browser
-  // has committed the first paint with transparent background — double
-  // rAF ensures the frame is actually on screen (single rAF fires
-  // before paint). This avoids a white-square flash over the animation
-  // layer (esp. in tauri dev, known WebView2 limitation #14515).
+  // Tell the backend the page mounted so it can re-sync the pipeline state.
+  // The window itself is revealed by the backend's page-load hook: WebKit
+  // suspends requestAnimationFrame while the window is hidden, so a reveal
+  // driven from here would never run on macOS or Linux.
   useEffect(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        void revealFloatingWidget();
-      });
-    });
+    void revealFloatingWidget();
   }, []);
 
   // Reuse the same event subscriptions as the main window so the widget

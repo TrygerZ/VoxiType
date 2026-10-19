@@ -12,7 +12,10 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, PhysicalPosition, Runtime, WebviewWindow, WindowEvent};
+use tauri::{
+    webview::PageLoadEvent, AppHandle, Manager, PhysicalPosition, Runtime, WebviewWindow,
+    WindowEvent,
+};
 
 use crate::pipeline::AppStateTag;
 use crate::storage::SettingsManager;
@@ -141,13 +144,22 @@ pub fn is_enabled_from_db(db: &crate::storage::Database) -> bool {
         .unwrap_or(true)
 }
 
-/// Whether the floating-widget webview has finished its first mount. The
-/// overlay window is created hidden and only `show()` once the page has
-/// painted its transparent content, so a blank white square never flashes over
-/// the animation layer -- prominent in dev where the Vite dev server loads
-/// the overlay slower than the bundled build. The frontend invokes
-/// `reveal_floating_widget` (handled in commands) once React mounts.
+/// Whether the floating-widget page has finished loading. The overlay window
+/// is created hidden and only `show()` once the page has loaded, so a blank
+/// white square never flashes over the animation layer -- prominent in dev
+/// where the Vite dev server loads the overlay slower than the bundled build.
+///
+/// Readiness is signalled by the backend's page-load hook, never by the
+/// frontend: WebKit suspends `requestAnimationFrame` while the window is
+/// hidden, so a frontend-triggered reveal never runs on macOS or Linux.
 static WIDGET_READY: AtomicBool = AtomicBool::new(false);
+
+/// Whether a page-load event means the overlay content is ready to be shown.
+/// Only `Finished` counts: `Started` fires before the transparent styles are
+/// applied.
+pub fn should_reveal_on_page_load(event: PageLoadEvent) -> bool {
+    event == PageLoadEvent::Finished
+}
 
 /// Persisted top-left position of the overlay window (physical pixels).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -189,9 +201,9 @@ pub fn apply_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
     };
     if enabled {
         let _ = win.set_always_on_top(true);
-        // Only show now if the overlay page already painted; otherwise wait for
-        // `reveal_if_enabled` (called by the frontend on mount) to avoid a
-        // white-square flash over the animation layer while the page loads.
+        // Only show now if the overlay page already loaded; otherwise the
+        // page-load hook calls `reveal_if_enabled`, avoiding a white-square
+        // flash over the animation layer while the page loads.
         if WIDGET_READY.load(Ordering::SeqCst) {
             let _ = win.show();
             let gen = state.widget_timer.next_hide_generation();
@@ -203,7 +215,8 @@ pub fn apply_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
 }
 
 /// Mark the overlay ready and reveal it if the feature is enabled. Called by
-/// the `reveal_floating_widget` IPC command once the floating page mounts.
+/// the floating window's page-load hook and by the `reveal_floating_widget`
+/// IPC command.
 pub fn reveal_if_enabled<R: Runtime>(app: &AppHandle<R>) {
     WIDGET_READY.store(true, Ordering::SeqCst);
     if !is_enabled(app) {
@@ -267,8 +280,8 @@ pub fn ensure_visible<R: Runtime>(app: &AppHandle<R>) {
     reset_idle_timer(&state);
     let gen = state.widget_timer.next_hide_generation();
     // Do not force the overlay visible before its transparent content has
-    // mounted; that produces a white-square flash in dev. `reveal_if_enabled`
-    // handles the first show once React signals it is ready.
+    // loaded; that produces a white-square flash in dev. The page-load hook
+    // handles the first show.
     if !WIDGET_READY.load(Ordering::SeqCst) {
         return;
     }
@@ -321,8 +334,7 @@ fn spawn_widget_reveal<R: Runtime>(
 
 /// Watchdog for an emitted reveal: when the frontend never acknowledges it the
 /// renderer is considered unresponsive (WebView2 suspends hidden windows) and
-/// the webview is reloaded so the remount path (`reveal_floating_widget`) can
-/// show the widget again.
+/// the webview is reloaded so the page-load hook can show the widget again.
 fn spawn_reveal_watchdog<R: Runtime>(app: AppHandle<R>, win: WebviewWindow<R>, gen: u64) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(REVEAL_ACK_TIMEOUT_MS)).await;
@@ -899,6 +911,12 @@ mod tests {
         let mut p = test_params(now, Some(past), AppStateTag::Idle);
         p.is_animating_hide = true;
         assert!(!should_auto_hide(p));
+    }
+
+    #[test]
+    fn reveal_only_after_page_load_finished() {
+        assert!(!should_reveal_on_page_load(PageLoadEvent::Started));
+        assert!(should_reveal_on_page_load(PageLoadEvent::Finished));
     }
 
     #[test]
