@@ -222,10 +222,6 @@ mod tests {
         assert_eq!(result.duration_ms, 0);
     }
 
-    /// Clipboard round-trip tests need a live clipboard owner. On Linux/X11 a
-    /// value lives only while the writing `Clipboard` instance exists and Xvfb
-    /// runs no clipboard manager, so these cannot hold on CI.
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn clipboard_save_restore_preserves_original() {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
@@ -276,7 +272,6 @@ mod tests {
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
     }
 
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn restore_guard_restores_on_drop() {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
@@ -312,7 +307,6 @@ mod tests {
         assert!(guard.snapshot.is_none());
     }
 
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn restore_guard_restores_image_content() {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
@@ -353,7 +347,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn restore_guard_wipes_dictation_on_non_text_restore() {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
@@ -373,7 +366,6 @@ mod tests {
         assert_eq!(clipboard::read_text().as_deref(), Some(""));
     }
 
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn restore_guard_wipes_dictation_on_non_text_drop() {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
@@ -393,7 +385,6 @@ mod tests {
         assert_eq!(clipboard::read_text().as_deref(), Some(""));
     }
 
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn restore_skips_when_clipboard_changed_externally() {
         let _guard = CLIPBOARD_INJECTION_LOCK.lock_recover();
