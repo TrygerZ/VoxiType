@@ -108,6 +108,20 @@ jobs:
           echo "$ENTITLEMENTS" | grep -q "com.apple.security.device.audio-input" ||
             { echo "microphone entitlement missing from the signature"; exit 1; }
 
+      # The bundler writes Depends from config only; it never runs
+      # dpkg-shlibdeps, and libayatana-appindicator3 is dlopened. Assert the
+      # declared list survived so a package without its runtime libraries is
+      # never published.
+      - name: Verify deb dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          DEB=$(find src-tauri/target -path '*/bundle/deb/*.deb' -type f | head -n 1)
+          [ -n "$DEB" ] || { echo "no deb produced"; exit 1; }
+          dpkg-deb -I "$DEB" | grep -q 'Depends:.*libwebkit2gtk-4.1-0' ||
+            { echo "deb is missing libwebkit2gtk-4.1-0 in Depends"; exit 1; }
+          dpkg-deb -I "$DEB" | grep -q 'Depends:.*libayatana-appindicator3-1' ||
+            { echo "deb is missing libayatana-appindicator3-1 in Depends"; exit 1; }
+
       - name: Upload installers to the draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,6 +134,7 @@ jobs:
           done < <(find src-tauri/target -type f \( \
             -path '*/bundle/dmg/*.dmg' -o \
             -path '*/bundle/appimage/*.AppImage' -o \
+            -path '*/bundle/deb/*.deb' -o \
             -path '*/bundle/nsis/*-setup.exe' \
           \))
           [ ${#files[@]} -gt 0 ] || { echo "no installers produced"; exit 1; }
