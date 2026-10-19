@@ -30,7 +30,7 @@
 | Data Directory | Marker resolution, copy-on-migrate, Windows ACL validation and one-click restriction for custom directories | src-tauri/src/data_dir.rs, src-tauri/src/data_dir_acl.rs |
 | File Transcription | Batch queue (max 20, frontend-driven), one backend job at a time | src-tauri/src/commands/file_transcription.rs, src/stores/fileTranscriptionStore.ts |
 | Export | TXT, DOCX (`zip` 9.0.5 pinned, stored entries), PDF (hand-written, built-in Helvetica, WinAnsi with defined CP1252 characters) | src-tauri/src/export.rs |
-| Platform Bundles | macOS `.dmg` (ad-hoc signed) and Linux `.AppImage`; per-platform Tauri config and Info.plist | src-tauri/tauri.macos.conf.json, src-tauri/tauri.linux.conf.json, src-tauri/Info.plist |
+| Platform Bundles | macOS `.dmg` (ad-hoc signed), Linux `.AppImage` and `.deb`; per-platform Tauri config and Info.plist. The deb declares explicit runtime dependencies because the bundler does not run `dpkg-shlibdeps` | src-tauri/tauri.macos.conf.json, src-tauri/tauri.linux.conf.json, src-tauri/Info.plist |
 | Non-Windows Pickers | tauri-plugin-dialog Rust API (`blocking_pick_folder`, `blocking_pick_files`) behind `#[cfg(not(windows))]` | src-tauri/src/commands/misc.rs |
 | Single Instance | Windows named mutex in main.rs; tauri-plugin-single-instance on macOS and Linux | src-tauri/src/main.rs, src-tauri/src/lib.rs |
 
@@ -228,7 +228,7 @@ mod.rs exports:
 | Workflow | Trigger | Steps |
 |----------|---------|-------|
 | CI | Push/PR to `main` | `frontend` job on ubuntu-latest (tsc, build, tests) and `rust` matrix on windows-latest, macos-latest, ubuntu-22.04 (fmt, clippy, test); Linux tests run under `xvfb-run` |
-| Build Test | Manual `workflow_dispatch` | Four build jobs (Windows NSIS, macOS aarch64 dmg, macOS x64 dmg, Linux AppImage); uploads artifacts, never touches a release |
+| Build Test | Manual `workflow_dispatch` | Four build jobs (Windows NSIS, macOS aarch64 dmg, macOS x64 dmg, Linux AppImage and deb); uploads artifacts, never touches a release |
 | Release | Push tag `v*` | `create-release` creates the draft once, then four build jobs upload installers with `gh release upload`; macOS ad-hoc signed; manual publish required |
 
 Linux CI and release jobs install `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev libxkbcommon-dev libasound2-dev`. `libxdo-dev` is required by enigo's default `xdo` feature; `libxkbcommon-dev` is explicit so a GTK package split cannot break the build silently.
@@ -243,7 +243,7 @@ Linux CI and release jobs install `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana
 ### Primary path (CI)
 1. Create annotated tag: `git tag -a vX.Y.Z -m "VoxiType vX.Y.Z"`
 2. Push tag: `git push origin main vX.Y.Z`
-3. Tag `v*` triggers Release workflow (`.github/workflows/release.yml`): creates a GitHub Release DRAFT named "VoxiType vX.Y.Z", then four build jobs upload `VoxiType_X.Y.Z_x64-setup.exe`, `VoxiType_X.Y.Z_aarch64.dmg`, `VoxiType_X.Y.Z_x64.dmg`, and `VoxiType_X.Y.Z_amd64.AppImage`. macOS builds are ad-hoc signed.
+3. Tag `v*` triggers Release workflow (`.github/workflows/release.yml`): creates a GitHub Release DRAFT named "VoxiType vX.Y.Z", then four build jobs upload `VoxiType_X.Y.Z_x64-setup.exe`, `VoxiType_X.Y.Z_aarch64.dmg`, `VoxiType_X.Y.Z_x64.dmg`, `VoxiType_X.Y.Z_amd64.AppImage`, and `VoxiType_X.Y.Z_amd64.deb`. macOS builds are ad-hoc signed.
 4. Monitor: `gh run list --workflow=Release --limit 3` or `gh run watch <id>`.
 5. Publish draft: `gh release edit vX.Y.Z --draft=false`.
 6. Verify: `gh release view vX.Y.Z --json isDraft,assets --jq '{draft:.isDraft,assets:[.assets[].name]}'`.
