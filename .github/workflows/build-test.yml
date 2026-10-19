@@ -71,11 +71,21 @@ jobs:
           retryAttempts: 2
           # No tagName/releaseName: build only, never touch a release.
 
+      # The dmg bundler removes the intermediate .app, so verify what ships.
       - name: Verify macOS signature
         if: matrix.os == 'macos-latest'
         run: |
-          APP_PATH=$(find src-tauri/target -name "*.app" -type d | head -n 1)
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          DMG=$(find src-tauri/target -path '*/bundle/dmg/*.dmg' -type f | head -n 1)
+          [ -n "$DMG" ] || { echo "no dmg produced"; exit 1; }
+          MOUNT=$(mktemp -d)
+          trap 'hdiutil detach "$MOUNT" -quiet || true' EXIT
+          hdiutil attach "$DMG" -mountpoint "$MOUNT" -nobrowse -quiet
+          APP=$(find "$MOUNT" -maxdepth 1 -name "*.app" -type d | head -n 1)
+          [ -n "$APP" ] || { echo "no app inside the dmg"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -d --entitlements - "$APP" 2>/dev/null |
+            grep -q "com.apple.security.device.audio-input" ||
+            { echo "microphone entitlement missing from the signature"; exit 1; }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
