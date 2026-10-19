@@ -1,5 +1,13 @@
 {
   "bundle": {
-    "targets": ["appimage"]
+    "targets": ["appimage", "deb"],
+    "category": "Productivity",
+    "shortDescription": "Voice-to-text for every app",
+    "longDescription": "VoxiType transcribes speech with Groq Whisper or local whisper.cpp, formats the result with an LLM, and inserts the text into the active application.",
+    "linux": {
+      "deb": {
+        "depends": ["libxdo3", "libasound2"]
+      }
+    }
   }
 }

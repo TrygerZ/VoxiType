@@ -469,16 +469,29 @@ fn create_window_from_config<R: Runtime>(
             crate::error::AppError::internal(format!("Window config for '{label}' not found"))
         })?;
 
-    tauri::WebviewWindowBuilder::from_config(handle, config)
-        .map_err(|e| {
-            crate::error::AppError::internal(format!(
-                "Failed to init window builder for '{label}': {e}"
-            ))
-        })?
-        .build()
-        .map_err(|e| {
-            crate::error::AppError::internal(format!("Failed to build window '{label}': {e}"))
+    let builder = tauri::WebviewWindowBuilder::from_config(handle, config).map_err(|e| {
+        crate::error::AppError::internal(format!(
+            "Failed to init window builder for '{label}': {e}"
+        ))
+    })?;
+
+    // The overlay is created hidden and shown once its page has loaded. This
+    // must be backend-driven: WebKit suspends requestAnimationFrame while the
+    // window is hidden, so a frontend-triggered reveal never runs on macOS or
+    // Linux.
+    let builder = if label == FLOATING_WIDGET_LABEL {
+        builder.on_page_load(|window, payload| {
+            if overlay::should_reveal_on_page_load(payload.event()) {
+                overlay::reveal_if_enabled(window.app_handle());
+            }
         })
+    } else {
+        builder
+    };
+
+    builder.build().map_err(|e| {
+        crate::error::AppError::internal(format!("Failed to build window '{label}': {e}"))
+    })
 }
 
 fn apply_window_icon<R: Runtime>(app: &tauri::AppHandle<R>) {

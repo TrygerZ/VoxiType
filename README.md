@@ -4,7 +4,7 @@
 
 # VoxiType
 
-**Version 0.7.0** - Open-source voice-to-text for every app.
+**Version 0.7.1** - Open-source voice-to-text for every app.
 
 VoxiType is a desktop voice dictation application for Windows, macOS, and Linux. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
@@ -16,7 +16,7 @@ VoxiType is a desktop voice dictation application for Windows, macOS, and Linux.
 |----------|--------|
 | Windows 10/11 | Fully supported, verified in CI |
 | macOS 11+ | Supported (Apple Silicon and Intel), ad-hoc signed |
-| Linux (X11) | Supported via AppImage (x86_64) |
+| Linux (X11) | Supported via AppImage or deb (x86_64) |
 
 Releases are unsigned. Windows users will see a SmartScreen warning on first install. macOS builds are ad-hoc signed, so the first launch needs the steps below.
 
@@ -83,10 +83,20 @@ Download the latest installer from the [Releases page](https://github.com/Tryger
 
 ### Linux
 
+Portable, no installation:
+
 ```bash
 chmod +x VoxiType_*.AppImage
 ./VoxiType_*.AppImage
 ```
+
+Debian package, installed system-wide with an app menu entry and uninstall via the package manager:
+
+```bash
+sudo apt install ./VoxiType_*.deb
+```
+
+Use `apt install ./file.deb` rather than `dpkg -i`: only `apt` resolves the dependencies listed in the package.
 
 The tray needs an appindicator host; GNOME requires the AppIndicator extension. VoxiType requires an X11 session: on Wayland the global hotkey and text injection are unavailable, and the app shows a notice instead of working. Native Wayland clients cannot be dictated into yet.
 
