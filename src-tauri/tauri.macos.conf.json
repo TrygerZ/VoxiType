@@ -2,7 +2,8 @@
   "bundle": {
     "targets": ["dmg"],
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
     }
   }
 }
