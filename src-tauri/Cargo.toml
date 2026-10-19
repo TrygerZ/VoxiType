@@ -1,6 +1,6 @@
 [package]
 name = "voxitype"
-version = "0.6.23"
+version = "0.7.0"
 description = "Free & open-source voice-to-text for all applications"
 authors = ["VoxiType Contributors"]
 edition = "2021"
@@ -36,7 +36,7 @@ rubato = "0.16"
 symphonia = { version = "0.6.1", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 
 # --- Transcript export (DOCX container; entries are stored, not compressed) ---
-zip = { version = "=7.2.0", default-features = false }
+zip = { version = "=9.0.5", default-features = false }
 
 # --- HTTP client (Ollama, Groq) ---
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
@@ -48,7 +48,7 @@ url = "2"
 open = { version = "5", features = ["shellexecute-on-windows"] }
 
 # --- Text injection ---
-enigo = "0.2"
+enigo = "0.3"
 arboard = "3.4"
 
 # --- Storage ---
@@ -79,6 +79,11 @@ windows = { version = "0.58", features = [
     "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
 ] }
+
+# --- Non-Windows: native file/folder pickers (Windows keeps its PowerShell dialogs) ---
+[target.'cfg(not(windows))'.dependencies]
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 # Builds synthetic `reqwest::Response` values for `read_body_capped` tests.

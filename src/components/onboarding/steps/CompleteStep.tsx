@@ -10,7 +10,7 @@ interface Props {
   t: TFunc;
   error: string;
   busy: boolean;
-  hotkeyKey: string;
+  hotkeyDisplay: string;
   onFinish: () => void;
 }
 
@@ -20,7 +20,7 @@ export function CompleteStep({
   t,
   error,
   busy,
-  hotkeyKey,
+  hotkeyDisplay,
   onFinish,
 }: Props) {
   return (
@@ -30,7 +30,7 @@ export function CompleteStep({
       t={t}
       icon={<Check className="h-7 w-7" />}
       title={t("onboarding.complete.title")}
-      description={t("onboarding.complete.body", { key: hotkeyKey })}
+      description={t("onboarding.complete.body", { key: hotkeyDisplay })}
       error={error}
       actions={
         <Button variant="primary" size="lg" disabled={busy} onClick={onFinish}>
@@ -46,7 +46,7 @@ export function CompleteStep({
           <li className="flex gap-2.5 text-xs leading-relaxed text-vx-text-dim">
             <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vx-success" />
             <span>
-              {t("onboarding.complete.next.tip1", { key: hotkeyKey })}
+              {t("onboarding.complete.next.tip1", { key: hotkeyDisplay })}
             </span>
           </li>
           <li className="flex gap-2.5 text-xs leading-relaxed text-vx-text-dim">

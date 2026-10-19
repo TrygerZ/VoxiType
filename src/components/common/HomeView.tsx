@@ -24,6 +24,8 @@ import { useHistoryStore } from "../../stores/historyStore";
 import { useStatsStore } from "../../stores/statsStore";
 import { modeLabel, useT } from "../../lib/i18n";
 import { startRecording, stopRecording, reInject } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
+import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { invokeAction } from "../../lib/invokeAction";
 import {
   getBooleanSetting,
@@ -66,7 +68,8 @@ export function HomeView() {
   const [greeting, setGreeting] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [injectedId, setInjectedId] = useState<string | null>(null);
-  
+  const platform = usePlatform();
+
   // Timer refs for cleanup
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const injectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -147,7 +150,10 @@ export function HomeView() {
   const translationTarget = getStringSetting(settings.translation_target, "en");
   const micDevice = getStringSetting(settings.mic_device, "default");
   const hotkey = isHotkeyConfig(settings.hotkey) ? settings.hotkey : undefined;
-  const shortcutKey = hotkey?.key ?? "Ctrl+Space";
+  const shortcutDisplay = formatAccelerator(
+    hotkey?.key ?? "Ctrl+Space",
+    platform,
+  );
 
   const recentItems = useMemo(() => {
     return historyItems.slice(0, 3);
@@ -308,7 +314,7 @@ export function HomeView() {
             ) : (
               <>
                 <span className="text-sm font-medium tracking-wide text-vx-text-secondary">
-                  {t("idle.hint", { shortcut: shortcutKey })}
+                  {t("idle.hint", { shortcut: shortcutDisplay })}
                 </span>
                 {state === "idle" && wordCount !== null && (
                   <span
@@ -643,7 +649,7 @@ export function HomeView() {
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-vx-border/20 bg-vx-bg-secondary/10 p-3 text-xs text-vx-text-dim">
             <Keyboard className="h-4 w-4" />
             <span>
-              {t("home.shortcut_tip", { shortcut: shortcutKey })}
+              {t("home.shortcut_tip", { shortcut: shortcutDisplay })}
             </span>
           </div>
 

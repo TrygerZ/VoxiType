@@ -4,21 +4,10 @@
 //! of known commands ("new line", "baris baru", "delete that", ...) and the
 //! corresponding key action is simulated instead of injecting the literal text.
 
-use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use enigo::{Direction, Enigo, Key, Keyboard};
 
-use super::KeyGuard;
+use super::{letter_key, modifier_key, new_enigo, KeyGuard};
 use crate::error::{AppError, Result};
-
-/// Get the platform-appropriate modifier key (Cmd on macOS, Ctrl elsewhere).
-#[cfg(target_os = "macos")]
-fn modifier_key() -> Key {
-    Key::Meta
-}
-
-#[cfg(not(target_os = "macos"))]
-fn modifier_key() -> Key {
-    Key::Control
-}
 
 /// A recognized editing action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,8 +81,7 @@ pub fn verify_target_window(expected: Option<isize>, current: Option<isize>) -> 
 
 /// Execute a voice command by simulating the corresponding keystrokes.
 pub fn execute(command: VoiceCommand) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|e| AppError::injection(format!("Enigo init failed: {e}")))?;
+    let mut enigo = new_enigo()?;
 
     let map_err = |e| AppError::injection(format!("Keystroke failed: {e}"));
 
@@ -140,20 +128,20 @@ pub fn execute(command: VoiceCommand) -> Result<()> {
     Ok(())
 }
 
-/// Named, layout-independent key for a Ctrl/Cmd combo command.
+/// Layout-independent letter key for a Ctrl/Cmd combo command.
 ///
-/// `Key::Unicode(letter)` resolves through `VkKeyScanW`, which fails on
-/// non-Latin keyboard layouts; named letter keys are positional and work
-/// regardless of layout. Returns `None` for commands that are not combos.
+/// `Key::Unicode(letter)` resolves through `VkKeyScanW` on Windows, which fails
+/// on non-Latin keyboard layouts; `letter_key` uses the positional virtual key
+/// there instead. Returns `None` for commands that are not combos.
 fn combo_key(command: VoiceCommand) -> Option<Key> {
     match command {
-        VoiceCommand::SelectAll => Some(Key::A),
-        VoiceCommand::Copy => Some(Key::C),
-        VoiceCommand::Paste => Some(Key::V),
-        VoiceCommand::Cut => Some(Key::X),
-        VoiceCommand::Undo => Some(Key::Z),
-        VoiceCommand::Redo => Some(Key::Y),
-        VoiceCommand::Save => Some(Key::S),
+        VoiceCommand::SelectAll => Some(letter_key('a')),
+        VoiceCommand::Copy => Some(letter_key('c')),
+        VoiceCommand::Paste => Some(letter_key('v')),
+        VoiceCommand::Cut => Some(letter_key('x')),
+        VoiceCommand::Undo => Some(letter_key('z')),
+        VoiceCommand::Redo => Some(letter_key('y')),
+        VoiceCommand::Save => Some(letter_key('s')),
         _ => None,
     }
 }
@@ -207,14 +195,14 @@ mod tests {
     }
 
     #[test]
-    fn combo_commands_map_to_named_layout_independent_keys() {
-        assert_eq!(combo_key(VoiceCommand::SelectAll), Some(Key::A));
-        assert_eq!(combo_key(VoiceCommand::Copy), Some(Key::C));
-        assert_eq!(combo_key(VoiceCommand::Paste), Some(Key::V));
-        assert_eq!(combo_key(VoiceCommand::Cut), Some(Key::X));
-        assert_eq!(combo_key(VoiceCommand::Undo), Some(Key::Z));
-        assert_eq!(combo_key(VoiceCommand::Redo), Some(Key::Y));
-        assert_eq!(combo_key(VoiceCommand::Save), Some(Key::S));
+    fn combo_commands_map_to_layout_independent_letter_keys() {
+        assert_eq!(combo_key(VoiceCommand::SelectAll), Some(letter_key('a')));
+        assert_eq!(combo_key(VoiceCommand::Copy), Some(letter_key('c')));
+        assert_eq!(combo_key(VoiceCommand::Paste), Some(letter_key('v')));
+        assert_eq!(combo_key(VoiceCommand::Cut), Some(letter_key('x')));
+        assert_eq!(combo_key(VoiceCommand::Undo), Some(letter_key('z')));
+        assert_eq!(combo_key(VoiceCommand::Redo), Some(letter_key('y')));
+        assert_eq!(combo_key(VoiceCommand::Save), Some(letter_key('s')));
     }
 
     #[test]

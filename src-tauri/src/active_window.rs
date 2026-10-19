@@ -100,7 +100,7 @@ mod platform {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::platform::PROCESS_PATH_BUF_LEN;
     use windows::Win32::Foundation::CloseHandle;

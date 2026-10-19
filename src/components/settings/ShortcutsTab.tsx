@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import { setHotkey, formatTauriError } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
 import { isHotkeyConfig } from "../../lib/settingsGuards";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { HotkeyRecorder } from "./HotkeyRecorder";
@@ -19,6 +20,7 @@ export function ShortcutsTab() {
   const [mode, setMode] = useState(hotkey?.mode ?? "ptt");
   const [status, setStatus] = useState<"idle" | "ok" | string>("idle");
   const [busy, setBusy] = useState(false);
+  const platform = usePlatform();
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep the editor in sync with the stored hotkey. Settings may load after
@@ -70,7 +72,7 @@ export function ShortcutsTab() {
 
       <SettingsGroup title={t("settings.shortcuts.group")}>
         <div className="px-4 py-3.5">
-          <HotkeyRecorder value={key} onChange={setKey} />
+          <HotkeyRecorder value={key} onChange={setKey} platform={platform} />
         </div>
         <SettingsRow
           label={t("settings.shortcuts.mode")}

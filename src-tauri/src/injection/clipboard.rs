@@ -1,10 +1,46 @@
 //! Clipboard access via arboard.
+//!
+//! One `Clipboard` is kept open for the process lifetime. On X11 the clipboard
+//! contents are served by the owning process, so the handle must outlive every
+//! write: dropping the last handle destroys the owner window and the target app
+//! reads stale or empty data. Keeping it also lets the restored content survive
+//! after injection instead of vanishing with the writer.
 
 use std::borrow::Cow;
+use std::sync::Mutex;
 
 use arboard::{Clipboard, Error};
 
 use crate::error::{AppError, Result};
+use crate::util::MutexExt;
+
+/// The process-wide clipboard handle. `None` until first use, and after
+/// [`shutdown`].
+static CLIPBOARD: Mutex<Option<Clipboard>> = Mutex::new(None);
+
+/// Run `f` against the shared clipboard, opening it on first use.
+///
+/// Returns `None` when the clipboard cannot be opened; the caller maps that to
+/// its own "unavailable" result.
+fn with_clipboard<T>(f: impl FnOnce(&mut Clipboard) -> T) -> Option<T> {
+    let mut guard = CLIPBOARD.lock_recover();
+    if guard.is_none() {
+        match Clipboard::new() {
+            Ok(cb) => *guard = Some(cb),
+            Err(e) => {
+                tracing::debug!("Clipboard open failed: {e}");
+                return None;
+            }
+        }
+    }
+    guard.as_mut().map(f)
+}
+
+/// Drop the shared handle so X11 can hand the current contents to a clipboard
+/// manager before the process exits.
+pub fn shutdown() {
+    let _ = CLIPBOARD.lock_recover().take();
+}
 
 /// Snapshot of clipboard content before text injection.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,25 +65,20 @@ pub enum ClipboardSnapshot {
 /// rich content), and restoring text is cheaper and lossless, so text wins.
 /// Only a clipboard with no text falls through to the image probe.
 pub fn read_snapshot() -> ClipboardSnapshot {
-    let mut cb = match Clipboard::new() {
-        Ok(cb) => cb,
-        Err(e) => {
-            tracing::debug!("Clipboard open failed for snapshot: {e}");
-            return ClipboardSnapshot::Unavailable;
+    with_clipboard(|cb| {
+        if let Ok(text) = cb.get_text() {
+            return ClipboardSnapshot::Text(text);
         }
-    };
-
-    if let Ok(text) = cb.get_text() {
-        return ClipboardSnapshot::Text(text);
-    }
-    if let Ok(image) = cb.get_image() {
-        return ClipboardSnapshot::Image {
-            width: image.width,
-            height: image.height,
-            bytes: image.bytes.into_owned(),
-        };
-    }
-    categorize_snapshot(cb.get_text(), || probe_has_non_text(&mut cb))
+        if let Ok(image) = cb.get_image() {
+            return ClipboardSnapshot::Image {
+                width: image.width,
+                height: image.height,
+                bytes: image.bytes.into_owned(),
+            };
+        }
+        categorize_snapshot(cb.get_text(), || probe_has_non_text(cb))
+    })
+    .unwrap_or(ClipboardSnapshot::Unavailable)
 }
 
 /// Check if non-text payload (image, HTML, files) exists on clipboard.
@@ -95,24 +126,30 @@ pub fn read_text() -> Option<String> {
 
 /// Write text to the clipboard.
 pub fn write_text(text: &str) -> Result<()> {
-    let mut cb =
-        Clipboard::new().map_err(|e| AppError::injection(format!("Clipboard open failed: {e}")))?;
-    cb.set_text(text.to_string())
-        .map_err(|e| AppError::injection(format!("Clipboard set failed: {e}")))?;
-    Ok(())
+    let written = with_clipboard(|cb| cb.set_text(text.to_string()));
+    match written {
+        Some(Ok(())) => Ok(()),
+        Some(Err(e)) => Err(AppError::injection(format!("Clipboard set failed: {e}"))),
+        None => Err(AppError::injection("Clipboard open failed")),
+    }
 }
 
 /// Write an RGBA8 image to the clipboard.
 pub fn write_image(width: usize, height: usize, bytes: &[u8]) -> Result<()> {
-    let mut cb =
-        Clipboard::new().map_err(|e| AppError::injection(format!("Clipboard open failed: {e}")))?;
-    cb.set_image(arboard::ImageData {
-        width,
-        height,
-        bytes: Cow::Borrowed(bytes),
-    })
-    .map_err(|e| AppError::injection(format!("Clipboard set image failed: {e}")))?;
-    Ok(())
+    let written = with_clipboard(|cb| {
+        cb.set_image(arboard::ImageData {
+            width,
+            height,
+            bytes: Cow::Borrowed(bytes),
+        })
+    });
+    match written {
+        Some(Ok(())) => Ok(()),
+        Some(Err(e)) => Err(AppError::injection(format!(
+            "Clipboard set image failed: {e}"
+        ))),
+        None => Err(AppError::injection("Clipboard open failed")),
+    }
 }
 
 #[cfg(test)]

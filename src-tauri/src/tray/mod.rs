@@ -77,7 +77,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     }
 }
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();

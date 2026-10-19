@@ -544,10 +544,13 @@ mod platform {
             let database = data.join("voxitype.db");
             std::fs::write(&database, b"SQLite format 3\0payload").expect("seed db");
             strip_file_dacl(&database);
-            assert!(
-                std::fs::read(&database).is_err(),
-                "precondition: the stripped file must be unreadable"
-            );
+            // An elevated token (GitHub's windows runner) can read a file with
+            // an empty DACL, so the broken state cannot be established there.
+            // Same skip pattern as the other ACL tests.
+            if std::fs::read(&database).is_ok() {
+                eprintln!("skipping: this account bypasses an empty file DACL");
+                return;
+            }
 
             crate::data_dir_acl::restrict_to_current_user(&dir.0).expect("restrict should succeed");
 

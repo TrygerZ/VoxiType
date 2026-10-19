@@ -150,6 +150,47 @@ fn clear_seeded_whisper_binary_placeholder(db: &Database) -> error::Result<()> {
     Ok(())
 }
 
+/// Replace the platform-agnostic hotkey seed with the platform default.
+///
+/// `schema.sql` seeds `Ctrl+Space` on every fresh database because SQL cannot
+/// express a platform default. On macOS that accelerator is reserved for
+/// input-source switching, so the untouched seed is replaced. The replacement
+/// is persisted so the Settings UI shows the effective accelerator. A value
+/// other than the exact seed is returned unchanged. The one ambiguous case (a
+/// macOS user who deliberately re-picked `Ctrl+Space` with PTT mode) is
+/// indistinguishable from the seed and gets replaced once; same trade-off as
+/// the existing whisper placeholder cleanup, accepted for a one-time
+/// migration.
+fn normalize_seeded_hotkey(db: &Database) -> HotkeyConfig {
+    const SEEDED_HOTKEY_KEY: &str = "Ctrl+Space";
+    let is_seed =
+        |cfg: &HotkeyConfig| cfg.key == SEEDED_HOTKEY_KEY && cfg.mode == hotkey::HotkeyMode::Ptt;
+    let stored = SettingsManager::new(db)
+        .get::<HotkeyConfig>("hotkey")
+        .ok()
+        .flatten();
+    // Match on `stored.as_ref()` and clone: matching `stored` by value moves
+    // it, and the `is_some_and` check below still needs the original.
+    let cfg = match stored.as_ref() {
+        Some(s) if is_seed(s) => HotkeyConfig::default(),
+        Some(s) => s.clone(),
+        None => HotkeyConfig::default(),
+    };
+    // Persist whenever the stored value differs from the effective one, which
+    // covers both the seed and a deleted row; otherwise the Settings UI would
+    // show a fallback that no longer matches the registered accelerator.
+    let needs_persist = match stored.as_ref() {
+        Some(s) => s.key != cfg.key || s.mode != cfg.mode,
+        None => true,
+    };
+    if needs_persist {
+        if let Err(e) = SettingsManager::new(db).set("hotkey", &cfg) {
+            tracing::warn!("Failed to persist normalized hotkey: {e}");
+        }
+    }
+    cfg
+}
+
 /// Initialize application state, falling back to `default_app_data_dir` if
 /// opening a custom `app_data_dir` fails.
 ///
@@ -178,7 +219,29 @@ fn init_app_state(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Non-Windows single-instance guard (Windows keeps its named mutex in
+    // main.rs). Must be registered before other plugins.
+    #[cfg(not(windows))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // The plugin fires during `Builder::build`, which can run before the
+        // app `setup` creates the windows. Queueing on the main thread defers
+        // the reveal until `setup` has finished, so the window exists.
+        let handle = app.clone();
+        if app
+            .run_on_main_thread(move || crate::tray::show_main_window(&handle))
+            .is_err()
+        {
+            tracing::warn!("Failed to queue main window reveal for a second instance");
+        }
+    }));
+
+    // Non-Windows pickers run through the dialog plugin (Rust API only).
+    #[cfg(not(windows))]
+    let builder = builder.plugin(tauri_plugin_dialog::init());
+
+    builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // The macOS launcher argument is ignored on Windows; `None` args.
         .plugin(tauri_plugin_autostart::init(
@@ -247,12 +310,9 @@ pub fn run() {
                 fallback_occurred,
             );
 
-            // Load hotkey config from settings (fallback to default).
-            let hotkey_cfg = SettingsManager::new(&state.db)
-                .get::<HotkeyConfig>("hotkey")
-                .ok()
-                .flatten()
-                .unwrap_or_default();
+            // Load hotkey config from settings, replacing the platform-agnostic
+            // seed with the platform default on first run.
+            let hotkey_cfg = normalize_seeded_hotkey(&state.db);
 
             app.manage(state);
             app.manage(commands::FileJobState::default());
@@ -373,10 +433,23 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
-                if let Some(state) = app_handle.try_state::<AppStateInner>() {
-                    state.widget_timer.shutdown();
+            match event {
+                tauri::RunEvent::Exit => {
+                    if let Some(state) = app_handle.try_state::<AppStateInner>() {
+                        state.widget_timer.shutdown();
+                    }
+                    // Release the clipboard owner before the process exits so
+                    // X11 hands the current contents to a clipboard manager.
+                    injection::clipboard::shutdown();
                 }
+                // macOS: clicking the dock icon while the main window is
+                // hidden must bring it back (the window has no close-to-quit
+                // behavior; CloseRequested only hides it).
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    crate::tray::show_main_window(app_handle);
+                }
+                _ => {}
             }
         });
 }
@@ -544,5 +617,27 @@ mod tests {
             settings.get::<String>(BINARY_PATH_SETTING).unwrap(),
             Some(real_path.to_string())
         );
+    }
+
+    #[test]
+    fn normalize_seeded_hotkey_replaces_only_the_untouched_seed() {
+        let db = Database::open_in_memory().expect("open in-memory db");
+
+        // A fresh database carries the schema seed.
+        let cfg = normalize_seeded_hotkey(&db);
+        #[cfg(target_os = "macos")]
+        assert_eq!(cfg.key, "Super+Shift+Space");
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(cfg.key, "Ctrl+Space");
+
+        // A user-chosen accelerator survives untouched.
+        let chosen = HotkeyConfig {
+            key: "Alt+H".to_string(),
+            mode: hotkey::HotkeyMode::Toggle,
+        };
+        SettingsManager::new(&db).set("hotkey", &chosen).unwrap();
+        let cfg = normalize_seeded_hotkey(&db);
+        assert_eq!(cfg.key, "Alt+H");
+        assert_eq!(cfg.mode, hotkey::HotkeyMode::Toggle);
     }
 }

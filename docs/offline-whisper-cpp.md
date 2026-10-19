@@ -32,20 +32,22 @@ whisper.cpp must re-select the binary in Settings once after updating.
 
 ## 1. Install whisper.cpp
 
-### Option A: Use a prebuilt release
+### Windows
+
+#### Option A: Use a prebuilt release
 
 This is the easiest Windows setup and does not require CMake.
 
 1. Open the official whisper.cpp releases page:
    https://github.com/ggml-org/whisper.cpp/releases
-2. Download the release archive for your platform.
+2. Download the Windows x64 release archive.
 3. Extract it to a stable folder.
 4. In VoxiType, browse to the extracted `whisper-cli.exe` file.
 
-### Option B: Build from source
+#### Option B: Build from source (Windows)
 
-Install Git, CMake, and a C++ compiler first. On Windows, Visual Studio Build
-Tools with the C++ workload is the simplest option.
+Install Git, CMake, and a C++ compiler first. Visual Studio Build Tools with
+the C++ workload is the simplest option.
 
 ```powershell
 git clone https://github.com/ggml-org/whisper.cpp.git
@@ -59,8 +61,34 @@ The binary is usually one of these:
 ```text
 Windows MSVC: build\bin\Release\whisper-cli.exe
 Windows MinGW: build\bin\whisper-cli.exe
-macOS/Linux: build/bin/whisper-cli
 ```
+
+### macOS
+
+Install with Homebrew, which provides a `whisper-cli` on `PATH`:
+
+```bash
+brew install whisper-cpp
+```
+
+Alternatively download a prebuilt release from the releases page and use the
+binary inside the extracted folder. If you build from source:
+
+```bash
+git clone https://github.com/ggml-org/whisper.cpp.git
+cd whisper.cpp
+cmake -B build
+cmake --build build -j
+```
+
+The binary is `build/bin/whisper-cli` (no `.exe`).
+
+### Linux
+
+Use a distro package when available (for example `whisper.cpp`), or download a
+prebuilt release. If you build from source, install `build-essential` and
+CMake, then run the same commands as macOS. The binary is
+`build/bin/whisper-cli`.
 
 If `whisper-cli` is already in `PATH`, VoxiType can use `whisper-cli` as the
 binary path. If not, use the full path.

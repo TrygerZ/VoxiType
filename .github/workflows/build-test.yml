@@ -1,0 +1,89 @@
+name: Build Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: ""
+            artifact: windows-nsis
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: macos-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: macos-x64
+          - os: ubuntu-22.04
+            target: ""
+            artifact: linux-appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libxkbcommon-dev \
+            libasound2-dev
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+        with:
+          args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}
+          retryAttempts: 2
+          # No tagName/releaseName: build only, never touch a release.
+
+      - name: Verify macOS signature
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_PATH=$(find src-tauri/target -name "*.app" -type d | head -n 1)
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/appimage/*.AppImage
+            src-tauri/target/**/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 90

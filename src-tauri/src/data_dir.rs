@@ -7,6 +7,9 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{AppError, Result};
 
+/// Free space required before a directory may become the data directory.
+/// Only the Windows probe enforces it; other platforms skip the check.
+#[cfg(windows)]
 const MIN_FREE_SPACE_BYTES: u64 = 50 * 1024 * 1024;
 
 /// Marker filename stored in the default application data directory.
@@ -549,11 +552,19 @@ mod tests {
 
     impl TempDir {
         fn new() -> Self {
+            // Tests run in parallel and the clock alone can repeat a value on
+            // coarse-resolution platforms, which would let two tests share a
+            // directory and delete it under each other.
+            static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let nonce = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|duration| duration.as_nanos())
                 .unwrap_or_default();
-            let path = std::env::temp_dir().join(format!("voxitype-data-dir-{nonce}"));
+            let path = std::env::temp_dir().join(format!(
+                "voxitype-data-dir-{}-{nonce}-{id}",
+                std::process::id()
+            ));
             std::fs::create_dir_all(&path).expect("test temp directory should be creatable");
             restrict_to_current_user(&path);
             Self(path)

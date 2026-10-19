@@ -55,6 +55,7 @@ interface SttSetupStepProps {
   whisperBinary: string;
   whisperModel: string;
   whisperThreads: number;
+  platform?: string;
   onEngineChange: (engine: SttEngine) => void;
   onLanguageChange: (language: string) => void;
   onApiKeyChange: (value: string) => void;
@@ -237,6 +238,7 @@ export function SttSetupStep(props: SttSetupStepProps) {
             />
           ) : (
             <OfflineSetup
+              platformSuffix={platformSuffix(props.platform)}
               binaryPath={whisperBinary}
               modelPath={whisperModel}
               threads={whisperThreads}
@@ -346,7 +348,16 @@ function GroqSetup({
     </div>
   );
 }
+/** Windows wording is the fallback for an unknown platform, matching the
+ *  pre-change text. */
+function platformSuffix(platform: string | undefined): string {
+  if (platform === "macos") return "_mac";
+  if (platform === "linux") return "_linux";
+  return "_windows";
+}
+
 function OfflineSetup({
+  platformSuffix,
   binaryPath,
   modelPath,
   threads,
@@ -357,6 +368,7 @@ function OfflineSetup({
   onPickModel,
   onTest,
 }: {
+  platformSuffix: string;
   binaryPath: string;
   modelPath: string;
   threads: number;
@@ -373,7 +385,7 @@ function OfflineSetup({
         <InstructionBlock
           icon={<Download className="h-4 w-4" />}
           title={t("onboarding.stt.offline.no_cmake_title")}
-          body={t("onboarding.stt.offline.no_cmake_body")}
+          body={t(`onboarding.stt.offline.no_cmake_body${platformSuffix}`)}
           actions={[
             {
               label: t("onboarding.stt.offline.open_releases"),
@@ -384,7 +396,7 @@ function OfflineSetup({
         <InstructionBlock
           icon={<Terminal className="h-4 w-4" />}
           title={t("onboarding.stt.offline.cmake_title")}
-          body={t("onboarding.stt.offline.cmake_body")}
+          body={t(`onboarding.stt.offline.cmake_body${platformSuffix}`)}
           actions={[
             {
               label: t("onboarding.stt.offline.open_source"),
@@ -421,7 +433,7 @@ function OfflineSetup({
         >
           <GuideList
             items={[
-              t("onboarding.stt.offline.path_step1"),
+              t(`onboarding.stt.offline.path_step1${platformSuffix}`),
               t("onboarding.stt.offline.path_step2"),
               t("onboarding.stt.offline.path_step3"),
             ]}
@@ -436,7 +448,7 @@ function OfflineSetup({
           value={binaryPath}
           onBrowse={onPickBinary}
           browseLabel={t("onboarding.stt.offline.browse_binary")}
-          hint={t("onboarding.stt.offline.binary_hint")}
+          hint={t(`onboarding.stt.offline.binary_hint${platformSuffix}`)}
         />
         <PathPickerField
           label={t("onboarding.stt.offline.model")}
@@ -444,7 +456,7 @@ function OfflineSetup({
           value={modelPath}
           onBrowse={onPickModel}
           browseLabel={t("onboarding.stt.offline.browse_model")}
-          hint={t("onboarding.stt.offline.model_hint")}
+          hint={t(`onboarding.stt.offline.model_hint${platformSuffix}`)}
         />
         <Input
           label={t("onboarding.stt.offline.threads")}

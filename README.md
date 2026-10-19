@@ -4,9 +4,9 @@
 
 # VoxiType
 
-**Version 0.6.23** - Open-source voice-to-text for every app.
+**Version 0.7.0** - Open-source voice-to-text for every app.
 
-VoxiType is a desktop voice dictation application for Windows. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
+VoxiType is a desktop voice dictation application for Windows, macOS, and Linux. Press a global hotkey, speak, and VoxiType transcribes with Groq Whisper or local whisper.cpp, optionally formats the result with an LLM, then inserts the final text into the active application. It also transcribes audio files in batches and exports each transcript as TXT, Word, or PDF.
 
 <img width="1292" height="1087" alt="VoxiType screenshot" src="https://github.com/user-attachments/assets/6af16b9e-0b5f-47aa-8c3a-5c3fd91cea09" />
 
@@ -15,10 +15,10 @@ VoxiType is a desktop voice dictation application for Windows. Press a global ho
 | Platform | Status |
 |----------|--------|
 | Windows 10/11 | Fully supported, verified in CI |
-| macOS | Not supported (no release bundle configured) |
-| Linux | Not supported |
+| macOS 11+ | Supported (Apple Silicon and Intel), ad-hoc signed |
+| Linux (X11) | Supported via AppImage (x86_64) |
 
-Releases are unsigned. Windows users will see a SmartScreen warning on first install.
+Releases are unsigned. Windows users will see a SmartScreen warning on first install. macOS builds are ad-hoc signed, so the first launch needs the steps below.
 
 ## Features
 
@@ -74,6 +74,21 @@ Releases are unsigned. Windows users will see a SmartScreen warning on first ins
 ### Download Pre-built Binaries
 
 Download the latest installer from the [Releases page](https://github.com/TrygerZ/VoxiType/releases). Choose Groq for cloud transcription or configure offline whisper.cpp during first-run setup.
+
+### macOS
+
+1. Open the `.dmg` and drag VoxiType to Applications.
+2. Launch it with right-click > Open the first time. If macOS reports the app is damaged, run `xattr -cr /Applications/VoxiType.app` and try again.
+3. Grant Accessibility permission on first dictation. macOS shows its prompt, and VoxiType reports the failure if the permission is still missing. Enable VoxiType under System Settings, Privacy and Security, Accessibility.
+
+### Linux
+
+```bash
+chmod +x VoxiType_*.AppImage
+./VoxiType_*.AppImage
+```
+
+The tray needs an appindicator host; GNOME requires the AppIndicator extension. VoxiType requires an X11 session: on Wayland the global hotkey and text injection are unavailable, and the app shows a notice instead of working. Native Wayland clients cannot be dictated into yet.
 
 ### Build from Source
 

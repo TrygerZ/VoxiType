@@ -1,9 +1,11 @@
 import { useState } from "react";
 
 import { formatTauriError, setHotkey } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
 import { invokeAction } from "../../lib/invokeAction";
 import { useT } from "../../lib/i18n";
 import { getHotkeySetting } from "../../lib/settingsGuards";
+import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { CompleteStep } from "./steps/CompleteStep";
 import { DataDirectoryStep } from "./steps/DataDirectoryStep";
@@ -40,7 +42,11 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [error, setError] = useState("");
   const [hotkeyError, setHotkeyError] = useState("");
   const [busy, setBusy] = useState(false);
+  const platform = usePlatform();
   const currentStepIdx = STEPS.indexOf(step);
+
+  // Stored accelerators use the cross-platform "Super" token; macOS shows Cmd.
+  const hotkeyDisplay = formatAccelerator(hotkeyKey, platform);
 
   const finish = async () => {
     if (busy) return;
@@ -117,11 +123,11 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   if (step === "welcome") return <WelcomeStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} onStart={() => setStep("quick_settings")} onSkip={() => void finish()} />;
   if (step === "quick_settings") return <QuickSettingsStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} lang={language} soundCues={soundCues} onLanguageChange={(value) => { setLanguage(value); void invokeAction(() => update("language", value)); }} onSoundCuesChange={setSoundCues} onBack={() => setStep("welcome")} onContinue={saveQuickSettings} />;
   if (step === "microphone") return <MicrophoneStep step={step} currentStepIdx={currentStepIdx} t={t} busy={busy} selectedDevice={micDevice} onDeviceChange={setMicDevice} onBack={() => setStep("quick_settings")} onContinue={() => void saveMicrophone()} onSkip={() => setStep("stt_setup")} />;
-  if (step === "stt_setup") return <SttSetupStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} sttEngine={sttEngine} sttLanguage={sttLanguage} apiKey={apiKey} whisperBinary={binary} whisperModel={model} whisperThreads={threads} onEngineChange={setSttEngine} onLanguageChange={setSttLanguage} onApiKeyChange={setApiKey} onThreadsChange={setThreads} onBinaryChange={setBinary} onModelChange={setModel} onSave={() => void saveStt()} onBack={() => setStep("quick_settings")} onSkip={() => setStep("data_directory")} />;
+  if (step === "stt_setup") return <SttSetupStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} sttEngine={sttEngine} sttLanguage={sttLanguage} apiKey={apiKey} whisperBinary={binary} whisperModel={model} whisperThreads={threads} platform={platform} onEngineChange={setSttEngine} onLanguageChange={setSttLanguage} onApiKeyChange={setApiKey} onThreadsChange={setThreads} onBinaryChange={setBinary} onModelChange={setModel} onSave={() => void saveStt()} onBack={() => setStep("quick_settings")} onSkip={() => setStep("data_directory")} />;
   if (step === "data_directory") return <DataDirectoryStep step={step} currentStepIdx={currentStepIdx} t={t} onBack={() => setStep("stt_setup")} onSkip={() => setStep("hotkey")} onContinue={() => setStep("hotkey")} />;
-  if (step === "hotkey") return <HotkeyStep step={step} currentStepIdx={currentStepIdx} t={t} error={hotkeyError} busy={busy} hotkeyKey={hotkeyKey} hotkeyMode={hotkeyMode} onKeyChange={setHotkeyKey} onModeChange={setHotkeyMode} onBack={() => setStep("data_directory")} onContinue={saveHotkey} />;
-  if (step === "smoke_test") return <SmokeTestStep step={step} currentStepIdx={currentStepIdx} t={t} busy={busy} hotkeyKey={hotkeyKey} onBack={() => setStep("hotkey")} onContinue={() => setStep("complete")} onSkip={() => setStep("complete")} />;
-  return <CompleteStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} hotkeyKey={hotkeyKey} onFinish={() => void finish()} />;
+  if (step === "hotkey") return <HotkeyStep step={step} currentStepIdx={currentStepIdx} t={t} error={hotkeyError} busy={busy} hotkeyKey={hotkeyKey} hotkeyMode={hotkeyMode} platform={platform} onKeyChange={setHotkeyKey} onModeChange={setHotkeyMode} onBack={() => setStep("data_directory")} onContinue={saveHotkey} />;
+  if (step === "smoke_test") return <SmokeTestStep step={step} currentStepIdx={currentStepIdx} t={t} busy={busy} hotkeyDisplay={hotkeyDisplay} onBack={() => setStep("hotkey")} onContinue={() => setStep("complete")} onSkip={() => setStep("complete")} />;
+  return <CompleteStep step={step} currentStepIdx={currentStepIdx} t={t} error={error} busy={busy} hotkeyDisplay={hotkeyDisplay} onFinish={() => void finish()} />;
 }
 
 function setting(value: unknown, fallback: string) { return typeof value === "string" ? value : fallback; }

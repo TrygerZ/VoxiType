@@ -9,10 +9,52 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  create-release:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Create draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 ||
+            gh release create "${{ github.ref_name }}" \
+              --title "VoxiType ${{ github.ref_name }}" \
+              --notes "See the assets below to download and install this version." \
+              --draft
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libxkbcommon-dev \
+            libasound2-dev
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -22,6 +64,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -31,13 +75,41 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      - name: Build Tauri app (unsigned)
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "VoxiType ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install this version."
-          releaseDraft: true
-          prerelease: false
+          # No tagName/releaseDraft: the draft already exists, and a second
+          # creator would race the first.
+          args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}
+          retryAttempts: 2
+
+      # Fallback if the bundler skips ad-hoc signing and Gatekeeper reports
+      # "damaged": re-sign with `codesign --force --deep --sign - <app>` and
+      # rebuild the dmg with
+      # `hdiutil create -volname VoxiType -srcfolder <app> -ov -format UDZO <out>.dmg`.
+      - name: Verify macOS signature
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_PATH=$(find src-tauri/target -name "*.app" -type d | head -n 1)
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Upload installers to the draft
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # `find` instead of a `**` glob: the macOS runner's /bin/bash is 3.2,
+          # where `**` is a single `*` and cannot span `target/<triple>/release`.
+          files=()
+          while IFS= read -r path; do
+            files+=("$path")
+          done < <(find src-tauri/target -type f \( \
+            -path '*/bundle/dmg/*.dmg' -o \
+            -path '*/bundle/appimage/*.AppImage' -o \
+            -path '*/bundle/nsis/*-setup.exe' \
+          \))
+          [ ${#files[@]} -gt 0 ] || { echo "no installers produced"; exit 1; }
+          gh release upload "${{ github.ref_name }}" "${files[@]}" --clobber
+        shell: bash

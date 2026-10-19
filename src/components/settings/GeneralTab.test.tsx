@@ -327,7 +327,7 @@ describe("GeneralTab accessible names", () => {
       screen.getByRole("switch", { name: "Widget melayang" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("switch", { name: "Mulai dengan Windows" }),
+      screen.getByRole("switch", { name: "Mulai saat login" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("switch", { name: "Pembaruan otomatis" }),

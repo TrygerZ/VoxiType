@@ -1,7 +1,6 @@
 //! Microphone, hotkey, app-info, file picker, and update commands.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -13,9 +12,6 @@ use crate::hotkey;
 use crate::storage::SettingsManager;
 use crate::stt::{SttConfig, SttEngine, WhisperCppConfig};
 use crate::AppStateInner;
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -174,6 +170,9 @@ pub fn get_app_info<R: Runtime>(app: AppHandle<R>) -> Value {
         "name": "VoxiType",
         "version": app.package_info().version.to_string(),
         "tauri": "2",
+        "platform": std::env::consts::OS,
+        "is_wayland": std::env::var("XDG_SESSION_TYPE")
+            .is_ok_and(|v| v.eq_ignore_ascii_case("wayland")),
         "data_dir": state.app_data_dir.to_string_lossy(),
         "db_path": db_path.to_string_lossy(),
     })
@@ -278,18 +277,20 @@ pub fn ack_widget_reveal<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn pick_setup_file(
+pub async fn pick_setup_file<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppStateInner>,
     kind: String,
 ) -> std::result::Result<Option<String>, AppError> {
-    let picked = pick_gated_files(&state, &kind, 1).await?;
+    let picked = pick_gated_files(&app, &state, &kind, 1).await?;
     Ok(picked.into_iter().next())
 }
 
 /// Opens the native file dialog and remembers every selected file as an
 /// accepted path for `kind`. A cancelled dialog keeps the previous selection;
 /// selecting more than `max_files` is refused before anything is remembered.
-pub(crate) async fn pick_gated_files(
+pub(crate) async fn pick_gated_files<R: Runtime>(
+    app: &AppHandle<R>,
     state: &AppStateInner,
     kind: &str,
     max_files: usize,
@@ -297,7 +298,8 @@ pub(crate) async fn pick_gated_files(
     let picked = {
         let kind = kind.to_string();
         let multiple = max_files > 1;
-        tokio::task::spawn_blocking(move || pick_setup_file_blocking(&kind, multiple))
+        let app = app.clone();
+        tokio::task::spawn_blocking(move || pick_setup_file_blocking(&app, &kind, multiple))
             .await
             .map_err(|e| AppError::internal(format!("File picker failed: {e}")))??
     };
@@ -387,7 +389,8 @@ pub(crate) fn ensure_picker_backed_path(
 
 /// Selects a directory. `set_data_directory` only accepts this dialog's result.
 #[tauri::command]
-pub async fn pick_data_directory(
+pub async fn pick_data_directory<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppStateInner>,
     jobs: State<'_, super::file_transcription::FileJobState>,
 ) -> std::result::Result<Option<String>, AppError> {
@@ -396,9 +399,12 @@ pub async fn pick_data_directory(
     let Some(_picking) = jobs.begin_picking() else {
         return Ok(None);
     };
-    let picked = tokio::task::spawn_blocking(|| pick_directory_blocking(DATA_DIRECTORY_TITLE))
-        .await
-        .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
+    let picker_app = app.clone();
+    let picked = tokio::task::spawn_blocking(move || {
+        pick_directory_blocking(&picker_app, DATA_DIRECTORY_TITLE)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("Folder picker failed: {e}")))??;
     if let Some(path) = &picked {
         let canonical = Path::new(path)
             .canonicalize()
@@ -486,10 +492,30 @@ pub fn restart_app(
     app.restart();
 }
 
-pub(super) fn pick_directory_blocking(
+/// Open the native folder picker. Windows uses PowerShell; other platforms
+/// use the dialog plugin's Rust API (no IPC round trip, no npm package).
+pub(super) fn pick_directory_blocking<R: Runtime>(
+    app: &AppHandle<R>,
     title: &str,
 ) -> std::result::Result<Option<String>, AppError> {
-    let script = r#"
+    platform_picker::pick_directory(app, title)
+}
+
+#[cfg(windows)]
+mod platform_picker {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    use tauri::{AppHandle, Runtime};
+
+    use super::{CREATE_NO_WINDOW, PICKER_KIND_AUDIO_FILE};
+    use crate::error::AppError;
+
+    pub(super) fn pick_directory<R: Runtime>(
+        _app: &AppHandle<R>,
+        title: &str,
+    ) -> std::result::Result<Option<String>, AppError> {
+        let script = r#"
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = $env:VX_PICK_TITLE
@@ -498,30 +524,152 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     [Console]::Out.Write($dialog.SelectedPath)
 }
 "#;
-    let mut command = Command::new("powershell.exe");
-    command
-        .args([
-            "-NoProfile",
-            "-STA",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .env("VX_PICK_TITLE", title);
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
-    let output = command
-        .output()
-        .map_err(|e| AppError::internal(format!("Failed to open folder picker: {e}")))?;
-    if !output.status.success() {
-        return Err(AppError::internal(format!(
-            "Folder picker failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-STA",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ])
+            .env("VX_PICK_TITLE", title);
+        command.creation_flags(CREATE_NO_WINDOW);
+        let output = command
+            .output()
+            .map_err(|e| AppError::internal(format!("Failed to open folder picker: {e}")))?;
+        if !output.status.success() {
+            return Err(AppError::internal(format!(
+                "Folder picker failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!path.is_empty()).then_some(path))
     }
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!path.is_empty()).then_some(path))
+
+    pub(super) fn pick_files<R: Runtime>(
+        _app: &AppHandle<R>,
+        kind: &str,
+        multiple: bool,
+    ) -> std::result::Result<Vec<String>, AppError> {
+        let (title, filter) = match kind {
+            "whisper_binary" => (
+                "Select whisper-cli.exe",
+                "whisper-cli.exe|whisper-cli.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
+            ),
+            "whisper_model" => (
+                "Select whisper.cpp GGML model",
+                "GGML model files (ggml-*.bin)|ggml-*.bin|Binary model files (*.bin)|*.bin|All files (*.*)|*.*",
+            ),
+            PICKER_KIND_AUDIO_FILE => (
+                "Select an audio file to transcribe",
+                "Audio files|*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg;*.oga|All files (*.*)|*.*",
+            ),
+            _ => return Err(AppError::internal("Unknown setup file picker kind")),
+        };
+
+        let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = $env:VX_PICK_TITLE
+$dialog.Filter = $env:VX_PICK_FILTER
+$dialog.CheckFileExists = $true
+$dialog.Multiselect = $env:VX_PICK_MULTIPLE -eq '1'
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Out.Write($dialog.FileNames -join "`n")
+}
+"#;
+
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-STA",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ])
+            .env("VX_PICK_TITLE", title)
+            .env("VX_PICK_FILTER", filter)
+            .env("VX_PICK_MULTIPLE", if multiple { "1" } else { "0" });
+        command.creation_flags(CREATE_NO_WINDOW);
+
+        let output = command
+            .output()
+            .map_err(|e| AppError::internal(format!("Failed to open file picker: {e}")))?;
+        if !output.status.success() {
+            return Err(AppError::internal(format!(
+                "File picker failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect())
+    }
+}
+
+#[cfg(not(windows))]
+mod platform_picker {
+    use tauri::{AppHandle, Runtime};
+    use tauri_plugin_dialog::DialogExt;
+
+    use super::PICKER_KIND_AUDIO_FILE;
+    use crate::error::AppError;
+
+    pub(super) fn pick_directory<R: Runtime>(
+        app: &AppHandle<R>,
+        title: &str,
+    ) -> std::result::Result<Option<String>, AppError> {
+        let picked = app.dialog().file().set_title(title).blocking_pick_folder();
+        match picked {
+            Some(path) => path
+                .into_path()
+                .map(|p| Some(p.to_string_lossy().into_owned()))
+                .map_err(|e| AppError::internal(format!("Folder picker path invalid: {e}"))),
+            None => Ok(None),
+        }
+    }
+
+    pub(super) fn pick_files<R: Runtime>(
+        app: &AppHandle<R>,
+        kind: &str,
+        multiple: bool,
+    ) -> std::result::Result<Vec<String>, AppError> {
+        let (title, extensions): (&str, Vec<&str>) = match kind {
+            "whisper_binary" => ("Select whisper-cli", vec![]),
+            "whisper_model" => ("Select whisper.cpp GGML model", vec!["bin"]),
+            PICKER_KIND_AUDIO_FILE => (
+                "Select an audio file to transcribe",
+                vec!["mp3", "wav", "m4a", "aac", "flac", "ogg", "oga"],
+            ),
+            _ => return Err(AppError::internal("Unknown setup file picker kind")),
+        };
+        let mut dialog = app.dialog().file().set_title(title);
+        if !extensions.is_empty() {
+            dialog = dialog.add_filter("Supported files", &extensions);
+        }
+        let picked = if multiple {
+            dialog.blocking_pick_files().unwrap_or_default()
+        } else {
+            dialog.blocking_pick_file().into_iter().collect()
+        };
+        let mut out = Vec::with_capacity(picked.len());
+        for path in picked {
+            let p = path
+                .into_path()
+                .map_err(|e| AppError::internal(format!("File picker path invalid: {e}")))?;
+            out.push(p.to_string_lossy().into_owned());
+        }
+        Ok(out)
+    }
 }
 
 /// Persist whisper.cpp paths atomically after validating both.
@@ -605,71 +753,13 @@ fn store_whisper_paths(
     Ok(())
 }
 
-/// Returns the selected paths, one per line from the dialog; empty when cancelled.
-fn pick_setup_file_blocking(
+/// Returns the selected paths; empty when cancelled.
+fn pick_setup_file_blocking<R: Runtime>(
+    app: &AppHandle<R>,
     kind: &str,
     multiple: bool,
 ) -> std::result::Result<Vec<String>, AppError> {
-    let (title, filter) = match kind {
-        "whisper_binary" => (
-            "Select whisper-cli.exe",
-            "whisper-cli.exe|whisper-cli.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
-        ),
-        "whisper_model" => (
-            "Select whisper.cpp GGML model",
-            "GGML model files (ggml-*.bin)|ggml-*.bin|Binary model files (*.bin)|*.bin|All files (*.*)|*.*",
-        ),
-        PICKER_KIND_AUDIO_FILE => (
-            "Select an audio file to transcribe",
-            "Audio files|*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg;*.oga|All files (*.*)|*.*",
-        ),
-        _ => return Err(AppError::internal("Unknown setup file picker kind")),
-    };
-
-    let script = r#"
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = $env:VX_PICK_TITLE
-$dialog.Filter = $env:VX_PICK_FILTER
-$dialog.CheckFileExists = $true
-$dialog.Multiselect = $env:VX_PICK_MULTIPLE -eq '1'
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Out.Write($dialog.FileNames -join "`n")
-}
-"#;
-
-    let mut command = Command::new("powershell.exe");
-    command
-        .args([
-            "-NoProfile",
-            "-STA",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .env("VX_PICK_TITLE", title)
-        .env("VX_PICK_FILTER", filter)
-        .env("VX_PICK_MULTIPLE", if multiple { "1" } else { "0" });
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
-
-    let output = command
-        .output()
-        .map_err(|e| AppError::internal(format!("Failed to open file picker: {e}")))?;
-    if !output.status.success() {
-        return Err(AppError::internal(format!(
-            "File picker failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
-        .collect())
+    platform_picker::pick_files(app, kind, multiple)
 }
 
 pub(crate) fn resolve_test_api_key(
@@ -869,6 +959,23 @@ mod tests {
         let canonical_file = file.canonicalize().expect("canonicalize file failed");
         let clean = canonical_to_clean_string(&canonical_file);
         (canonical_file, clean)
+    }
+
+    #[test]
+    fn picker_helpers_are_platform_dispatchable() {
+        // Compile-time contract: the picker entry points take an AppHandle on
+        // every platform, so call sites do not need per-OS branching. The
+        // function-pointer coercion proves the signature without opening a
+        // dialog (which needs a real display).
+        let _dir: fn(
+            &tauri::AppHandle<tauri::Wry>,
+            &str,
+        ) -> std::result::Result<Option<String>, AppError> = pick_directory_blocking::<tauri::Wry>;
+        let _files: fn(
+            &tauri::AppHandle<tauri::Wry>,
+            &str,
+            bool,
+        ) -> std::result::Result<Vec<String>, AppError> = pick_setup_file_blocking::<tauri::Wry>;
     }
 
     #[test]

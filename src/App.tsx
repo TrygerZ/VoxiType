@@ -14,6 +14,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useSettingsStore } from "./stores/settingsStore";
 import { onEvent } from "./lib/tauri";
+import { useWayland } from "./lib/usePlatform";
 import { toast } from "./stores/toastStore";
 import type { NoticeEvent } from "./types/events";
 import { setLanguage, useT } from "./lib/i18n";
@@ -126,6 +127,17 @@ export default function App() {
       });
     }
   }, [loaded, error, settings.hotkey_unavailable, t]);
+
+  // Wayland has no global hotkey and no injection path with the current
+  // dependencies, so tell the user once instead of appearing to work.
+  const wayland = useWayland();
+  const waylandNoticeShown = useRef(false);
+  useEffect(() => {
+    if (wayland && !waylandNoticeShown.current) {
+      waylandNoticeShown.current = true;
+      toast(t("notice.wayland_unsupported"), "info");
+    }
+  }, [wayland, t]);
 
   if (!loaded) {
     return (
