@@ -176,7 +176,14 @@ fn normalize_seeded_hotkey(db: &Database) -> HotkeyConfig {
         Some(s) => s.clone(),
         None => HotkeyConfig::default(),
     };
-    if stored.as_ref().is_some_and(is_seed) && cfg.key != SEEDED_HOTKEY_KEY {
+    // Persist whenever the stored value differs from the effective one, which
+    // covers both the seed and a deleted row; otherwise the Settings UI would
+    // show a fallback that no longer matches the registered accelerator.
+    let needs_persist = match stored.as_ref() {
+        Some(s) => s.key != cfg.key || s.mode != cfg.mode,
+        None => true,
+    };
+    if needs_persist {
         if let Err(e) = SettingsManager::new(db).set("hotkey", &cfg) {
             tracing::warn!("Failed to persist normalized hotkey: {e}");
         }
@@ -218,7 +225,16 @@ pub fn run() {
     // main.rs). Must be registered before other plugins.
     #[cfg(not(windows))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        crate::tray::show_main_window(app);
+        // The plugin fires during `Builder::build`, which can run before the
+        // app `setup` creates the windows. Queueing on the main thread defers
+        // the reveal until `setup` has finished, so the window exists.
+        let handle = app.clone();
+        if app
+            .run_on_main_thread(move || crate::tray::show_main_window(&handle))
+            .is_err()
+        {
+            tracing::warn!("Failed to queue main window reveal for a second instance");
+        }
     }));
 
     // Non-Windows pickers run through the dialog plugin (Rust API only).
@@ -422,6 +438,9 @@ pub fn run() {
                     if let Some(state) = app_handle.try_state::<AppStateInner>() {
                         state.widget_timer.shutdown();
                     }
+                    // Release the clipboard owner before the process exits so
+                    // X11 hands the current contents to a clipboard manager.
+                    injection::clipboard::shutdown();
                 }
                 // macOS: clicking the dock icon while the main window is
                 // hidden must bring it back (the window has no close-to-quit
