@@ -6,7 +6,7 @@ interface Option {
   label: string;
 }
 
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   options: Option[];
 }
@@ -26,16 +26,20 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <select
             ref={ref}
             id={selectId}
-            className={`w-full appearance-none rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 pr-9 text-sm text-vx-text-primary transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-vx-accent disabled:cursor-not-allowed ${className}`}
+            className={`w-full appearance-none rounded-[8px] bg-vx-bg-subtle border border-vx-border-default px-3 py-2 pr-9 text-[13px] leading-[18px] text-vx-text-primary transition-[border-color,box-shadow] duration-[120ms] ease-[var(--ease-vx-out)] focus:outline-none focus:border-vx-accent-ember focus:ring-1 focus:ring-vx-accent-ember disabled:cursor-not-allowed ${className}`}
             {...rest}
           >
             {options.map((o) => (
-              <option key={o.value} value={o.value}>
+              <option
+                key={o.value}
+                value={o.value}
+                className="bg-vx-bg-surface text-vx-text-primary"
+              >
                 {o.label}
               </option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-dim" />
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-vx-text-muted" />
         </div>
       </label>
     );

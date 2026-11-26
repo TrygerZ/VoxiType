@@ -1,4 +1,4 @@
-interface SwitchProps {
+export interface SwitchProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: string;
@@ -28,18 +28,22 @@ export function Switch({
           onChange(!checked);
         }
       }}
-      className={`inline-flex items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
+      className={`inline-flex items-center gap-3 text-left rounded-[8px] focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-canvas ${
         disabled ? "opacity-40 cursor-not-allowed" : ""
       }`}
     >
       <span
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-in-out ${
-          checked ? "bg-vx-accent" : "bg-vx-border-strong"
+        className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors duration-[180ms] ease-[var(--ease-vx-out)] ${
+          checked
+            ? "bg-vx-bg-inverse border-vx-bg-inverse"
+            : "bg-vx-bg-elevated border-vx-border-strong"
         }`}
       >
         <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-vx-sm transition-transform duration-200 ease-in-out ${
-            checked ? "translate-x-4" : "translate-x-0.5"
+          className={`absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full transition-transform duration-[180ms] ease-[var(--ease-vx-out)] ${
+            checked
+              ? "translate-x-[17px] bg-vx-text-inverse"
+              : "translate-x-[3px] bg-vx-text-primary"
           }`}
         />
       </span>

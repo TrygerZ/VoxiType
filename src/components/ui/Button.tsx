@@ -1,32 +1,33 @@
 import { type ButtonHTMLAttributes, forwardRef } from "react";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "ember";
 type Size = "sm" | "md" | "lg";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: "bg-vx-accent text-vx-bg-primary hover:bg-vx-accent-hover",
+  primary: "bg-vx-bg-inverse text-vx-text-inverse hover:opacity-90",
   secondary:
-    "bg-vx-bg-tertiary text-vx-text-primary hover:bg-vx-bg-elevated",
+    "bg-vx-bg-subtle border border-vx-border-default text-vx-text-primary hover:bg-vx-bg-elevated",
   ghost:
-    "bg-transparent text-vx-text-secondary hover:bg-vx-bg-tertiary hover:text-vx-text-primary",
-  danger: "bg-vx-error/15 text-vx-error hover:bg-vx-error/25",
+    "bg-transparent text-vx-text-secondary hover:bg-vx-bg-subtle hover:text-vx-text-primary",
+  danger: "bg-vx-semantic-error-soft text-vx-semantic-error hover:opacity-90",
+  ember: "bg-vx-accent-ember text-vx-stone-0 hover:opacity-90",
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: "text-xs px-3 py-1.5 gap-1.5",
-  md: "text-sm px-4 py-2 gap-2",
-  lg: "text-sm px-5 py-2.5 gap-2",
+  sm: "h-[30px] px-3 text-[13px] gap-1.5",
+  md: "h-9 px-4 text-[13px] gap-2",
+  lg: "h-10 px-5 text-sm gap-2",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = "secondary", size = "md", className = "", ...rest }, ref) => {
     const base =
-      "inline-flex items-center justify-center rounded-lg font-medium transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary";
+      "inline-flex items-center justify-center rounded-[8px] font-medium transition-[background-color,border-color,color,opacity] duration-[120ms] ease-[var(--ease-vx-out)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-canvas";
     return (
       <button
         ref={ref}

@@ -1,7 +1,7 @@
 import { type InputHTMLAttributes, forwardRef, useId, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: string;
   showPasswordToggle?: boolean;
@@ -27,7 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             type={inputType}
-            className={`w-full rounded-lg bg-vx-bg-tertiary px-3.5 py-2.5 text-sm text-vx-text-primary placeholder:text-vx-text-dim transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-vx-accent ${
+            className={`w-full bg-vx-bg-subtle border border-vx-border-default rounded-[8px] px-3 py-2 text-[13px] leading-[18px] text-vx-text-primary placeholder:text-vx-text-muted transition-[border-color,box-shadow] duration-[120ms] ease-[var(--ease-vx-out)] focus:outline-none focus:border-vx-accent-ember focus:ring-1 focus:ring-vx-accent-ember ${
               showPasswordToggle ? "pr-10" : ""
             } ${className}`}
             {...rest}
@@ -36,7 +36,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             <button
               type="button"
               onClick={() => setVisible((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-vx-text-dim hover:text-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-[5px] text-vx-text-muted hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-canvas transition-colors"
               aria-label={
                 visible
                   ? label
@@ -55,7 +55,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             </button>
           )}
         </div>
-        {hint && <span className="text-xs text-vx-text-dim">{hint}</span>}
+        {hint && <span className="text-xs text-vx-text-muted">{hint}</span>}
       </label>
     );
   },
