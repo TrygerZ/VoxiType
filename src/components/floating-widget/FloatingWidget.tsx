@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, Check } from "lucide-react";
+
+import { useT } from "../../lib/i18n";
+import { getHotkeySetting } from "../../lib/settingsGuards";
 import {
   ackWidgetHide,
   ackWidgetReveal,
   onEvent,
   resetWidgetIdleTimer,
 } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
 import { useAppStore } from "../../stores/appStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import type {
   WidgetHideRequestedEvent,
   WidgetRevealRequestedEvent,
 } from "../../types/events";
+import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { Waveform } from "./Waveform";
 
 export type WidgetPhase =
@@ -42,23 +49,38 @@ function isWidgetRevealRequestedEvent(
   );
 }
 
+function formatDuration(seconds: number): string {
+  const safe = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function hideBrokenLogo(event: SyntheticEvent<HTMLImageElement>) {
+  event.currentTarget.style.display = "none";
+}
+
 export function FloatingWidget({
   alwaysRender = false,
 }: {
   alwaysRender?: boolean;
 }) {
+  const t = useT();
   const state = useAppStore((s) => s.state);
+  const durationSec = useAppStore((s) => s.durationSec);
   const wordCount = useAppStore((s) => s.wordCount);
   const errorMessage = useAppStore((s) => s.errorMessage);
   const outcome = useAppStore((s) => s.outcome);
   const reset = useAppStore((s) => s.reset);
+  const rawHotkey = useSettingsStore((s) => s.settings.hotkey);
+  const platform = usePlatform();
 
   const [phase, setPhase] = useState<WidgetPhase>("normal");
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const clearAnimationTimers = useCallback(() => {
-    for (const t of timersRef.current) {
-      clearTimeout(t);
+    for (const timer of timersRef.current) {
+      clearTimeout(timer);
     }
     timersRef.current = [];
   }, []);
@@ -67,10 +89,10 @@ export function FloatingWidget({
     clearAnimationTimers();
     if (prefersReducedMotion()) {
       setPhase("revealing-fade");
-      const t = setTimeout(() => {
+      const timer = setTimeout(() => {
         setPhase("normal");
       }, REDUCED_MOTION_FADE_MS);
-      timersRef.current.push(t);
+      timersRef.current.push(timer);
       return;
     }
 
@@ -91,11 +113,11 @@ export function FloatingWidget({
 
       if (prefersReducedMotion()) {
         setPhase("hiding-fade");
-        const t = setTimeout(() => {
+        const timer = setTimeout(() => {
           setPhase("hidden");
           void ackWidgetHide(hideId).catch((_err: unknown) => {});
         }, REDUCED_MOTION_FADE_MS);
-        timersRef.current.push(t);
+        timersRef.current.push(timer);
         return;
       }
 
@@ -183,74 +205,17 @@ export function FloatingWidget({
     (state === "idle" && wordCount !== null) || state === "error";
   useEffect(() => {
     if (!alwaysRender || !showingResult) return;
-    const t = setTimeout(() => reset(), 2200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => reset(), 2200);
+    return () => clearTimeout(timer);
   }, [alwaysRender, showingResult, wordCount, reset]);
 
   if (!alwaysRender && state === "idle" && !errorMessage) return null;
 
-  // Premium dynamic borders and ambient shadows matching HomeView.tsx
-  const stateStyles = {
-    idle: {
-      accent: "text-vx-accent bg-vx-accent-soft",
-      container:
-        "border-vx-border/50 bg-vx-bg-secondary/70 shadow-vx-md hover:border-vx-accent/30",
-    },
-    recording: {
-      accent:
-        "text-vx-error bg-vx-error/15 shadow-[0_0_12px_rgba(204,139,125,0.2)]",
-      container:
-        "border-vx-error/30 bg-vx-bg-secondary/80 shadow-[0_0_24px_rgba(204,139,125,0.25)]",
-    },
-    processing: {
-      accent: "text-vx-warning bg-vx-warning/15",
-      container:
-        "border-vx-warning/30 bg-vx-bg-secondary/80 shadow-[0_0_24px_rgba(212,182,133,0.25)]",
-    },
-    success: {
-      accent: "text-vx-success bg-vx-success/15",
-      container:
-        "border-vx-success/30 bg-vx-bg-secondary/80 shadow-[0_0_24px_rgba(138,174,147,0.25)]",
-    },
-    error: {
-      accent: "text-vx-error bg-vx-error/15",
-      container:
-        "border-vx-error/30 bg-vx-bg-secondary/80 shadow-[0_0_24px_rgba(204,139,125,0.25)]",
-    },
-  };
-
   const isSuccess = state === "idle" && wordCount !== null;
-  // A green pill would claim the text landed in the target app. When the
-  // backend reports it did not, show the error tint instead; the toast carries
-  // the copy action.
   const reachedTarget = outcome?.injected !== false;
-  const currentStyle = errorMessage
-    ? stateStyles.error
-    : isSuccess && !reachedTarget
-      ? stateStyles.error
-      : isSuccess
-        ? stateStyles.success
-        : state === "recording"
-          ? stateStyles.recording
-          : state === "processing"
-            ? stateStyles.processing
-            : stateStyles.idle;
-
-  // Select color and state configuration for the waveform bars
-  let barClassName = "bg-vx-accent";
-  let waveformActive = false;
-
-  if (errorMessage || state === "error" || (isSuccess && !reachedTarget)) {
-    barClassName = "bg-vx-error";
-  } else if (isSuccess) {
-    barClassName = "bg-vx-success";
-  } else if (state === "recording") {
-    barClassName = "bg-vx-error";
-    waveformActive = true;
-  } else if (state === "processing") {
-    barClassName = "bg-vx-warning animate-pulse";
-    waveformActive = false;
-  }
+  const isErrorOrMissed =
+    Boolean(errorMessage) || state === "error" || (isSuccess && !reachedTarget);
+  const isInjectedSuccess = isSuccess && reachedTarget;
 
   const handlePointerActivity = () => {
     if (phase === "hiding-shrink" || phase === "hiding-fade") {
@@ -259,8 +224,11 @@ export function FloatingWidget({
     void resetWidgetIdleTimer().catch((_err: unknown) => {});
   };
 
-  const isContentVisible =
-    phase === "normal" || phase === "revealing-expand";
+  const isCapsuleOrHidden =
+    phase === "hiding-shrink" ||
+    phase === "hiding-fade" ||
+    phase === "hidden" ||
+    phase === "revealing-fade";
 
   const pillPhaseClass =
     phase === "normal" || phase === "revealing-expand"
@@ -269,6 +237,27 @@ export function FloatingWidget({
         ? "vx-widget-pill--capsule"
         : "vx-widget-pill--hidden";
 
+  const isContentVisible =
+    phase === "normal" || phase === "revealing-expand";
+
+  const stateBorderClass = isCapsuleOrHidden
+    ? "border-vx-border-strong justify-center px-2"
+    : isErrorOrMissed
+      ? "border-vx-semantic-error px-3 gap-2"
+      : isInjectedSuccess
+        ? "border-vx-semantic-success px-3 gap-2"
+        : state === "recording"
+          ? "border-vx-accent-ember px-2.5 gap-2"
+          : "border-vx-border-default hover:border-vx-border-strong px-2.5 gap-2";
+
+  const hotkey = getHotkeySetting(rawHotkey, {
+    key: "Ctrl+Space",
+    mode: "ptt",
+  });
+  const hotkeyLabel = formatAccelerator(hotkey.key, platform)
+    .split("+")
+    .join(" + ");
+
   return (
     <div
       data-tauri-drag-region
@@ -276,50 +265,107 @@ export function FloatingWidget({
       data-animation-phase={phase}
       onPointerEnter={handlePointerActivity}
       onPointerDown={handlePointerActivity}
-      className={`vx-widget-pill pointer-events-auto flex h-10 w-28 items-center gap-2.5 rounded-full border px-2.5 select-none ${pillPhaseClass} ${currentStyle.container}`}
+      className={`vx-widget-pill pointer-events-auto flex items-center rounded-full border bg-vx-bg-elevated shadow-vx-widget select-none ${pillPhaseClass} ${stateBorderClass}`}
     >
-      {/* VoxiType Logo */}
-      <div
-        data-tauri-drag-region
-        className={`vx-widget-content pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border border-vx-border/40 bg-vx-bg-tertiary ${
-          isContentVisible
-            ? "vx-widget-content--visible"
-            : "vx-widget-content--hidden"
-        }`}
-      >
-        <img
+      {isCapsuleOrHidden ? (
+        <div
           data-tauri-drag-region
-          src="/logo.png"
-          alt="VoxiType Logo"
-          className="h-full w-full object-contain"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
-        />
-      </div>
-
-      {/* Audio strength indicator (Waveform or Bouncing Dots) */}
-      <div
-        data-tauri-drag-region
-        className={`vx-widget-content pointer-events-none flex flex-1 items-center justify-center min-w-0 ${
-          isContentVisible
-            ? "vx-widget-content--visible"
-            : "vx-widget-content--hidden"
-        }`}
-      >
-        {state === "processing" ? (
-          <div
-            className="flex h-5 items-center justify-center gap-1.5"
-            aria-hidden
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-vx-warning animate-bounce [animation-delay:-0.3s]" />
-            <span className="h-1.5 w-1.5 rounded-full bg-vx-warning animate-bounce [animation-delay:-0.15s]" />
-            <span className="h-1.5 w-1.5 rounded-full bg-vx-warning animate-bounce" />
-          </div>
-        ) : (
-          <Waveform active={waveformActive} barClassName={barClassName} />
-        )}
-      </div>
+          className="pointer-events-none flex h-[18px] w-[18px] shrink-0 items-center justify-center"
+        >
+          <img
+            data-tauri-drag-region
+            src="/logo.png"
+            alt="VoxiType Logo"
+            className="h-[18px] w-[18px] object-contain"
+            onError={hideBrokenLogo}
+          />
+        </div>
+      ) : (
+        <div
+          data-tauri-drag-region
+          className={`vx-widget-content pointer-events-none flex min-w-0 items-center gap-2 ${
+            isContentVisible
+              ? "vx-widget-content--visible"
+              : "vx-widget-content--hidden"
+          }`}
+        >
+          {isErrorOrMissed ? (
+            <>
+              <AlertTriangle
+                className="h-3.5 w-3.5 shrink-0 text-vx-semantic-error"
+                strokeWidth={1.75}
+              />
+              <span className="truncate whitespace-nowrap text-[11px] font-medium text-vx-text-primary">
+                {t("widget.copied_fallback")}
+              </span>
+            </>
+          ) : isInjectedSuccess ? (
+            <>
+              <Check
+                className="h-3.5 w-3.5 shrink-0 text-vx-semantic-success"
+                strokeWidth={2}
+              />
+              <span className="whitespace-nowrap text-[11px] font-medium text-vx-text-primary">
+                {t("widget.injected_words", { count: wordCount ?? 0 })}
+              </span>
+            </>
+          ) : state === "processing" ? (
+            <>
+              <div className="flex h-4 items-center gap-[3px]" aria-hidden>
+                <span className="h-2 w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse" />
+                <span className="h-3.5 w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse [animation-delay:150ms]" />
+                <span className="h-2 w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse [animation-delay:300ms]" />
+              </div>
+              <span className="whitespace-nowrap text-[11px] font-medium text-vx-text-primary">
+                {t("widget.formatting")}
+              </span>
+            </>
+          ) : state === "recording" ? (
+            <>
+              <div
+                data-tauri-drag-region
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-vx-bg-subtle"
+              >
+                <img
+                  data-tauri-drag-region
+                  src="/logo.png"
+                  alt="VoxiType Logo"
+                  className="h-5 w-5 object-contain"
+                  onError={hideBrokenLogo}
+                />
+              </div>
+              <div className="flex w-11 items-center">
+                <Waveform
+                  active
+                  barCount={12}
+                  barClassName="bg-vx-accent-ember"
+                />
+              </div>
+              <span className="font-mono text-[11px] font-medium tabular-nums text-vx-accent-ember">
+                {formatDuration(durationSec)}
+              </span>
+            </>
+          ) : (
+            <>
+              <div
+                data-tauri-drag-region
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-vx-bg-subtle"
+              >
+                <img
+                  data-tauri-drag-region
+                  src="/logo.png"
+                  alt="VoxiType Logo"
+                  className="h-5 w-5 object-contain"
+                  onError={hideBrokenLogo}
+                />
+              </div>
+              <span className="whitespace-nowrap font-mono text-[11px] font-medium text-vx-text-secondary">
+                {hotkeyLabel}
+              </span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

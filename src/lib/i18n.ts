@@ -642,6 +642,9 @@ export const id: Dict = {
   "home.translate_after_arrow": "Terjemahkan setelah dikte -> {target}",
   "home.view_all_history": "Lihat semua di Riwayat ->",
   "home.open_history": "Buka Riwayat",
+  "widget.formatting": "Memformat...",
+  "widget.injected_words": "Masuk · {count}w",
+  "widget.copied_fallback": "Tersalin · tempel manual",
 };
 
 export const en: Dict = {
@@ -1281,6 +1284,9 @@ export const en: Dict = {
   "home.translate_after_arrow": "Translate after dictation -> {target}",
   "home.view_all_history": "View all in History ->",
   "home.open_history": "Open History",
+  "widget.formatting": "Formatting...",
+  "widget.injected_words": "Injected · {count}w",
+  "widget.copied_fallback": "Copied · paste manually",
 };
 
 const dictionaries: Record<string, Dict> = { id, en };

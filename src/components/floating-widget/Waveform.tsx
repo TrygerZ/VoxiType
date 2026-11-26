@@ -4,10 +4,21 @@ import type { AudioLevelEvent } from "../../types/events";
 
 interface WaveformProps {
   active: boolean;
+  barCount?: number;
   barClassName?: string;
 }
 
 const STATIC_WAVE = [0.15, 0.25, 0.45, 0.65, 0.8, 0.65, 0.45, 0.35, 0.55, 0.75, 0.65, 0.45, 0.25, 0.15];
+
+function buildInitialWave(barCount: number): number[] {
+  if (barCount === STATIC_WAVE.length) return STATIC_WAVE;
+  return Array.from({ length: barCount }, (_, index) => {
+    const mappedIndex = Math.round(
+      (index / Math.max(1, barCount - 1)) * (STATIC_WAVE.length - 1),
+    );
+    return STATIC_WAVE[mappedIndex] ?? 0.25;
+  });
+}
 
 const boostLevel = (lvl: number): number => {
   if (lvl <= 0) return 0;
@@ -20,16 +31,19 @@ const nextBarValue = (lvl: number): number => {
   return Math.max(0.08, Math.min(1, boostLevel(lvl) * jitter));
 };
 
-function useWaveformBars(active: boolean): number[] {
-  const [bars, setBars] = useState<number[]>(STATIC_WAVE);
+function useWaveformBars(active: boolean, barCount: number): number[] {
+  const [bars, setBars] = useState<number[]>(() => buildInitialWave(barCount));
   const levelRef = useRef(0);
 
   useEffect(() => {
     if (!active) {
-      setBars(STATIC_WAVE);
+      setBars(buildInitialWave(barCount));
       levelRef.current = 0;
       return;
     }
+    setBars((prev) =>
+      prev.length === barCount ? prev : buildInitialWave(barCount),
+    );
     const unlistenPromise = onEvent<AudioLevelEvent>("audio_level", (p) => {
       levelRef.current = p.level;
     });
@@ -40,22 +54,25 @@ function useWaveformBars(active: boolean): number[] {
       clearInterval(id);
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
-  }, [active]);
+  }, [active, barCount]);
 
   return bars;
 }
 
-export function Waveform({ active, barClassName }: WaveformProps) {
-  const bars = useWaveformBars(active);
+export function Waveform({
+  active,
+  barCount = STATIC_WAVE.length,
+  barClassName,
+}: WaveformProps) {
+  const bars = useWaveformBars(active, barCount);
 
   return (
     <div className="flex h-5 flex-1 items-center gap-[2px]" aria-hidden>
-      {/* ponytail: index key is intentional - bars are stateless identical spans,
-          stable IDs would fight the sliding-window animation */}
+      {/* Index key is intentional: bars are stateless spans that slide left. */}
       {bars.map((v, i) => (
         <span
           key={i}
-          className={`flex-1 rounded-full transition-[height] duration-[50ms] ${barClassName || "bg-vx-accent"}`}
+          className={`vx-wave-bar flex-1 rounded-full transition-[height] duration-[50ms] ${barClassName || "bg-vx-accent-ember"}`}
           style={{ height: `${Math.max(12, v * 100)}%` }}
         />
       ))}

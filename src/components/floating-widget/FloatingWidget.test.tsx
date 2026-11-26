@@ -300,9 +300,10 @@ describe("FloatingWidget", () => {
 
     render(<FloatingWidget alwaysRender />);
 
-    expect(screen.getByTestId("floating-widget-pill")).not.toHaveClass(
-      "border-vx-success/30",
-    );
+    const pill = screen.getByTestId("floating-widget-pill");
+    expect(pill).not.toHaveClass("border-vx-semantic-success");
+    expect(pill).toHaveClass("border-vx-semantic-error");
+    expect(screen.getByText("Copied · paste manually")).toBeInTheDocument();
   });
 
   it("unregisters listeners immediately if resolved after effect unmount (disposed flag)", async () => {
@@ -330,5 +331,61 @@ describe("FloatingWidget", () => {
 
     // Disposed check must call unlisten immediately
     expect(hideUnlistenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders idle matte pill with official logo, shortcut, and zero glow or glass classes", () => {
+    render(<FloatingWidget alwaysRender />);
+
+    const pill = screen.getByTestId("floating-widget-pill");
+    expect(pill).toHaveClass("bg-vx-bg-elevated", "shadow-vx-widget", "border-vx-border-default");
+    expect(pill.className).not.toMatch(/backdrop-blur|vx-glass|shadow-\[/);
+
+    const logo = screen.getByAltText("VoxiType Logo");
+    expect(logo).toHaveAttribute("src", "/logo.png");
+    expect(screen.getByText("Ctrl + Space")).toBeInTheDocument();
+  });
+
+  it("renders recording state with Ember border, 12-bar Waveform, and timer", () => {
+    useAppStore.setState({ state: "recording", durationSec: 8 });
+    render(<FloatingWidget alwaysRender />);
+
+    const pill = screen.getByTestId("floating-widget-pill");
+    expect(pill).toHaveClass("border-vx-accent-ember");
+    expect(screen.getByText("00:08")).toBeInTheDocument();
+    expect(pill.querySelectorAll(".vx-wave-bar")).toHaveLength(12);
+  });
+
+  it("renders processing and injected success states with semantic borders", () => {
+    useAppStore.setState({ state: "processing" });
+    const { rerender } = render(<FloatingWidget alwaysRender />);
+
+    expect(screen.getByText("Formatting...")).toBeInTheDocument();
+
+    act(() => {
+      useAppStore.setState({
+        state: "idle",
+        wordCount: 24,
+        outcome: { injected: true, appContext: "notepad" },
+      });
+    });
+    rerender(<FloatingWidget alwaysRender />);
+
+    const pill = screen.getByTestId("floating-widget-pill");
+    expect(pill).toHaveClass("border-vx-semantic-success");
+    expect(screen.getByText("Injected · 24w")).toBeInTheDocument();
+  });
+
+  it("renders capsule phase with border-vx-border-strong and visible centered logo", async () => {
+    vi.useFakeTimers();
+    render(<FloatingWidget alwaysRender />);
+
+    await act(async () => {
+      eventHandlers["floating_widget_hide_requested"]?.({ id: 201 });
+    });
+
+    const pill = screen.getByTestId("floating-widget-pill");
+    expect(pill).toHaveClass("vx-widget-pill--capsule", "border-vx-border-strong");
+    const logoWrapper = screen.getByAltText("VoxiType Logo").parentElement;
+    expect(logoWrapper).not.toHaveClass("vx-widget-content--hidden");
   });
 });
