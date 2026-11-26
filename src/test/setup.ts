@@ -66,6 +66,7 @@ vi.mock("../lib/tauri", () => ({
   ackWidgetReveal: vi.fn().mockResolvedValue(undefined),
   getDictionary: vi.fn().mockResolvedValue([]),
   addDictionaryWord: vi.fn().mockResolvedValue(undefined),
+  updateDictionaryWord: vi.fn().mockResolvedValue(undefined),
   deleteDictionaryWord: vi.fn().mockResolvedValue(undefined),
   setDictionaryActive: vi.fn().mockResolvedValue(undefined),
   getHistory: vi.fn().mockResolvedValue([]),

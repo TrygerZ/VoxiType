@@ -20,6 +20,7 @@ import {
   listRunningApps,
   setPerAppMode,
   testOllama,
+  updateDictionaryWord,
 } from "./tauri";
 
 describe("widget acknowledgement wrappers", () => {
@@ -66,5 +67,22 @@ describe("per-app wrappers", () => {
 
     await listRunningApps();
     expect(invokeMock).toHaveBeenCalledWith("list_running_apps");
+  });
+});
+
+describe("updateDictionaryWord wrapper", () => {
+  it("invokes update_dictionary_word with entry payload", async () => {
+    const entry = {
+      id: "d1",
+      word: "VoxiType",
+      pronunciation: null,
+      category: "custom",
+      replacement: "VoxiType",
+      language: "en",
+      usage_count: 0,
+      is_active: true,
+    };
+    await updateDictionaryWord(entry);
+    expect(invokeMock).toHaveBeenCalledWith("update_dictionary_word", { entry });
   });
 });

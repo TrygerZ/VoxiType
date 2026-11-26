@@ -19,6 +19,7 @@ import { toast } from "../ui/Toast";
 type FilterChip = "all" | "active" | "replacements";
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const MAX_WORD_LENGTH = 256;
 
 function DictionaryEntryRow({
   t,
@@ -121,6 +122,7 @@ function DictionaryEditRow({
             autoFocus
             aria-label={t("dictionary.placeholder_word")}
             placeholder={t("dictionary.placeholder_word_v2")}
+            maxLength={MAX_WORD_LENGTH}
             value={editWord}
             onChange={(e) => onChangeWord(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -130,6 +132,7 @@ function DictionaryEditRow({
           <Input
             aria-label={t("dictionary.placeholder_rep")}
             placeholder={t("dictionary.placeholder_rep_v2")}
+            maxLength={MAX_WORD_LENGTH}
             value={editReplacement}
             onChange={(e) => onChangeReplacement(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -166,6 +169,7 @@ export function DictionaryPanel() {
   const error = useDictionaryStore((s) => s.error);
   const load = useDictionaryStore((s) => s.load);
   const add = useDictionaryStore((s) => s.add);
+  const updateWord = useDictionaryStore((s) => s.updateWord);
   const remove = useDictionaryStore((s) => s.remove);
   const sttLanguage = useSettingsStore((s) => s.settings.stt_language);
 
@@ -239,12 +243,7 @@ export function DictionaryPanel() {
         word: trimmedWord,
         replacement: editReplacement.trim() || null,
       };
-      const ok = await invokeAction(async () => {
-        if (trimmedWord.toLowerCase() !== entry.word.toLowerCase()) {
-          await remove(entry.id);
-        }
-        await add(updated);
-      });
+      const ok = await invokeAction(() => updateWord(updated));
       if (ok) {
         setEditingId(null);
       }
@@ -343,6 +342,7 @@ export function DictionaryPanel() {
           <Input
             placeholder={t("dictionary.placeholder_word_v2")}
             aria-label={t("dictionary.placeholder_word")}
+            maxLength={MAX_WORD_LENGTH}
             value={word}
             onChange={(e) => setWord(e.target.value)}
             onKeyDown={(e) => {
@@ -354,6 +354,7 @@ export function DictionaryPanel() {
           <Input
             placeholder={t("dictionary.placeholder_rep_v2")}
             aria-label={t("dictionary.placeholder_rep")}
+            maxLength={MAX_WORD_LENGTH}
             value={replacement}
             onChange={(e) => setReplacement(e.target.value)}
             onKeyDown={(e) => {

@@ -80,6 +80,8 @@ export const getDictionary = () =>
   invoke<DictionaryEntry[]>("get_dictionary");
 export const addDictionaryWord = (entry: DictionaryEntry) =>
   invoke<void>("add_dictionary_word", { entry });
+export const updateDictionaryWord = (entry: DictionaryEntry) =>
+  invoke<void>("update_dictionary_word", { entry });
 export const setDictionaryActive = (id: string, active: boolean) =>
   invoke<void>("set_dictionary_active", { id, active });
 export const deleteDictionaryWord = (id: string) =>

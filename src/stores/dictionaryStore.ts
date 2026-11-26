@@ -5,6 +5,7 @@ import {
   deleteDictionaryWord,
   formatTauriError,
   getDictionary,
+  updateDictionaryWord,
 } from "../lib/tauri";
 
 interface DictionaryStore {
@@ -13,6 +14,7 @@ interface DictionaryStore {
   error: string | null;
   load: () => Promise<void>;
   add: (entry: DictionaryEntry) => Promise<void>;
+  updateWord: (entry: DictionaryEntry) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -21,6 +23,23 @@ export const useDictionaryStore = create<DictionaryStore>((set) => {
   // its result if it is still the latest, so a slow earlier load cannot
   // overwrite fresher entries out of order.
   let requestSeq = 0;
+
+  // Bump so a stale in-flight load cannot overwrite the post-mutation list.
+  // Clearing `loading` releases the flag the discarded load would leave set;
+  // the catch clears it too before rethrowing so `loading` never stays stuck.
+  const commitAndReload = async (mutate: () => Promise<void>) => {
+    const seq = ++requestSeq;
+    try {
+      await mutate();
+      const entries = await getDictionary();
+      if (seq === requestSeq) {
+        set({ entries, loading: false });
+      }
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
+  };
 
   return {
     entries: [],
@@ -42,23 +61,9 @@ export const useDictionaryStore = create<DictionaryStore>((set) => {
       }
     },
 
-    add: async (entry) => {
-      // Bump so a stale in-flight load cannot overwrite the post-add list.
-      // Clearing `loading` releases the flag the discarded load would leave set.
-      // On failure the discarded load's clear is skipped, so the catch clears it
-      // too before rethrowing; otherwise `loading` would stay stuck true.
-      const seq = ++requestSeq;
-      try {
-        await addDictionaryWord(entry);
-        const entries = await getDictionary();
-        if (seq === requestSeq) {
-          set({ entries, loading: false });
-        }
-      } catch (err) {
-        set({ loading: false });
-        throw err;
-      }
-    },
+    add: (entry) => commitAndReload(() => addDictionaryWord(entry)),
+
+    updateWord: (entry) => commitAndReload(() => updateDictionaryWord(entry)),
 
     // Bump so a stale in-flight load cannot commit afterwards and resurrect
     // the deleted entry. Clearing `loading` releases the flag that discarded

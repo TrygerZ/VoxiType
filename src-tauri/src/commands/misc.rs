@@ -1141,6 +1141,7 @@ mod tests {
             _log_guard: None,
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(std::collections::HashMap::new()),
+            authorized_drop_paths: std::sync::Mutex::new(Vec::new()),
             widget_timer: crate::overlay::WidgetTimerState::new(),
             mic_meter: crate::audio::MicMeterState::new(),
         }

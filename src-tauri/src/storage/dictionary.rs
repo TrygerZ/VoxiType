@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::db::Database;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DictionaryEntry {
@@ -77,6 +77,44 @@ impl<'a> DictionaryRepository<'a> {
                    replacement=excluded.replacement,
                    is_active=excluded.is_active,
                    updated_at=datetime('now')";
+
+    /// Update an existing dictionary entry in place by `id`.
+    ///
+    /// Rejects renames that collide with another row under the
+    /// `(word COLLATE NOCASE, language)` unique index instead of overwriting it,
+    /// and reports missing ids explicitly.
+    pub fn update_by_id(&self, e: &DictionaryEntry) -> Result<()> {
+        let updated = self.db.with_conn(|c| {
+            match c.execute(
+                "UPDATE dictionary_entries
+                 SET word = ?2, pronunciation = ?3, category = ?4, replacement = ?5, language = ?6, is_active = ?7, updated_at = datetime('now')
+                 WHERE id = ?1",
+                rusqlite::params![
+                    e.id,
+                    e.word,
+                    e.pronunciation,
+                    e.category,
+                    e.replacement,
+                    e.language,
+                    e.is_active as i32,
+                ],
+            ) {
+                Ok(count) => Ok(count),
+                Err(rusqlite::Error::SqliteFailure(err, _))
+                    if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    Err(AppError::invalid_input(
+                        "Dictionary word already exists for this language",
+                    ))
+                }
+                Err(err) => Err(err.into()),
+            }
+        })?;
+        if updated == 0 {
+            return Err(AppError::invalid_input("Dictionary entry not found"));
+        }
+        Ok(())
+    }
 
     pub fn upsert(&self, e: &DictionaryEntry) -> Result<()> {
         self.db.with_conn(|c| {
@@ -483,5 +521,85 @@ mod tests {
         repo.set_active("1", false).unwrap();
         assert!(repo.get_replacements().unwrap().is_empty());
         assert!(repo.get_hotwords().unwrap().is_empty());
+    }
+
+    #[test]
+    fn update_by_id_updates_word_casing_and_rejects_duplicate_collision() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = DictionaryRepository::new(&db);
+        repo.upsert(&DictionaryEntry {
+            id: "1".into(),
+            word: "voxitype".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("VoxiType".into()),
+            language: "en".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+        repo.upsert(&DictionaryEntry {
+            id: "2".into(),
+            word: "kubernetes".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("K8s".into()),
+            language: "en".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+
+        // Changing ASCII capitalization on the same row updates `word` in place.
+        repo.update_by_id(&DictionaryEntry {
+            id: "1".into(),
+            word: "VoxiType".into(),
+            pronunciation: None,
+            category: "custom".into(),
+            replacement: Some("VoxiType App".into()),
+            language: "en".into(),
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+
+        // Attempting to rename row 1 onto existing row 2 ("KUBERNETES") must fail
+        // without overwriting row 2 or deleting row 1.
+        let collision_err = repo
+            .update_by_id(&DictionaryEntry {
+                id: "1".into(),
+                word: "KUBERNETES".into(),
+                pronunciation: None,
+                category: "custom".into(),
+                replacement: Some("Clobbered".into()),
+                language: "en".into(),
+                usage_count: 0,
+                is_active: true,
+            })
+            .unwrap_err();
+        assert_eq!(collision_err.code, crate::error::ErrorCode::InvalidInput);
+
+        let missing_err = repo
+            .update_by_id(&DictionaryEntry {
+                id: "missing".into(),
+                word: "other".into(),
+                pronunciation: None,
+                category: "custom".into(),
+                replacement: None,
+                language: "en".into(),
+                usage_count: 0,
+                is_active: true,
+            })
+            .unwrap_err();
+        assert_eq!(missing_err.code, crate::error::ErrorCode::InvalidInput);
+
+        let all = repo.get_all(&DictFilter::default()).unwrap();
+        assert_eq!(all.len(), 2);
+        let row1 = all.iter().find(|e| e.id == "1").unwrap();
+        let row2 = all.iter().find(|e| e.id == "2").unwrap();
+        assert_eq!(row1.word, "VoxiType");
+        assert_eq!(row1.replacement.as_deref(), Some("VoxiType App"));
+        assert_eq!(row2.word, "kubernetes");
+        assert_eq!(row2.replacement.as_deref(), Some("K8s"));
     }
 }

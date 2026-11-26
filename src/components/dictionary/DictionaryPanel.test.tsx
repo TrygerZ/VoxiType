@@ -113,20 +113,43 @@ describe("DictionaryPanel", () => {
     await screen.findByText("voxy type");
 
     await user.click(screen.getByRole("button", { name: "Edit voxy type" }));
+    const wordInput = screen.getByDisplayValue("voxy type");
     const repInput = screen.getByDisplayValue("VoxiType");
+    expect(wordInput).toHaveAttribute("maxLength", "256");
+    expect(repInput).toHaveAttribute("maxLength", "256");
+
+    await user.clear(wordInput);
+    await user.type(wordInput, "Voxy Type");
     await user.clear(repInput);
     await user.type(repInput, "VoxiType Pro");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(tauri.addDictionaryWord).toHaveBeenCalledWith(
+      expect(tauri.updateDictionaryWord).toHaveBeenCalledWith(
         expect.objectContaining({
           id: "d1",
-          word: "voxy type",
+          word: "Voxy Type",
           replacement: "VoxiType Pro",
         }),
       );
     });
+    expect(tauri.deleteDictionaryWord).not.toHaveBeenCalled();
+
+    // Failed inline rename keeps edit row intact and never deletes the entry.
+    vi.mocked(tauri.updateDictionaryWord).mockRejectedValueOnce(
+      new Error("Dictionary word already exists for this language"),
+    );
+    await user.click(screen.getByRole("button", { name: "Edit voxy type" }));
+    const retryWordInput = screen.getByDisplayValue("voxy type");
+    await user.clear(retryWordInput);
+    await user.type(retryWordInput, "kubernetes");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(tauri.updateDictionaryWord).toHaveBeenCalledTimes(2);
+    });
+    expect(tauri.deleteDictionaryWord).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("kubernetes")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(
       screen.getByRole("switch", { name: "Deactivate voxy type" }),

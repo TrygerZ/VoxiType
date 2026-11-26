@@ -134,9 +134,24 @@ const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "webm", "wma",
 ];
 
+fn has_supported_audio_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            SUPPORTED_AUDIO_EXTENSIONS
+                .iter()
+                .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+        })
+}
+
 pub(crate) fn validate_dropped_audio_paths(
     paths: &[String],
 ) -> std::result::Result<Vec<PathBuf>, AppError> {
+    if paths.len() > MAX_BATCH_FILES {
+        return Err(AppError::invalid_input(format!(
+            "Select at most {MAX_BATCH_FILES} files at a time"
+        )));
+    }
     let mut canonical_paths = Vec::with_capacity(paths.len());
     for raw_path in paths {
         let canonical = Path::new(raw_path).canonicalize().map_err(|e| {
@@ -147,15 +162,7 @@ pub(crate) fn validate_dropped_audio_paths(
                 "Folders cannot be dropped; drop audio files instead",
             ));
         }
-        let valid_ext = canonical
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                SUPPORTED_AUDIO_EXTENSIONS
-                    .iter()
-                    .any(|allowed| ext.eq_ignore_ascii_case(allowed))
-            });
-        if !valid_ext {
+        if !has_supported_audio_extension(&canonical) {
             return Err(AppError::invalid_input(format!(
                 "Unsupported audio format for '{raw_path}'"
             )));
@@ -165,16 +172,65 @@ pub(crate) fn validate_dropped_audio_paths(
     Ok(canonical_paths)
 }
 
-#[tauri::command]
-pub fn register_dropped_audio_files(
-    state: State<'_, AppStateInner>,
+pub(crate) fn record_native_audio_drop(state: &AppStateInner, paths: &[PathBuf]) {
+    let mut valid = Vec::with_capacity(paths.len().min(MAX_BATCH_FILES + 1));
+    for path in paths.iter().take(MAX_BATCH_FILES + 1) {
+        let Ok(canonical) = path.canonicalize() else {
+            continue;
+        };
+        if !canonical.is_dir() && has_supported_audio_extension(&canonical) {
+            valid.push(canonical);
+        }
+    }
+    match state.authorized_drop_paths.lock() {
+        Ok(mut authorized) => *authorized = valid,
+        Err(_) => {
+            tracing::warn!("Authorized drop state poisoned; native drop not recorded");
+        }
+    }
+}
+
+pub(crate) fn register_dropped_paths_inner(
+    state: &AppStateInner,
     paths: Vec<String>,
 ) -> std::result::Result<Vec<String>, AppError> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
     let canonical = validate_dropped_audio_paths(&paths)?;
-    append_picker_paths(&state, PICKER_KIND_AUDIO_FILE, canonical, MAX_BATCH_FILES)
+    {
+        let mut authorized = state
+            .authorized_drop_paths
+            .lock()
+            .map_err(|_| AppError::internal("Internal drop authorization state unavailable"))?;
+        let mut matched_indices = Vec::with_capacity(canonical.len());
+        for path in &canonical {
+            let Some(pos) = authorized
+                .iter()
+                .enumerate()
+                .find(|(idx, entry)| *entry == path && !matched_indices.contains(idx))
+                .map(|(idx, _)| idx)
+            else {
+                return Err(AppError::invalid_input(
+                    "Dropped audio file was not authorized by a native drag-and-drop event",
+                ));
+            };
+            matched_indices.push(pos);
+        }
+        matched_indices.sort_unstable_by(|a, b| b.cmp(a));
+        for idx in matched_indices {
+            authorized.remove(idx);
+        }
+    }
+    append_picker_paths(state, PICKER_KIND_AUDIO_FILE, canonical, MAX_BATCH_FILES)
+}
+
+#[tauri::command]
+pub fn register_dropped_audio_files(
+    state: State<'_, AppStateInner>,
+    paths: Vec<String>,
+) -> std::result::Result<Vec<String>, AppError> {
+    register_dropped_paths_inner(&state, paths)
 }
 
 #[tauri::command]
@@ -664,5 +720,70 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(valid.len(), 2);
+    }
+
+    #[test]
+    fn validate_dropped_audio_paths_rejects_oversized_batch_before_canonicalizing() {
+        let too_many: Vec<String> = (0..=MAX_BATCH_FILES)
+            .map(|i| format!("Z:\\nonexistent_dir_drop_test\\file_{i}.mp3"))
+            .collect();
+        let err = validate_dropped_audio_paths(&too_many).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+        assert!(err.message.contains("at most"), "got: {}", err.message);
+    }
+
+    #[test]
+    fn register_dropped_paths_requires_native_drag_drop_authorization() {
+        let dir = std::env::temp_dir().join("voxitype-drop-test-auth");
+        std::fs::create_dir_all(&dir).unwrap();
+        let allowed = dir.join("allowed.wav");
+        let sneak = dir.join("sneak.wav");
+        std::fs::write(&allowed, b"a").unwrap();
+        std::fs::write(&sneak, b"b").unwrap();
+
+        let state = crate::AppStateInner {
+            db: crate::storage::Database::open_in_memory().unwrap(),
+            pipeline: crate::pipeline::PipelineOrchestrator::new(),
+            app_data_dir: dir.clone(),
+            default_app_data_dir: dir.clone(),
+            master_key: [9u8; 32],
+            _log_guard: None,
+            stt_engine: std::sync::Mutex::new(None),
+            last_picker_dirs: std::sync::Mutex::new(std::collections::HashMap::new()),
+            authorized_drop_paths: std::sync::Mutex::new(Vec::new()),
+            widget_timer: crate::overlay::WidgetTimerState::new(),
+            mic_meter: crate::audio::MicMeterState::new(),
+        };
+
+        // Direct IPC invocation without native OS drop must fail.
+        let unauth_err =
+            register_dropped_paths_inner(&state, vec![sneak.to_string_lossy().into_owned()])
+                .unwrap_err();
+        assert_eq!(unauth_err.code, crate::error::ErrorCode::InvalidInput);
+
+        // Recording a native drop authorizes only the dropped path.
+        record_native_audio_drop(&state, std::slice::from_ref(&allowed));
+
+        let mixed_err = register_dropped_paths_inner(
+            &state,
+            vec![
+                allowed.to_string_lossy().into_owned(),
+                sneak.to_string_lossy().into_owned(),
+            ],
+        )
+        .unwrap_err();
+        assert_eq!(mixed_err.code, crate::error::ErrorCode::InvalidInput);
+
+        let registered =
+            register_dropped_paths_inner(&state, vec![allowed.to_string_lossy().into_owned()])
+                .unwrap();
+        assert_eq!(registered.len(), 1);
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &registered[0]).is_ok());
+
+        // Consumed native drop authorization cannot be replayed indefinitely.
+        let replay_err =
+            register_dropped_paths_inner(&state, vec![allowed.to_string_lossy().into_owned()])
+                .unwrap_err();
+        assert_eq!(replay_err.code, crate::error::ErrorCode::InvalidInput);
     }
 }

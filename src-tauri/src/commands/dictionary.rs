@@ -34,6 +34,15 @@ pub fn add_dictionary_word(
     DictionaryRepository::new(&state.db).upsert(&entry)
 }
 
+#[tauri::command]
+pub fn update_dictionary_word(
+    state: State<'_, AppStateInner>,
+    entry: DictionaryEntry,
+) -> std::result::Result<(), AppError> {
+    validate_entry(&entry)?;
+    DictionaryRepository::new(&state.db).update_by_id(&entry)
+}
+
 fn validate_entry(entry: &DictionaryEntry) -> std::result::Result<(), AppError> {
     super::check_non_empty("dictionary word", &entry.word)?;
     if entry.word.len() > MAX_WORD_LEN {

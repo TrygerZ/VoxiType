@@ -56,6 +56,8 @@ pub struct AppStateInner {
     /// one of these exactly, so a compromised webview cannot invent
     /// attacker-controlled paths.
     pub last_picker_dirs: std::sync::Mutex<HashMap<String, Vec<PathBuf>>>,
+    /// Canonical paths authorized by the most recent native OS drop event.
+    pub authorized_drop_paths: std::sync::Mutex<Vec<PathBuf>>,
     pub widget_timer: overlay::WidgetTimerState,
     /// Onboarding microphone level meter, independent of the dictation pipeline.
     pub mic_meter: crate::audio::MicMeterState,
@@ -93,6 +95,7 @@ impl AppStateInner {
             _log_guard: None,
             stt_engine: std::sync::Mutex::new(None),
             last_picker_dirs: std::sync::Mutex::new(HashMap::new()),
+            authorized_drop_paths: std::sync::Mutex::new(Vec::new()),
             widget_timer: overlay::WidgetTimerState::new(),
             mic_meter: crate::audio::MicMeterState::new(),
         })
@@ -397,6 +400,7 @@ pub fn run() {
             commands::export_history,
             commands::get_dictionary,
             commands::add_dictionary_word,
+            commands::update_dictionary_word,
             commands::set_dictionary_active,
             commands::delete_dictionary_word,
             commands::export_dictionary,
@@ -429,11 +433,18 @@ pub fn run() {
             commands::get_usage_stats,
         ])
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == MAIN_WINDOW_LABEL {
+            if window.label() != MAIN_WINDOW_LABEL {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
+                    commands::record_native_audio_drop(&window.state::<AppStateInner>(), paths);
+                }
+                _ => {}
             }
         })
         .build(tauri::generate_context!())
