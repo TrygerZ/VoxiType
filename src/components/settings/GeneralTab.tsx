@@ -24,7 +24,6 @@ import {
   getStringSetting,
 } from "../../lib/settingsGuards";
 import { normalizeThemePreference } from "../../lib/theme";
-import { usePlatform } from "../../lib/usePlatform";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type { ThemePreference } from "../../types/app";
 import { AclRestrictPrompt } from "../ui/AclRestrictPrompt";
@@ -53,12 +52,6 @@ const MAX_AUTO_HIDE_SECONDS = 60;
 
 export function GeneralTab() {
   const t = useT();
-  const platform = usePlatform();
-  // Command mode verifies the target window before injecting; without window
-  // detection (macOS and Linux until Phase 2) every command aborts, so the
-  // switch is hidden rather than offered and broken. "unknown" keeps the
-  // switch visible so it does not flicker while the platform loads.
-  const commandModeSupported = platform !== "macos" && platform !== "linux";
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
 
@@ -303,16 +296,6 @@ export function GeneralTab() {
           />
         </SettingsRow>
         <SettingsRow
-          label={t("settings.general.sound")}
-          description={t("settings.general.sound.desc")}
-        >
-          <Switch
-            checked={getBooleanSetting(settings.sound_cues, false)}
-            onChange={(v) => void invokeAction(() => update("sound_cues", v))}
-            ariaLabel={t("settings.general.sound")}
-          />
-        </SettingsRow>
-        <SettingsRow
           label={t("settings.general.onboarding")}
           description={t("settings.general.onboarding.desc")}
         >
@@ -329,20 +312,6 @@ export function GeneralTab() {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.privacy")}>
-        {commandModeSupported && (
-          <SettingsRow
-            label={t("settings.general.command")}
-            description={t("settings.general.command.desc")}
-          >
-            <Switch
-              checked={getBooleanSetting(settings.command_mode, false)}
-              onChange={(v) =>
-                void invokeAction(() => update("command_mode", v))
-              }
-              ariaLabel={t("settings.general.command")}
-            />
-          </SettingsRow>
-        )}
         <SettingsRow
           label={t("settings.general.stats")}
           description={t("settings.general.stats.desc")}

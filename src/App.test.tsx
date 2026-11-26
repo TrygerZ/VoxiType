@@ -142,4 +142,32 @@ describe("App onboarding gating", () => {
     });
     expect(document.documentElement.dataset.theme).toBe("light");
   });
+
+  it("opens tray 'about' navigation inside the padded Settings About view", async () => {
+    let navHandler: ((route: string) => void) | undefined;
+    vi.mocked(tauri.getSettings).mockResolvedValue({
+      onboarding_completed: true,
+      language: "en",
+    });
+    vi.mocked(tauri.onEvent).mockImplementation((event, handler) => {
+      if (event === "navigate") {
+        navHandler = handler as (route: string) => void;
+      }
+      return Promise.resolve(() => undefined);
+    });
+
+    render(<App />);
+    await screen.findByRole("button", { name: "Home" });
+
+    act(() => {
+      navHandler?.("about");
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "About" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "About" }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
 });

@@ -333,14 +333,14 @@ describe("GeneralTab accessible names", () => {
       screen.getByRole("switch", { name: "Pembaruan otomatis" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("switch", { name: "Suara perekaman" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("switch", { name: "Mode perintah" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("switch", { name: "Statistik penggunaan anonim" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "Suara perekaman" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "Mode perintah" }),
+    ).not.toBeInTheDocument();
   });
 });
 

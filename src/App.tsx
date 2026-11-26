@@ -85,7 +85,13 @@ export default function App() {
 
     const unsub = onEvent<string>("navigate", (route) => {
       if (!active) return;
-      if (isValidRoute(route)) {
+      if (route === "about") {
+        setSettingsTab("about");
+        setView("settings");
+      } else if (isValidRoute(route)) {
+        if (route === "settings") {
+          setSettingsTab(undefined);
+        }
         setView(route);
       }
     });
@@ -199,7 +205,11 @@ export default function App() {
           {view === "dictionary" && <DictionaryPanel />}
           {view === "snippets" && <SnippetsPanel />}
           {view === "file" && <FileTranscriptionPanel />}
-          {view === "about" && <AboutTab />}
+          {view === "about" && (
+            <div className="mx-auto w-full max-w-4xl px-8 pt-7 pb-24">
+              <AboutTab />
+            </div>
+          )}
         </main>
 
         {/* Absolute floating dock at the bottom */}
