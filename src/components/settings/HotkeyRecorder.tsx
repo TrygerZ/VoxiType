@@ -1,13 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { useT } from "../../lib/i18n";
+import { Keycap } from "../ui/Keycap";
 
-const MOD_KEYS = new Set([
-  "Control",
-  "Shift",
-  "Alt",
-  "Meta",
-]);
+const MOD_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
 const KEY_MAP: Record<string, string> = {
   Control: "Ctrl",
@@ -107,42 +103,44 @@ export function HotkeyRecorder({
   const parts = formatAccelerator(value, platform).split("+");
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-vx-text-secondary">
-        {t("settings.shortcuts.recorder_label")}
-      </span>
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm font-medium text-vx-text-primary">
+          {t("settings.shortcuts.recorder_label")}
+        </span>
+        <span className="text-xs text-vx-text-dim">
+          {recording
+            ? t("settings.shortcuts.recorder_cancel_hint")
+            : t("settings.shortcuts.recorder_hint")}
+        </span>
+      </div>
       <button
         ref={btnRef}
         type="button"
         onClick={() => setRecording((r) => !r)}
-        className={`flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm transition-all duration-150 text-left min-w-[220px] ${
+        className={`flex min-w-[160px] items-center justify-center gap-1.5 rounded-[10px] border px-3 py-2 text-sm transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
           recording
-            ? "border-vx-accent bg-vx-bg-tertiary ring-2 ring-vx-accent/30"
-            : "border-vx-border bg-vx-bg-tertiary/60 hover:border-vx-border-strong"
+            ? "border-vx-accent-ember bg-vx-bg-subtle ring-2 ring-vx-accent-ember/25"
+            : "border-vx-border-default bg-vx-bg-subtle hover:border-vx-border-strong"
         }`}
       >
         {recording ? (
-          <span className="animate-pulse text-vx-accent">
+          <span className="animate-pulse text-xs font-medium text-vx-accent-ember">
             {t("settings.shortcuts.recorder_press")}
           </span>
         ) : (
-          <span className="flex items-center gap-1">
-            {parts.map((k) => (
-              <kbd
-                key={k}
-                className="inline-flex items-center justify-center rounded-md border border-vx-border bg-vx-bg-elevated px-1.5 py-0.5 text-xs font-semibold text-vx-text-primary"
-              >
-                {k}
-              </kbd>
+          <span className="flex items-center gap-1.5">
+            {parts.map((k, idx) => (
+              <Fragment key={k}>
+                {idx > 0 && (
+                  <span className="text-xs text-vx-text-dim">+</span>
+                )}
+                <Keycap>{k}</Keycap>
+              </Fragment>
             ))}
           </span>
         )}
       </button>
-      <span className="text-xs text-vx-text-dim">
-        {recording
-          ? t("settings.shortcuts.recorder_cancel_hint")
-          : t("settings.shortcuts.recorder_hint")}
-      </span>
     </div>
   );
 }

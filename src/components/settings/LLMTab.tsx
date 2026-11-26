@@ -1,22 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, XCircle } from "lucide-react";
-import { Input } from "../ui/Input";
+
 import { useDebouncedApiKey } from "../../hooks/useDebouncedApiKey";
-import { Select } from "../ui/Select";
-import { useSettingsStore } from "../../stores/settingsStore";
-import { useT } from "../../lib/i18n";
-import { testGroqApi, formatTauriError, errorCode } from "../../lib/tauri";
 import { invokeAction } from "../../lib/invokeAction";
+import { useT } from "../../lib/i18n";
 import { getBooleanSetting, getStringSetting } from "../../lib/settingsGuards";
+import {
+  errorCode,
+  formatTauriError,
+  testGroqApi,
+  testOllama,
+} from "../../lib/tauri";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
+import { StatusBadge } from "../ui/StatusBadge";
 import { toast } from "../ui/Toast";
-import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
+import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsLayout";
+
+type TestStatus = "idle" | "testing" | "ok" | "fail" | "err";
+
+interface OllamaTestState {
+  status: "idle" | "testing" | "ok" | "err";
+  model?: string;
+  error?: string;
+}
 
 export function LLMTab() {
   const t = useT();
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const engine = getStringSetting(settings.llm_engine, "ollama");
-  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail" | "err">("idle");
+  const ollamaModel = getStringSetting(settings.llm_model, "qwen2.5:3b");
+  const groqKeySet = getBooleanSetting(settings.groq_api_key_set, false);
+  const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [ollamaTest, setOllamaTest] = useState<OllamaTestState>({
+    status: "idle",
+  });
   const testTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -32,14 +53,14 @@ export function LLMTab() {
   );
 
   const handleTestApi = async () => {
-    if (!localKey.trim() && !getBooleanSetting(settings.groq_api_key_set, false)) return;
+    if (!localKey.trim() && !groqKeySet) return;
     if (testTimerRef.current) {
       clearTimeout(testTimerRef.current);
       testTimerRef.current = null;
     }
     setTestStatus("testing");
     try {
-      await testGroqApi(localKey.trim());
+      await testGroqApi(localKey.trim() || null);
       setTestStatus("ok");
       toast(t("settings.llm.connected"));
     } catch (e: unknown) {
@@ -59,8 +80,23 @@ export function LLMTab() {
     }
   };
 
+  const handleTestOllama = async () => {
+    const trimmed = ollamaModel.trim();
+    if (!trimmed) return;
+    setOllamaTest({ status: "testing" });
+    try {
+      await testOllama(trimmed);
+      setOllamaTest({ status: "ok", model: trimmed });
+      toast(t("settings.llm.ollama_ready", { model: trimmed }));
+    } catch (e: unknown) {
+      const msg = formatTauriError(e);
+      setOllamaTest({ status: "err", error: msg });
+      toast(msg, "error");
+    }
+  };
+
   return (
-    <div className="max-w-xl">
+    <div>
       <SettingsHeader
         title={t("settings.llm.title")}
         description={t("settings.llm.desc")}
@@ -77,75 +113,144 @@ export function LLMTab() {
               { value: "off", label: "Off" },
             ]}
             value={engine}
-            onChange={(e) => void invokeAction(() => update("llm_engine", e.target.value))}
+            onChange={(e) =>
+              void invokeAction(() => update("llm_engine", e.target.value))
+            }
             className="w-52"
           />
         </SettingsRow>
-        {engine === "ollama" && (
-          <div className="px-4 py-3.5">
+      </SettingsGroup>
+
+      {engine === "ollama" && (
+        <SettingsGroup title={t("settings.llm.ollama_group")}>
+          <div className="flex flex-col gap-3 px-4 py-4">
             <Input
               label={t("settings.llm.ollama_model")}
               placeholder="qwen2.5:3b"
-              value={getStringSetting(settings.llm_model, "qwen2.5:3b")}
-              onChange={(e) => void invokeAction(() => update("llm_model", e.target.value))}
-              hint={t("settings.llm.ollama_hint")}
+              value={ollamaModel}
+              onChange={(e) => {
+                setOllamaTest({ status: "idle" });
+                void invokeAction(() => update("llm_model", e.target.value));
+              }}
             />
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-xs text-vx-text-dim">
+                {t("settings.llm.ollama_hint")}
+              </span>
+              <div className="flex items-center gap-2.5">
+                {ollamaTest.status === "testing" && (
+                  <StatusBadge tone="ember">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t("settings.llm.testing")}
+                  </StatusBadge>
+                )}
+                {ollamaTest.status === "ok" && ollamaTest.model && (
+                  <StatusBadge tone="success">
+                    <Check className="h-3 w-3" />
+                    {t("settings.llm.ollama_ready", {
+                      model: ollamaTest.model,
+                    })}
+                  </StatusBadge>
+                )}
+                {ollamaTest.status === "err" && ollamaTest.error && (
+                  <StatusBadge tone="error">
+                    <XCircle className="h-3 w-3" />
+                    {ollamaTest.error}
+                  </StatusBadge>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleTestOllama()}
+                  disabled={
+                    ollamaTest.status === "testing" || !ollamaModel.trim()
+                  }
+                >
+                  {t("settings.llm.test_ollama")}
+                </Button>
+              </div>
+            </div>
           </div>
-        )}
-      </SettingsGroup>
+        </SettingsGroup>
+      )}
 
       {engine === "groq" && (
         <SettingsGroup title={t("settings.llm.groq_group")}>
-          <div className="px-4 py-3.5">
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-vx-text-secondary">
+                {t("settings.llm.api_key")}
+              </span>
+              <StatusBadge tone="neutral">
+                {t("settings.stt.shared_with_llm")}
+              </StatusBadge>
+            </div>
             <Input
-              label={t("settings.llm.api_key")}
+              aria-label={t("settings.llm.api_key")}
               type="password"
               showPasswordToggle
               placeholder={
-                getBooleanSetting(settings.groq_api_key_set, false)
-                  ? t("settings.llm.saved_placeholder")
-                  : "gsk_..."
+                groqKeySet ? t("settings.llm.saved_placeholder") : "gsk_..."
               }
               value={localKey}
               onChange={(e) => onKeyChange(e.target.value)}
-              hint={t("settings.llm.api_key_hint")}
             />
-            <button
-              type="button"
-              onClick={handleTestApi}
-              disabled={testStatus === "testing" || (!localKey.trim() && !getBooleanSetting(settings.groq_api_key_set, false))}
-              className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
-                testStatus === "ok"
-                  ? "border-green-500/40 bg-green-500/10 text-green-600"
-                  : testStatus === "fail"
-                    ? "border-red-500/40 bg-red-500/10 text-red-600"
-                    : testStatus === "err"
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-600"
-                      : testStatus === "testing"
-                        ? "border-vx-accent/40 bg-vx-accent/10 text-vx-accent"
-                        : "border-vx-border bg-vx-bg-tertiary/60 text-vx-text-secondary hover:border-vx-border-strong hover:text-vx-text-primary"
-              }`}
-            >
-              {testStatus === "testing" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : testStatus === "ok" ? (
-                <Check className="h-4 w-4" />
-              ) : testStatus === "fail" || testStatus === "err" ? (
-                <XCircle className="h-4 w-4" />
-              ) : null}
-              {testStatus === "testing"
-                ? t("settings.llm.testing")
-                : testStatus === "ok"
-                  ? t("settings.llm.connected")
-                  : testStatus === "fail"
-                    ? t("settings.llm.invalid_key")
-                    : testStatus === "err"
-                      ? t("settings.llm.conn_fail")
-                      : t("settings.llm.test_conn")}
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-xs text-vx-text-dim">
+                {t("settings.llm.api_key_hint")}
+              </span>
+              <div className="flex items-center gap-2.5">
+                <GroqStatusBadge status={testStatus} t={t} />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleTestApi()}
+                  disabled={
+                    testStatus === "testing" ||
+                    (!localKey.trim() && !groqKeySet)
+                  }
+                >
+                  {t("settings.llm.test_conn")}
+                </Button>
+              </div>
+            </div>
           </div>
         </SettingsGroup>
       )}
     </div>
+  );
+}
+
+function GroqStatusBadge({
+  status,
+  t,
+}: {
+  status: TestStatus;
+  t: (key: string) => string;
+}) {
+  if (status === "idle") return null;
+  if (status === "testing") {
+    return (
+      <StatusBadge tone="ember">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {t("settings.llm.testing")}
+      </StatusBadge>
+    );
+  }
+  if (status === "ok") {
+    return (
+      <StatusBadge tone="success">
+        <Check className="h-3 w-3" />
+        {t("settings.llm.connected")}
+      </StatusBadge>
+    );
+  }
+  return (
+    <StatusBadge tone={status === "fail" ? "error" : "warning"}>
+      <XCircle className="h-3 w-3" />
+      {status === "fail"
+        ? t("settings.llm.invalid_key")
+        : t("settings.llm.conn_fail")}
+    </StatusBadge>
   );
 }

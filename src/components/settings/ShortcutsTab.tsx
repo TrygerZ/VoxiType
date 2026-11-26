@@ -1,14 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
-import { Select } from "../ui/Select";
-import { Button } from "../ui/Button";
-import { useSettingsStore } from "../../stores/settingsStore";
+
 import { useT } from "../../lib/i18n";
-import { setHotkey, formatTauriError } from "../../lib/tauri";
-import { usePlatform } from "../../lib/usePlatform";
 import { isHotkeyConfig } from "../../lib/settingsGuards";
-import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
+import { formatTauriError, setHotkey } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { Button } from "../ui/Button";
+import { Select } from "../ui/Select";
+import { StatusBadge } from "../ui/StatusBadge";
 import { HotkeyRecorder } from "./HotkeyRecorder";
+import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsLayout";
 
 export function ShortcutsTab() {
   const t = useT();
@@ -64,14 +66,14 @@ export function ShortcutsTab() {
   };
 
   return (
-    <div className="max-w-xl">
+    <div>
       <SettingsHeader
         title={t("settings.shortcuts.title")}
         description={t("settings.shortcuts.desc")}
       />
 
       <SettingsGroup title={t("settings.shortcuts.group")}>
-        <div className="px-4 py-3.5">
+        <div className="px-4 py-4">
           <HotkeyRecorder value={key} onChange={setKey} platform={platform} />
         </div>
         <SettingsRow
@@ -101,12 +103,13 @@ export function ShortcutsTab() {
           {t("settings.shortcuts.apply_btn")}
         </Button>
         {status === "ok" && (
-          <span className="flex items-center gap-1 text-xs text-vx-success">
-            <Check className="h-3.5 w-3.5" /> {t("settings.shortcuts.applied")}
-          </span>
+          <StatusBadge tone="success">
+            <Check className="h-3.5 w-3.5" />
+            {t("settings.shortcuts.applied")}
+          </StatusBadge>
         )}
         {status !== "ok" && status !== "idle" && (
-          <span className="text-xs text-vx-error">{status}</span>
+          <StatusBadge tone="error">{status}</StatusBadge>
         )}
       </div>
     </div>

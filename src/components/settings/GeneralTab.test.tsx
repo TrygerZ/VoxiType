@@ -493,3 +493,41 @@ describe("GeneralTab auto-hide floating widget settings", () => {
     expect(input).toBeDisabled();
   });
 });
+
+describe("GeneralTab theme and retention settings", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSettingsStore.setState({
+      settings: {
+        language: "en",
+        theme: "dark",
+        history_retention_days: 90,
+      },
+      loaded: true,
+      error: null,
+    });
+  });
+
+  it("switches Theme preference via Dark / Light / System control and persists history retention", async () => {
+    const user = userEvent.setup();
+    render(<GeneralTab />);
+
+    const lightBtn = screen.getByRole("button", { name: "Light" });
+    await user.click(lightBtn);
+    await waitFor(() => {
+      expect(tauri.updateSetting).toHaveBeenCalledWith("theme", "light");
+    });
+
+    const retentionSelect = screen.getByRole("combobox", {
+      name: "History retention",
+    });
+    expect(retentionSelect).toHaveValue("90");
+    await user.selectOptions(retentionSelect, "30");
+    await waitFor(() => {
+      expect(tauri.updateSetting).toHaveBeenCalledWith(
+        "history_retention_days",
+        30,
+      );
+    });
+  });
+});

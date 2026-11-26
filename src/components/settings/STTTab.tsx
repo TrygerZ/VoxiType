@@ -1,11 +1,14 @@
-import { type ButtonHTMLAttributes, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, FolderOpen, Loader2, XCircle } from "lucide-react";
 
-import { Input } from "../ui/Input";
 import { useDebouncedApiKey } from "../../hooks/useDebouncedApiKey";
-import { Select } from "../ui/Select";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { invokeAction } from "../../lib/invokeAction";
 import { useT } from "../../lib/i18n";
+import {
+  clampWhisperThreads,
+  getNumberSetting,
+  getStringSetting,
+} from "../../lib/settingsGuards";
 import {
   errorCode,
   formatTauriError,
@@ -13,10 +16,13 @@ import {
   testGroqApi,
   testWhisperCpp,
 } from "../../lib/tauri";
-import { invokeAction } from "../../lib/invokeAction";
-import { clampWhisperThreads } from "../../lib/settingsGuards";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
+import { StatusBadge } from "../ui/StatusBadge";
 import { toast } from "../ui/Toast";
-import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
+import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsLayout";
 
 type TestStatus = "idle" | "testing" | "ok" | "fail" | "err";
 
@@ -37,13 +43,13 @@ export function STTTab() {
     };
   }, []);
 
-  const engine = stringSetting(settings.stt_engine, "groq");
-  const language = stringSetting(settings.stt_language, "auto");
-  const groqKey = stringSetting(settings.groq_api_key, "");
+  const engine = getStringSetting(settings.stt_engine, "groq");
+  const language = getStringSetting(settings.stt_language, "auto");
+  const groqKey = getStringSetting(settings.groq_api_key, "");
   const groqKeySet = settings.groq_api_key_set === true;
-  const whisperBinary = stringSetting(settings.whisper_cpp_binary_path, "");
-  const whisperModel = stringSetting(settings.whisper_cpp_model_path, "");
-  const whisperThreads = numberSetting(settings.whisper_cpp_threads, 4);
+  const whisperBinary = getStringSetting(settings.whisper_cpp_binary_path, "");
+  const whisperModel = getStringSetting(settings.whisper_cpp_model_path, "");
+  const whisperThreads = getNumberSetting(settings.whisper_cpp_threads, 4);
 
   const { localKey, onKeyChange } = useDebouncedApiKey(
     groqKey,
@@ -77,23 +83,19 @@ export function STTTab() {
   const handlePickBinary = async () => {
     await invokeAction(async () => {
       const file = await pickSetupFile("whisper_binary");
-      if (file) {
-        await updateWhisperPaths(file, null);
-      }
+      if (file) await updateWhisperPaths(file, null);
     });
   };
 
   const handlePickModel = async () => {
     await invokeAction(async () => {
       const file = await pickSetupFile("whisper_model");
-      if (file) {
-        await updateWhisperPaths(null, file);
-      }
+      if (file) await updateWhisperPaths(null, file);
     });
   };
 
   return (
-    <div className="max-w-xl">
+    <div>
       <SettingsHeader
         title={t("settings.stt.title")}
         description={t("settings.stt.desc")}
@@ -108,7 +110,9 @@ export function STTTab() {
               { value: "whisper_cpp", label: "Offline whisper.cpp" },
             ]}
             value={engine}
-            onChange={(e) => void invokeAction(() => update("stt_engine", e.target.value))}
+            onChange={(e) =>
+              void invokeAction(() => update("stt_engine", e.target.value))
+            }
             className="w-48"
           />
         </SettingsRow>
@@ -121,7 +125,9 @@ export function STTTab() {
               { value: "en", label: "English" },
             ]}
             value={language}
-            onChange={(e) => void invokeAction(() => update("stt_language", e.target.value))}
+            onChange={(e) =>
+              void invokeAction(() => update("stt_language", e.target.value))
+            }
             className="w-48"
           />
         </SettingsRow>
@@ -129,7 +135,7 @@ export function STTTab() {
 
       {engine === "whisper_cpp" ? (
         <SettingsGroup title={t("settings.stt.offline_group")}>
-          <div className="flex flex-col gap-4 px-4 py-3.5">
+          <div className="flex flex-col gap-4 px-4 py-4">
             <PathPickerField
               label={t("settings.stt.binary_path")}
               placeholder="whisper-cli"
@@ -161,60 +167,78 @@ export function STTTab() {
                 )
               }
             />
-            <StatusButton
-              status={whisperStatus}
-              idleLabel={t("settings.stt.test_offline")}
-              okLabel={t("settings.stt.ready")}
-              failLabel={t("settings.stt.check_setup")}
-              errLabel={t("settings.stt.test_fail")}
-              testingLabel={t("settings.stt.testing")}
-              onClick={handleTestWhisper}
-              disabled={
-                whisperStatus === "testing" ||
-                !whisperBinary.trim() ||
-                !whisperModel.trim()
-              }
-            />
+            <div className="flex items-center justify-end gap-2.5 pt-1">
+              <TestStatusBadge
+                status={whisperStatus}
+                okLabel={t("settings.stt.ready")}
+                failLabel={t("settings.stt.check_setup")}
+                errLabel={t("settings.stt.test_fail")}
+                testingLabel={t("settings.stt.testing")}
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleTestWhisper}
+                disabled={
+                  whisperStatus === "testing" ||
+                  !whisperBinary.trim() ||
+                  !whisperModel.trim()
+                }
+              >
+                {t("settings.stt.test_offline")}
+              </Button>
+            </div>
           </div>
         </SettingsGroup>
       ) : (
         <SettingsGroup title={t("settings.stt.groq_group")}>
-          <div className="px-4 py-3.5">
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-vx-text-secondary">
+                {t("settings.stt.api_key")}
+              </span>
+              <StatusBadge tone="neutral">
+                {t("settings.stt.shared_with_llm")}
+              </StatusBadge>
+            </div>
             <Input
-              label={t("settings.stt.api_key")}
+              aria-label={t("settings.stt.api_key")}
               type="password"
               showPasswordToggle
               placeholder={groqKeySet ? t("settings.stt.saved") : "gsk_..."}
               value={localKey}
               onChange={(e) => onKeyChange(e.target.value)}
-              hint={t("settings.stt.api_key_hint")}
             />
-            <StatusButton
-              status={groqStatus}
-              idleLabel={t("settings.stt.test_connection")}
-              okLabel={t("settings.stt.connected")}
-              failLabel={t("settings.stt.invalid_key")}
-              errLabel={t("settings.stt.conn_fail")}
-              testingLabel={t("settings.stt.testing")}
-              onClick={handleTestApi}
-              disabled={
-                groqStatus === "testing" || (!localKey.trim() && !groqKeySet)
-              }
-              className="mt-3"
-            />
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-xs text-vx-text-dim">
+                {t("settings.stt.api_key_hint")}
+              </span>
+              <div className="flex items-center gap-2.5">
+                <TestStatusBadge
+                  status={groqStatus}
+                  okLabel={t("settings.stt.connected")}
+                  failLabel={t("settings.stt.invalid_key")}
+                  errLabel={t("settings.stt.conn_fail")}
+                  testingLabel={t("settings.stt.testing")}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleTestApi}
+                  disabled={
+                    groqStatus === "testing" ||
+                    (!localKey.trim() && !groqKeySet)
+                  }
+                >
+                  {t("settings.stt.test_connection")}
+                </Button>
+              </div>
+            </div>
           </div>
         </SettingsGroup>
       )}
     </div>
   );
-}
-
-function stringSetting(value: unknown, fallback: string): string {
-  return typeof value === "string" ? value : fallback;
-}
-
-function numberSetting(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 async function runStatus(
@@ -274,82 +298,54 @@ function PathPickerField({
         readOnly
         hint={hint}
       />
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="md"
         onClick={onBrowse}
-        className="mt-6 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-vx-bg-tertiary px-4 py-2.5 text-sm font-medium text-vx-text-primary transition-colors duration-150 hover:bg-vx-bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
+        className="mt-6 whitespace-nowrap"
       >
         <FolderOpen className="h-4 w-4" />
         {browseLabel}
-      </button>
+      </Button>
     </div>
   );
 }
 
-function StatusButton({
+function TestStatusBadge({
   status,
-  idleLabel,
   okLabel,
   failLabel,
   errLabel,
   testingLabel,
-  className = "",
-  ...rest
 }: {
   status: TestStatus;
-  idleLabel: string;
   okLabel: string;
   failLabel: string;
   errLabel: string;
   testingLabel: string;
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type="button"
-      className={`w-full flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${statusClasses(
-        status,
-      )} ${className}`}
-      {...rest}
-    >
-      {status === "testing" ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : status === "ok" ? (
-        <Check className="h-4 w-4" />
-      ) : status === "fail" || status === "err" ? (
-        <XCircle className="h-4 w-4" />
-      ) : null}
-      {statusLabel(status, idleLabel, okLabel, failLabel, errLabel, testingLabel)}
-    </button>
-  );
-}
-
-function statusLabel(
-  status: TestStatus,
-  idle: string,
-  ok: string,
-  fail: string,
-  err: string,
-  testing: string,
-) {
-  if (status === "testing") return testing;
-  if (status === "ok") return ok;
-  if (status === "fail") return fail;
-  if (status === "err") return err;
-  return idle;
-}
-
-function statusClasses(status: TestStatus) {
-  if (status === "ok") {
-    return "border-green-500/40 bg-green-500/10 text-green-600";
-  }
-  if (status === "fail") {
-    return "border-red-500/40 bg-red-500/10 text-red-600";
-  }
-  if (status === "err") {
-    return "border-amber-500/40 bg-amber-500/10 text-amber-600";
-  }
+}) {
+  if (status === "idle") return null;
   if (status === "testing") {
-    return "border-vx-accent/40 bg-vx-accent/10 text-vx-accent";
+    return (
+      <StatusBadge tone="ember">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {testingLabel}
+      </StatusBadge>
+    );
   }
-  return "border-vx-border bg-vx-bg-tertiary/60 text-vx-text-secondary hover:border-vx-border-strong hover:text-vx-text-primary";
+  if (status === "ok") {
+    return (
+      <StatusBadge tone="success">
+        <Check className="h-3 w-3" />
+        {okLabel}
+      </StatusBadge>
+    );
+  }
+  return (
+    <StatusBadge tone={status === "fail" ? "error" : "warning"}>
+      <XCircle className="h-3 w-3" />
+      {status === "fail" ? failLabel : errLabel}
+    </StatusBadge>
+  );
 }
