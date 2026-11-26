@@ -1,46 +1,701 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Mic,
-  Loader2,
-  Sparkles,
-  Languages,
-  Zap,
-  Copy,
-  Check,
-  Pin,
-  Keyboard,
-  FileText,
   ArrowRight,
+  Check,
+  Copy,
+  Languages,
+  Loader2,
+  Mic,
+  Pin,
+  Sparkles,
   Volume2,
-  BarChart3,
 } from "lucide-react";
-import { WpmHalfRing } from "./WpmHalfRing";
-import HourglassIcon from "../../assets/icons/hourglass.svg?react";
-import SparkleIcon from "../../assets/icons/sparkle.svg?react";
-import ScrollTextIcon from "../../assets/icons/scroll-text.svg?react";
-import { useAppStore } from "../../stores/appStore";
-import { useSettingsStore } from "../../stores/settingsStore";
-import { useHistoryStore } from "../../stores/historyStore";
-import { useStatsStore } from "../../stores/statsStore";
-import { modeLabel, useT } from "../../lib/i18n";
-import { startRecording, stopRecording, reInject } from "../../lib/tauri";
-import { usePlatform } from "../../lib/usePlatform";
-import { formatAccelerator } from "../settings/HotkeyRecorder";
+
 import { invokeAction } from "../../lib/invokeAction";
+import { modeLabel, type Translate, useT } from "../../lib/i18n";
+import { navigate, openOnboarding } from "../../lib/navigate";
 import {
   getBooleanSetting,
   getStringSetting,
+  type HotkeyConfig,
   isHotkeyConfig,
 } from "../../lib/settingsGuards";
+import { reInject, startRecording, stopRecording } from "../../lib/tauri";
+import { usePlatform } from "../../lib/usePlatform";
+import { type InjectionOutcome, useAppStore } from "../../stores/appStore";
+import { useHistoryStore } from "../../stores/historyStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { useStatsStore } from "../../stores/statsStore";
+import type { AppStateEnum, TranscriptionEntry, UsageStats } from "../../types/app";
 import { Waveform } from "../floating-widget/Waveform";
+import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
+import { Keycap } from "../ui/Keycap";
+import { StatusBadge } from "../ui/StatusBadge";
+import { Switch } from "../ui/Switch";
 import { toast } from "../ui/Toast";
-import { openOnboarding } from "../../lib/navigate";
+
+const MAX_PLAUSIBLE_WPM = 400;
+const BUILT_IN_CONSOLE_MODES = new Set(["dictation", "message", "email", "file"]);
+
+function formatDuration(sec: number): string {
+  const m = Math.floor(sec / 60).toString().padStart(2, "0");
+  const s = (sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function splitDuration(ms: number, t: Translate): { value: string; unit: string } {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return { value: String(totalSec), unit: t("home.unit_sec") };
+  const totalMin = Math.floor(totalSec / 60);
+  if (totalMin < 60) {
+    return {
+      value: String(totalMin),
+      unit: totalMin === 1 ? t("home.unit_min") : t("home.unit_mins"),
+    };
+  }
+  const hrs = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  return {
+    value: mins > 0 ? `${hrs}.${Math.round((mins / 60) * 10)}` : String(hrs),
+    unit: hrs === 1 && mins === 0 ? t("home.unit_hr") : t("home.unit_hrs"),
+  };
+}
+
+function formatCompact(n: number): string {
+  if (n < 1000) return n.toLocaleString();
+  if (n < 9_950) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 999_500) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+function formatItemTime(createdAt: string): string {
+  if (!createdAt) return "";
+  const d = new Date(createdAt);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function buildItemMeta(item: TranscriptionEntry, t: Translate): string {
+  const parts = [
+    modeLabel(t, item.mode),
+    item.app_context ?? "",
+    item.word_count > 0 ? `${item.word_count} ${t("home.words")}` : "",
+    formatItemTime(item.created_at),
+  ].filter(Boolean);
+  return parts.join(" \u00b7 ");
+}
+
+function computeAvgWpm(historyItems: TranscriptionEntry[]): number {
+  const rates: number[] = [];
+  for (const item of historyItems) {
+    if (item.mode === "file") continue;
+    const dur = item.duration_ms ?? 0;
+    if (!item.word_count || item.word_count <= 0 || dur <= 0) continue;
+    const wpm = item.word_count / (dur / 60000);
+    if (!isFinite(wpm) || wpm > MAX_PLAUSIBLE_WPM) continue;
+    rates.push(wpm);
+    if (rates.length >= 20) break;
+  }
+  if (rates.length === 0) return 0;
+  return Math.round(rates.reduce((sum, w) => sum + w, 0) / rates.length);
+}
+
+function HomeTopBar({
+  t,
+  isRecording,
+  isProcessing,
+  durationSec,
+  hotkey,
+}: {
+  t: Translate;
+  isRecording: boolean;
+  isProcessing: boolean;
+  durationSec: number;
+  hotkey?: HotkeyConfig;
+}) {
+  const modeLabelText =
+    hotkey?.mode === "toggle" ? t("home.mode_toggle") : t("home.mode_ptt");
+
+  return (
+    <header className="flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] size-8 p-[3px] flex items-center justify-center">
+          <img
+            src="/logo.png"
+            alt="VoxiType logo"
+            className="h-full w-full object-contain"
+          />
+        </div>
+        <span className="text-[15px] font-semibold leading-5 tracking-[-0.01em] text-vx-text-primary">
+          {t("app.name")}
+        </span>
+      </div>
+
+      {isRecording ? (
+        <StatusBadge
+          tone="ember"
+          label={t("home.status_recording", {
+            duration: formatDuration(durationSec),
+          })}
+        />
+      ) : isProcessing ? (
+        <StatusBadge tone="neutral" label={t("processing")} />
+      ) : (
+        <StatusBadge
+          tone="success"
+          label={t("home.status_ready", { mode: modeLabelText })}
+        />
+      )}
+    </header>
+  );
+}
+
+function SetupMissingBanner({ t }: { t: Translate }) {
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-3 rounded-[12px] border border-vx-semantic-warning/35 bg-vx-semantic-warning-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div>
+        <p className="text-sm font-semibold text-vx-text-primary">
+          {t("home.setup_banner_title")}
+        </p>
+        <p className="text-xs text-vx-text-secondary">
+          {t("home.setup_banner_body")}
+        </p>
+      </div>
+      <Button size="sm" variant="primary" onClick={openOnboarding}>
+        {t("home.setup_banner_action")}
+      </Button>
+    </div>
+  );
+}
+
+function VoiceConsoleCard({
+  t,
+  state,
+  durationSec,
+  wordCount,
+  outcome,
+  hotkey,
+  shortcutDisplay,
+  micDevice,
+  sttEngine,
+  onMicClick,
+}: {
+  t: Translate;
+  state: AppStateEnum;
+  durationSec: number;
+  wordCount: number | null;
+  outcome: InjectionOutcome | null;
+  hotkey?: HotkeyConfig;
+  shortcutDisplay: string;
+  micDevice: string;
+  sttEngine: unknown;
+  onMicClick: () => void;
+}) {
+  const isRecording = state === "recording";
+  const isProcessing = state === "processing";
+  const micTooltip = isRecording
+    ? t("home.mic_recording_tooltip")
+    : t("home.mic_tooltip");
+  const subtitle = isRecording
+    ? t("home.listening")
+    : isProcessing
+      ? t("processing")
+      : hotkey?.mode === "toggle"
+        ? t("home.toggle_shortcut")
+        : t("home.hold_shortcut");
+  const shortcutParts = shortcutDisplay
+    .split("+")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const outerRingClass = isRecording
+    ? "bg-vx-accent-ember-soft border-[1.5px] border-vx-accent-ember vx-mic-pulse"
+    : isProcessing
+      ? "bg-vx-bg-subtle border border-vx-border-strong"
+      : "bg-vx-bg-subtle border border-vx-border-default group-hover:border-vx-border-strong";
+
+  const innerCoreClass = isRecording
+    ? "bg-vx-accent-ember border-vx-accent-ember text-vx-text-inverse"
+    : "bg-vx-bg-elevated border-vx-border-strong text-vx-text-primary";
+
+  const micLabel =
+    micDevice === "default"
+      ? t("home.default_mic")
+      : micDevice.split("(")[0].trim();
+  const engineLabel =
+    sttEngine === "whisper_cpp"
+      ? t("home.local_whisper")
+      : t("home.groq_cloud");
+
+  return (
+    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-6 pt-7 pb-6 flex flex-col items-center justify-between gap-6 min-h-[460px]">
+      <div className="flex flex-col items-center gap-1 text-center">
+        <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-vx-text-muted">
+          {t("home.voice_console")}
+        </span>
+        <p className="text-xs text-vx-text-secondary">{subtitle}</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onMicClick}
+        disabled={isProcessing}
+        title={micTooltip}
+        aria-label={micTooltip}
+        className="group relative flex items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-canvas disabled:cursor-not-allowed"
+      >
+        <span
+          className={`size-[136px] rounded-full flex items-center justify-center transition-colors duration-[180ms] ${outerRingClass}`}
+        >
+          <span
+            className={`size-[84px] rounded-full flex items-center justify-center border transition-colors duration-[180ms] ${innerCoreClass}`}
+          >
+            {isProcessing ? (
+              <Loader2 className="h-8 w-8 animate-spin" />
+            ) : (
+              <Mic className="h-8 w-8" />
+            )}
+          </span>
+        </span>
+      </button>
+
+      <div className="flex min-h-[72px] w-full flex-col items-center justify-center gap-2 text-center">
+        {isRecording ? (
+          <>
+            <span className="font-mono text-[24px] font-bold leading-7 tracking-[-0.02em] text-vx-text-primary tabular-nums">
+              {formatDuration(durationSec)}
+            </span>
+            <div className="flex h-6 w-16 items-center justify-center">
+              <Waveform active barClassName="bg-vx-accent-ember" />
+            </div>
+          </>
+        ) : isProcessing ? (
+          <span className="text-xs font-medium text-vx-text-secondary">
+            {t("processing")}
+          </span>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              {shortcutParts.map((part, idx) => (
+                <Fragment key={`${part}-${idx}`}>
+                  {idx > 0 && (
+                    <span className="text-xs text-vx-text-muted">+</span>
+                  )}
+                  <Keycap>{part}</Keycap>
+                </Fragment>
+              ))}
+            </div>
+            {state === "idle" && wordCount !== null && (
+              <div className="flex flex-col items-center gap-1">
+                <span
+                  role="status"
+                  className={
+                    outcome?.injected === false
+                      ? "text-xs text-vx-semantic-error"
+                      : "text-xs text-vx-semantic-success"
+                  }
+                >
+                  {outcome?.injected === false
+                    ? t("notice.saved_to_history")
+                    : outcome?.appContext
+                      ? t("home.inserted_into", { app: outcome.appContext })
+                      : t("home.inserted")}
+                </span>
+                {outcome?.injected === false && (
+                  <button
+                    type="button"
+                    onClick={() => navigate("history")}
+                    className="text-xs font-medium text-vx-accent-ember hover:underline"
+                  >
+                    {t("home.open_history")}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={() => navigate("settings", "audio")}
+          className="bg-vx-bg-subtle border border-vx-border-subtle hover:border-vx-border-default rounded-[8px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs text-vx-text-secondary hover:text-vx-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
+        >
+          <Volume2 className="h-[13px] w-[13px] shrink-0" />
+          <span>{micLabel} &#x2197;</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("settings", "stt")}
+          className="bg-vx-bg-subtle border border-vx-border-subtle hover:border-vx-border-default rounded-[8px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs text-vx-text-secondary hover:text-vx-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
+        >
+          <Sparkles className="h-[13px] w-[13px] shrink-0" />
+          <span>{engineLabel} &#x2197;</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function LifetimeTelemetryCard({
+  t,
+  totals,
+  avgWpm,
+  statsError,
+  onRetry,
+}: {
+  t: Translate;
+  totals: UsageStats;
+  avgWpm: number;
+  statsError: string | null;
+  onRetry: () => void;
+}) {
+  const recordingTime = splitDuration(totals.total_duration_ms, t);
+  const metrics = [
+    {
+      key: "wpm",
+      value: `${avgWpm} WPM`,
+      label: t("home.speaking_pace"),
+      accent: true,
+    },
+    {
+      key: "time",
+      value: `${recordingTime.value} ${recordingTime.unit}`,
+      label: t("home.total_dictated"),
+      accent: false,
+    },
+    {
+      key: "words",
+      value: formatCompact(totals.total_words),
+      label: t("home.words_captured"),
+      accent: false,
+    },
+    {
+      key: "sessions",
+      value: formatCompact(totals.total_sessions),
+      label: t("home.sessions"),
+      accent: false,
+    },
+  ];
+
+  return (
+    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-5 py-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-vx-text-muted">
+          {t("home.lifetime_telemetry")}
+        </h2>
+        <span className="text-xs text-vx-text-muted">
+          {t("home.last_20_avg")}
+        </span>
+      </div>
+
+      {statsError ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-4 text-center">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-vx-text-primary">
+              {t("error.stats_load_failed")}
+            </p>
+            <p className="font-mono text-xs break-all text-vx-text-muted">
+              {statsError}
+            </p>
+          </div>
+          <Button size="sm" onClick={onRetry}>
+            {t("error.retry")}
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {metrics.map((metric, idx) => (
+              <Fragment key={metric.key}>
+                {idx > 0 && (
+                  <div
+                    aria-hidden="true"
+                    className="w-px h-[34px] bg-vx-border-subtle shrink-0"
+                  />
+                )}
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span
+                    className={`font-mono text-[15px] font-semibold tabular-nums ${
+                      metric.accent
+                        ? "text-vx-accent-ember"
+                        : "text-vx-text-primary"
+                    }`}
+                  >
+                    {metric.value}
+                  </span>
+                  <span className="text-xs text-vx-text-muted">
+                    {metric.label}
+                  </span>
+                </div>
+              </Fragment>
+            ))}
+          </div>
+
+          {totals.total_sessions === 0 && (
+            <p className="mt-3 border-t border-vx-border-subtle pt-2.5 text-xs text-vx-text-muted">
+              {t("home.stats_empty")}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function ModeTranslateCard({
+  t,
+  activeMode,
+  translationEnabled,
+  translationTarget,
+  onUpdateSetting,
+}: {
+  t: Translate;
+  activeMode: string;
+  translationEnabled: boolean;
+  translationTarget: string;
+  onUpdateSetting: (key: string, value: unknown) => Promise<void>;
+}) {
+  const baseModes = [
+    {
+      id: "dictation",
+      label: t("settings.modes.dictation"),
+      desc: t("home.mode.dictation.desc"),
+    },
+    {
+      id: "message",
+      label: t("settings.modes.message"),
+      desc: t("home.mode.message.desc"),
+    },
+    {
+      id: "email",
+      label: t("settings.modes.email"),
+      desc: t("home.mode.email.desc"),
+    },
+  ];
+  const modes = BUILT_IN_CONSOLE_MODES.has(activeMode)
+    ? baseModes
+    : [...baseModes, { id: activeMode, label: modeLabel(t, activeMode), desc: "" }];
+
+  const targetName = translationTarget === "en" ? "English" : "Bahasa Indonesia";
+
+  return (
+    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-5 py-4 flex flex-col gap-3">
+      <div
+        className={`grid gap-2 ${
+          modes.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"
+        }`}
+      >
+        {modes.map((m) => {
+          const isSelected = activeMode === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() =>
+                void invokeAction(() => onUpdateSetting("active_mode", m.id))
+              }
+              className={`flex flex-col items-center justify-center rounded-[8px] border px-3 py-2.5 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
+                isSelected
+                  ? "bg-vx-bg-elevated border-vx-border-strong text-vx-text-primary"
+                  : "bg-vx-bg-subtle border-vx-border-subtle text-vx-text-secondary hover:border-vx-border-default hover:text-vx-text-primary"
+              }`}
+            >
+              <span className="text-[13px] font-medium">{m.label}</span>
+              {m.desc && (
+                <span className="mt-0.5 text-[11px] text-vx-text-muted">
+                  {m.desc}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] px-3 py-2.5 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Languages className="h-4 w-4 text-vx-text-secondary shrink-0" />
+          <span className="truncate text-[13px] text-vx-text-primary">
+            {t("home.translate_after_arrow", { target: targetName })}
+          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {translationEnabled && (
+            <select
+              value={translationTarget}
+              onChange={(e) =>
+                void invokeAction(() =>
+                  onUpdateSetting("translation_target", e.target.value),
+                )
+              }
+              aria-label={t("settings.general.lang")}
+              className="rounded-[6px] border border-vx-border-default bg-vx-bg-surface px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent-ember focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
+            >
+              <option
+                value="en"
+                className="bg-vx-bg-surface text-vx-text-primary"
+              >
+                English
+              </option>
+              <option
+                value="id"
+                className="bg-vx-bg-surface text-vx-text-primary"
+              >
+                Bahasa Indonesia
+              </option>
+            </select>
+          )}
+          <Switch
+            checked={translationEnabled}
+            onChange={(next) =>
+              void invokeAction(() =>
+                onUpdateSetting("translation_enabled", next),
+              )
+            }
+            ariaLabel={t("home.translate_desc")}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecentTranscriptionsCard({
+  t,
+  recentItems,
+  historyError,
+  copiedId,
+  injectedId,
+  onRetry,
+  onCopy,
+  onReInject,
+  onTogglePin,
+}: {
+  t: Translate;
+  recentItems: TranscriptionEntry[];
+  historyError: string | null;
+  copiedId: string | null;
+  injectedId: string | null;
+  onRetry: () => void;
+  onCopy: (id: string, text: string) => void;
+  onReInject: (id: string) => void;
+  onTogglePin: (id: string, pinned: boolean) => void;
+}) {
+  return (
+    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-5 py-4 flex-1 flex flex-col gap-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-vx-text-muted">
+          {t("home.recent_transcriptions")}
+        </h2>
+        <button
+          type="button"
+          onClick={() => navigate("history")}
+          className="text-xs font-normal text-vx-accent-ember hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember rounded-[4px]"
+        >
+          {t("home.view_all_history")}
+        </button>
+      </div>
+
+      {historyError ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6 text-center">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-vx-text-primary">
+              {t("error.history_load_failed")}
+            </p>
+            <p className="font-mono text-xs break-all text-vx-text-muted">
+              {historyError}
+            </p>
+          </div>
+          <Button size="sm" onClick={onRetry}>
+            {t("error.retry")}
+          </Button>
+        </div>
+      ) : recentItems.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center py-6 text-center text-vx-text-muted">
+          <Mic className="mb-2 h-6 w-6 opacity-40" />
+          <p className="text-xs">{t("home.no_history")}</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {recentItems.map((item) => {
+            const content = item.text_formatted || item.text_raw;
+            return (
+              <div
+                key={item.id}
+                className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] px-3 py-2.5 flex flex-col gap-1.5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="line-clamp-2 text-[13px] leading-[18px] text-vx-text-primary">
+                    {content}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <IconButton
+                      size="xs"
+                      tone="ghost"
+                      label={t("history.copy_tooltip")}
+                      icon={
+                        copiedId === item.id ? (
+                          <Check className="h-3.5 w-3.5 text-vx-semantic-success" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )
+                      }
+                      onClick={() => onCopy(item.id, content)}
+                    />
+                    <IconButton
+                      size="xs"
+                      tone="ghost"
+                      label={t("history.re_inject_tooltip")}
+                      icon={
+                        injectedId === item.id ? (
+                          <Check className="h-3.5 w-3.5 text-vx-semantic-success" />
+                        ) : (
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        )
+                      }
+                      onClick={() => onReInject(item.id)}
+                    />
+                    <IconButton
+                      size="xs"
+                      tone="ghost"
+                      label={
+                        item.is_pinned
+                          ? t("home.unpin_tooltip")
+                          : t("home.pin_tooltip")
+                      }
+                      className={
+                        item.is_pinned
+                          ? "text-vx-accent-ember hover:text-vx-accent-ember"
+                          : ""
+                      }
+                      icon={<Pin className="h-3.5 w-3.5" />}
+                      onClick={() => onTogglePin(item.id, !item.is_pinned)}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs leading-4 text-vx-text-muted">
+                  {buildItemMeta(item, t)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function HomeView() {
   const t = useT();
 
-  // App store states
   const state = useAppStore((s) => s.state);
   const durationSec = useAppStore((s) => s.durationSec);
   const wordCount = useAppStore((s) => s.wordCount);
@@ -48,61 +703,40 @@ export function HomeView() {
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
 
-  // Settings store
   const settings = useSettingsStore((s) => s.settings);
   const updateSetting = useSettingsStore((s) => s.update);
   const loadSettings = useSettingsStore((s) => s.load);
 
-  // History store
   const loadHistory = useHistoryStore((s) => s.load);
   const historyItems = useHistoryStore((s) => s.items);
   const historyError = useHistoryStore((s) => s.error);
   const togglePin = useHistoryStore((s) => s.togglePin);
 
-  // Stats store — lifetime totals aggregated server-side (uncapped)
   const totals = useStatsStore((s) => s.totals);
   const statsError = useStatsStore((s) => s.error);
   const loadStats = useStatsStore((s) => s.load);
 
-  // Local UI states
-  const [greeting, setGreeting] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [injectedId, setInjectedId] = useState<string | null>(null);
   const platform = usePlatform();
 
-  // Timer refs for cleanup
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const injectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingPendingRef = useRef(false);
 
-  // Load history, settings, and lifetime stats on mount
   useEffect(() => {
     void loadHistory();
     void loadSettings();
     void loadStats();
   }, [loadHistory, loadSettings, loadStats]);
-  
-  // Cleanup timers on unmount
+
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
     };
   }, []);
-  
-  const lang = useSettingsStore((s) => s.settings.language);
-  useEffect(() => {
-    const hrs = new Date().getHours();
-    if (hrs < 12) {
-      setGreeting(t("home.greeting.morning"));
-    } else if (hrs < 17) {
-      setGreeting(t("home.greeting.afternoon"));
-    } else {
-      setGreeting(t("home.greeting.evening"));
-    }
-  }, [t, lang]);
 
-  // Toggle record from GUI
   const handleMicClick = useCallback(async () => {
     if (recordingPendingRef.current) return;
     recordingPendingRef.current = true;
@@ -117,23 +751,20 @@ export function HomeView() {
     }
   }, [isRecording, state]);
 
-  const formatDuration = (sec: number) => {
-    const m = Math.floor(sec / 60).toString().padStart(2, "0");
-    const s = (sec % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  };
-
-  const handleCopy = useCallback(async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      toast(t("file.copy_failed"), "error");
-      return;
-    }
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    setCopiedId(id);
-    copyTimerRef.current = setTimeout(() => setCopiedId(null), 2000);
-  }, [t]);
+  const handleCopy = useCallback(
+    async (id: string, text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        toast(t("file.copy_failed"), "error");
+        return;
+      }
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      setCopiedId(id);
+      copyTimerRef.current = setTimeout(() => setCopiedId(null), 2000);
+    },
+    [t],
+  );
 
   const handleReInject = useCallback(async (id: string) => {
     if (injectTimerRef.current) clearTimeout(injectTimerRef.current);
@@ -144,517 +775,78 @@ export function HomeView() {
     }
   }, []);
 
-  // Safe config readouts with proper type guards
   const activeMode = getStringSetting(settings.active_mode, "dictation");
   const translationEnabled = getBooleanSetting(settings.translation_enabled, false);
   const translationTarget = getStringSetting(settings.translation_target, "en");
   const micDevice = getStringSetting(settings.mic_device, "default");
   const hotkey = isHotkeyConfig(settings.hotkey) ? settings.hotkey : undefined;
-  const shortcutDisplay = formatAccelerator(
-    hotkey?.key ?? "Ctrl+Space",
-    platform,
-  );
+  const shortcutDisplay = formatAccelerator(hotkey?.key ?? "Ctrl+Space", platform);
 
-  const recentItems = useMemo(() => {
-    return historyItems.slice(0, 3);
-  }, [historyItems]);
+  const recentItems = useMemo(() => historyItems.slice(0, 3), [historyItems]);
+  const avgWpm = useMemo(() => computeAvgWpm(historyItems), [historyItems]);
 
-  // Reached only when onboarding was skipped or completed without an engine:
-  // dictation would fail on the first press with no hint why.
   const engineMissing =
     settings.stt_engine === "whisper_cpp"
       ? !getStringSetting(settings.whisper_cpp_model_path, "")
       : settings.groq_api_key_set !== true;
 
-  // Per-session avg WPM over the 20 most-recent sessions. historyItems is
-  // newest-first (ORDER BY created_at DESC), so the most recent sessions are at
-  // the HEAD — use slice(0, 20), not slice(-20) which would pick the oldest 20.
-  // Implausibly fast sessions (very short blips) are discarded so a stray
-  // 1-word / 40ms clip can't skew the average toward absurd values.
-  const MAX_PLAUSIBLE_WPM = 400;
-  const avgWpm = useMemo(() => {
-    const rates: number[] = [];
-    for (const i of historyItems) {
-      // File transcripts measure someone else's speaking rate, not the user's.
-      if (i.mode === "file") continue;
-      const dur = i.duration_ms ?? 0;
-      if (!i.word_count || i.word_count <= 0) continue;
-      if (dur <= 0) continue;
-      const wpm = i.word_count / (dur / 60000);
-      if (!isFinite(wpm) || wpm > MAX_PLAUSIBLE_WPM) continue;
-      rates.push(wpm);
-      if (rates.length >= 20) break;
-    }
-    if (rates.length === 0) return 0;
-    const sum = rates.reduce((a, w) => a + w, 0);
-    return Math.round(sum / rates.length);
-  }, [historyItems]);
-
-  const hasStats = totals.total_sessions > 0;
-
-  // Split a duration into a numeric value + unit so the value can carry the
-  // display weight while the unit stays quiet — reads more like a designed
-  // metric than a single "1h 20m" string.
-  const splitDuration = (ms: number): { value: string; unit: string } => {
-    const totalSec = Math.floor(ms / 1000);
-    if (totalSec < 60) return { value: String(totalSec), unit: t("home.unit_sec") };
-    const totalMin = Math.floor(totalSec / 60);
-    if (totalMin < 60) return { value: String(totalMin), unit: totalMin === 1 ? t("home.unit_min") : t("home.unit_mins") };
-    const hrs = Math.floor(totalMin / 60);
-    const mins = totalMin % 60;
-    return { value: mins > 0 ? `${hrs}.${Math.round((mins / 60) * 10)}` : String(hrs), unit: hrs === 1 && mins === 0 ? t("home.unit_hr") : t("home.unit_hrs") };
-  };
-
-  // Condense large counts (12,400 → 12.4k) so the ledger stays visually calm.
-  // Boundaries are chosen so a value never rounds into the next unit's range
-  // (e.g. 999,999 shows "1.0M", not "1000k").
-  const formatCompact = (n: number): string => {
-    if (n < 1000) return n.toLocaleString();
-    if (n < 9_950) return `${(n / 1000).toFixed(1)}k`;
-    if (n < 999_500) return `${Math.round(n / 1000)}k`;
-    return `${(n / 1_000_000).toFixed(1)}M`;
-  };
-
-  const recordingTime = splitDuration(totals.total_duration_ms);
-
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      {engineMissing && (
-        <div
-          role="status"
-          className="mb-6 flex flex-col gap-3 rounded-2xl border border-vx-warning/30 bg-vx-warning/10 p-4 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div>
-            <p className="text-sm font-semibold text-vx-text-primary">
-              {t("home.setup_banner_title")}
-            </p>
-            <p className="text-xs text-vx-text-dim">
-              {t("home.setup_banner_body")}
-            </p>
-          </div>
-          <Button size="sm" variant="primary" onClick={openOnboarding}>
-            {t("home.setup_banner_action")}
-          </Button>
+    <div className="mx-auto w-full max-w-5xl px-8 pt-7 pb-24 flex flex-col gap-5 vx-panel-reveal">
+      <HomeTopBar
+        t={t}
+        isRecording={isRecording}
+        isProcessing={isProcessing}
+        durationSec={durationSec}
+        hotkey={hotkey}
+      />
+
+      {engineMissing && <SetupMissingBanner t={t} />}
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[390px_minmax(0,1fr)] items-stretch">
+        <VoiceConsoleCard
+          t={t}
+          state={state}
+          durationSec={durationSec}
+          wordCount={wordCount}
+          outcome={outcome}
+          hotkey={hotkey}
+          shortcutDisplay={shortcutDisplay}
+          micDevice={micDevice}
+          sttEngine={settings.stt_engine}
+          onMicClick={() => void handleMicClick()}
+        />
+
+        <div className="flex flex-col gap-3.5 min-w-0">
+          <LifetimeTelemetryCard
+            t={t}
+            totals={totals}
+            avgWpm={avgWpm}
+            statsError={statsError}
+            onRetry={() => void loadStats()}
+          />
+
+          <ModeTranslateCard
+            t={t}
+            activeMode={activeMode}
+            translationEnabled={translationEnabled}
+            translationTarget={translationTarget}
+            onUpdateSetting={updateSetting}
+          />
+
+          <RecentTranscriptionsCard
+            t={t}
+            recentItems={recentItems}
+            historyError={historyError}
+            copiedId={copiedId}
+            injectedId={injectedId}
+            onRetry={() => void loadHistory()}
+            onCopy={(id, text) => void handleCopy(id, text)}
+            onReInject={(id) => void handleReInject(id)}
+            onTogglePin={(id, pinned) =>
+              void invokeAction(() => togglePin(id, pinned))
+            }
+          />
         </div>
-      )}
-
-      {/* Grid Dashboard */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-
-        {/* Left Column: Recording Console */}
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-8 text-center backdrop-blur-md lg:col-span-5 min-h-[480px]">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-vx-accent">
-            {t("app.name")}
-          </div>
-          <h1 className="mb-6 text-2xl font-bold tracking-tight text-vx-text-primary">
-            {greeting}
-          </h1>
-
-          {/* Voice Mic Button — calm brand tint, no glow */}
-          <button
-            type="button"
-            onClick={handleMicClick}
-            disabled={isProcessing}
-            className="group relative mb-6 flex h-40 w-40 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-primary disabled:cursor-not-allowed"
-            title={isRecording ? t("home.mic_recording_tooltip") : t("home.mic_tooltip")}
-            aria-label={isRecording ? t("home.mic_recording_tooltip") : t("home.mic_tooltip")}
-          >
-            {/* Outer soft state ring — calm tint, no colored bloom */}
-            <span
-              className={`absolute inset-0 rounded-full transition-all duration-300 ease-out ${
-                isRecording
-                  ? "bg-vx-accent/10 scale-105 blur-md"
-                  : isProcessing
-                    ? "bg-vx-success/10 scale-100 blur-md"
-                    : "bg-vx-accent/5 scale-90 blur-xl group-hover:scale-110 group-hover:bg-vx-accent/10"
-              }`}
-            />
-            {/* Inner Core button */}
-            <span
-              className={`relative flex h-24 w-24 items-center justify-center rounded-full transition-all duration-200 ease-out border ${
-                isRecording
-                  ? "bg-vx-accent scale-105 border-vx-accent/50 shadow-vx-lg text-white"
-                  : isProcessing
-                    ? "bg-vx-bg-tertiary border-vx-success/40 shadow-vx-lg text-vx-success"
-                    : "bg-vx-bg-tertiary border-vx-border/40 shadow-vx-lg group-hover:scale-105 group-hover:border-vx-accent/50 text-vx-text-secondary"
-              }`}
-            >
-              {isProcessing ? (
-                <Loader2 className="h-9 w-9 animate-spin text-vx-success" />
-              ) : (
-                <Mic
-                  className={`h-9 w-9 transition-colors duration-300 ${
-                    isRecording
-                      ? "text-white"
-                      : "text-vx-text-secondary group-hover:text-vx-accent"
-                  }`}
-                />
-              )}
-            </span>
-          </button>
-
-          {/* Duration & Waveform feedback */}
-          <div className="h-20 flex flex-col items-center justify-center w-full">
-            {isRecording ? (
-              <div className="flex flex-col items-center gap-1.5 w-full px-8">
-                <span className="text-xl font-mono font-semibold tracking-wide text-vx-text-primary">
-                  {formatDuration(durationSec)}
-                </span>
-                <div className="w-full max-w-[150px] flex items-center justify-center">
-                  <Waveform
-                    active={isRecording}
-                    barClassName="bg-vx-accent"
-                  />
-                </div>
-              </div>
-            ) : isProcessing ? (
-              <span className="text-sm font-medium tracking-wide uppercase text-vx-success/80">
-                {t("processing")}
-              </span>
-            ) : (
-              <>
-                <span className="text-sm font-medium tracking-wide text-vx-text-secondary">
-                  {t("idle.hint", { shortcut: shortcutDisplay })}
-                </span>
-                {state === "idle" && wordCount !== null && (
-                  <span
-                    role="status"
-                    className={`text-xs ${
-                      outcome?.injected === false
-                        ? "text-vx-error"
-                        : "text-vx-success"
-                    }`}
-                  >
-                    {outcome?.injected === false
-                      ? t("notice.saved_to_history")
-                      : outcome?.appContext
-                        ? t("home.inserted_into", { app: outcome.appContext })
-                        : t("home.inserted")}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Quick Info Badges */}
-          <div className="mt-8 flex flex-wrap justify-center gap-2 text-xs text-vx-text-dim">
-            <span className="flex items-center gap-1.5 rounded-full border border-vx-border/30 bg-vx-bg-tertiary/40 px-3 py-1">
-              <Volume2 className="h-3.5 w-3.5 text-vx-text-secondary" />
-              {micDevice === "default" ? t("home.default_mic") : micDevice.split("(")[0].trim()}
-            </span>
-            <span className="flex items-center gap-1.5 rounded-full border border-vx-border/30 bg-vx-bg-tertiary/40 px-3 py-1">
-              <Sparkles className="h-3.5 w-3.5 text-vx-accent" />
-              {settings.stt_engine === "whisper_cpp" ? t("home.local_whisper") : t("home.groq_cloud")}
-            </span>
-          </div>
-        </div>
-
-        {/* Right Column: Controls & Clipboard history */}
-        <div className="flex flex-col gap-6 lg:col-span-7">
-
-          {/* Usage Stats Card — editorial ledger: one hero gauge + a hairline
-              stat column, instead of four identical badge tiles. */}
-          <div className="group/stats relative overflow-hidden rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">
-            {/* Soft corner wash — atmosphere without a colored glow */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-vx-accent/[0.06] blur-3xl"
-            />
-
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
-                <BarChart3 className="h-4 w-4 text-vx-accent" />
-                {t("home.usage_stats")}
-              </h2>
-              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-vx-text-dim">
-                {t("home.lifetime")}
-              </span>
-            </div>
-
-            {statsError ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
-                <div className="max-w-md space-y-1">
-                  <p className="text-sm font-semibold text-vx-text-primary">
-                    {t("error.stats_load_failed")}
-                  </p>
-                  <p className="text-xs font-mono text-vx-text-dim break-all">{statsError}</p>
-                </div>
-                <Button size="sm" onClick={() => void loadStats()}>
-                  {t("error.retry")}
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,0.9fr)_1px_minmax(0,1.1fr)]">
-                  {/* Hero — WPM gauge */}
-                  <div className="flex flex-col items-center justify-center">
-                    <WpmHalfRing value={avgWpm} />
-                    <span className="mt-1 text-[11px] uppercase tracking-[0.18em] text-vx-text-dim">
-                      {t("home.words_per_minute")}
-                    </span>
-                  </div>
-
-                  {/* Vertical hairline (only on the 3-col layout) */}
-                  <div aria-hidden className="hidden bg-vx-divider sm:block" />
-
-                  {/* Stat ledger — hairline-separated rows, tabular figures */}
-                  <dl className="flex flex-col justify-center divide-y divide-vx-divider">
-                    {[
-                      {
-                        key: "time",
-                        Icon: HourglassIcon,
-                        label: t("home.total_time"),
-                        value: recordingTime.value,
-                        unit: recordingTime.unit,
-                      },
-                      {
-                        key: "words",
-                        Icon: ScrollTextIcon,
-                        label: t("home.total_words"),
-                        value: formatCompact(totals.total_words),
-                        unit: t("home.unit_words"),
-                      },
-                      {
-                        key: "sessions",
-                        Icon: SparkleIcon,
-                        label: t("home.sessions"),
-                        value: formatCompact(totals.total_sessions),
-                        unit: t("home.unit_sessions"),
-                      },
-                    ].map(({ key, Icon, label, value, unit }) => (
-                      <div key={key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-vx-border/40 bg-vx-bg-tertiary/40 text-vx-accent transition-colors duration-300 group-hover/stats:border-vx-accent/40">
-                          <Icon className="h-[18px] w-[18px]" />
-                        </div>
-                        <dt className="flex-1 text-xs text-vx-text-secondary">{label}</dt>
-                        <dd className="grid w-24 grid-cols-[1fr_auto] items-baseline gap-1">
-                          <span className="text-right text-xl font-semibold tabular-nums tracking-tight text-vx-text-primary">
-                            {value}
-                          </span>
-                          <span className="w-8 text-left text-[11px] font-medium text-vx-text-dim">
-                            {unit}
-                          </span>
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-
-                {!hasStats && (
-                  <p className="mt-5 border-t border-vx-divider pt-4 text-center text-xs text-vx-text-dim">
-                    {t("home.stats_empty")}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Quick Settings Card */}
-          <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
-              <Zap className="h-4 w-4 text-vx-accent" />
-              {t("home.quick_settings")}
-            </h2>
-
-            {/* Mode selection row */}
-            <div className="mb-6">
-              <label className="mb-2 block text-xs text-vx-text-dim">
-                {t("home.active_mode")}
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "dictation", label: t("settings.modes.dictation"), desc: t("home.mode.dictation.desc") },
-                  { id: "message", label: t("settings.modes.message"), desc: t("home.mode.message.desc") },
-                  { id: "email", label: t("settings.modes.email"), desc: t("home.mode.email.desc") },
-                ].map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => void invokeAction(() => updateSetting("active_mode", m.id))}
-                    className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
-                      activeMode === m.id
-                        ? "border-vx-accent/50 bg-vx-accent/5 text-vx-text-primary"
-                        : "border-vx-border/30 bg-vx-bg-tertiary/30 text-vx-text-dim hover:text-vx-text-secondary hover:border-vx-border/60"
-                    }`}
-                  >
-                    <span className="text-sm font-semibold">{m.label}</span>
-                    <span className="mt-0.5 text-[10px] opacity-75">{m.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Translation Toggle */}
-            <div className="flex items-center justify-between rounded-xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-vx-accent-soft text-vx-accent">
-                  <Languages className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-vx-text-primary">
-                    {t("home.translate_to", { target: translationTarget === "en" ? "English" : "Bahasa Indonesia" })}
-                  </h3>
-                  <p className="text-xs text-vx-text-dim">{t("home.translate_desc")}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {translationEnabled && (
-                  <select
-                    value={translationTarget}
-                    onChange={(e) => void invokeAction(() => updateSetting("translation_target", e.target.value))}
-                    className="rounded-lg border border-vx-border bg-vx-bg-tertiary px-2 py-1 text-xs text-vx-text-primary focus:border-vx-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
-                    aria-label={t("settings.general.lang")}
-                  >
-                    <option value="en">English</option>
-                    <option value="id">Bahasa Indonesia</option>
-                  </select>
-                )}
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={translationEnabled}
-                  aria-label={t("home.translate_desc")}
-                  onClick={() => void invokeAction(() => updateSetting("translation_enabled", !translationEnabled))}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
-                    translationEnabled ? "bg-vx-accent" : "bg-vx-border-strong"
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      translationEnabled ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Recent Dictations Card */}
-          <div className="rounded-3xl border border-vx-border/30 bg-vx-bg-secondary/40 p-6 backdrop-blur-md flex-1 flex flex-col">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-vx-text-secondary">
-              <FileText className="h-4 w-4 text-vx-accent" />
-              {t("home.recent_transcriptions")}
-            </h2>
-
-            {historyError ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-vx-text-primary">
-                    {t("error.history_load_failed")}
-                  </p>
-                  <p className="text-xs font-mono text-vx-text-dim break-all">{historyError}</p>
-                </div>
-                <Button size="sm" onClick={() => void loadHistory()}>
-                  {t("error.retry")}
-                </Button>
-              </div>
-            ) : recentItems.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center p-6 text-center text-vx-text-dim">
-                <Mic className="mb-2 h-8 w-8 opacity-20" />
-                <p className="text-xs">{t("home.no_history")}</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {recentItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="group/item flex flex-col justify-between gap-3 rounded-2xl border border-vx-border/30 bg-vx-bg-tertiary/20 p-4 transition-colors hover:border-vx-border/60 hover:bg-vx-bg-tertiary/40"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <p className="line-clamp-2 text-sm text-vx-text-primary leading-relaxed">
-                        {item.text_formatted || item.text_raw}
-                      </p>
-
-                      {/* Copy, Re-inject, Pin Action buttons */}
-                      <div className="flex shrink-0 items-center gap-1 opacity-60 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100">
-                        {/* Copy */}
-                        <button
-                          type="button"
-                          onClick={() => void handleCopy(item.id, item.text_formatted || item.text_raw)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
-                          title={t("history.copy_tooltip")}
-                          aria-label={t("history.copy_tooltip")}
-                        >
-                          {copiedId === item.id ? (
-                            <Check className="h-4 w-4 text-vx-success" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </button>
-
-                        {/* Re-inject */}
-                        <button
-                          type="button"
-                          onClick={() => void handleReInject(item.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary text-vx-text-secondary hover:text-vx-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary"
-                          title={t("history.re_inject_tooltip")}
-                          aria-label={t("history.re_inject_tooltip")}
-                        >
-                          {injectedId === item.id ? (
-                            <Check className="h-4 w-4 text-vx-success" />
-                          ) : (
-                            <ArrowRight className="h-4 w-4" />
-                          )}
-                        </button>
-
-                        {/* Pin */}
-                        <button
-                          type="button"
-                          onClick={() => void invokeAction(() => togglePin(item.id, !item.is_pinned))}
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-vx-bg-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-primary ${
-                            item.is_pinned
-                              ? "text-vx-accent"
-                              : "text-vx-text-secondary hover:text-vx-text-primary"
-                          }`}
-                          title={item.is_pinned ? t("home.unpin_tooltip") : t("home.pin_tooltip")}
-                          aria-label={item.is_pinned ? t("home.unpin_tooltip") : t("home.pin_tooltip")}
-                        >
-                          <Pin className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-vx-text-dim border-t border-vx-border/20 pt-2">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-vx-accent/60" />
-                        <span className="capitalize">{modeLabel(t, item.mode)}</span>
-                        {item.word_count > 0 && (
-                          <>
-                            <span>•</span>
-                            <span>
-                              {item.word_count} {t("home.words")}
-                            </span>
-                          </>
-                        )}
-                      </span>
-                      <span>
-                        {(() => {
-                          if (!item.created_at) return "";
-                          const d = new Date(item.created_at);
-                          if (isNaN(d.getTime())) return "";
-                          return d.toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          });
-                        })()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Quick keyboard shortcut reminder */}
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-vx-border/20 bg-vx-bg-secondary/10 p-3 text-xs text-vx-text-dim">
-            <Keyboard className="h-4 w-4" />
-            <span>
-              {t("home.shortcut_tip", { shortcut: shortcutDisplay })}
-            </span>
-          </div>
-
-        </div>
-
       </div>
     </div>
   );

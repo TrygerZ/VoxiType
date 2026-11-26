@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HomeView } from "./HomeView";
 import * as tauri from "../../lib/tauri";
+import { setNavigator } from "../../lib/navigate";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useHistoryStore } from "../../stores/historyStore";
@@ -146,5 +147,125 @@ describe("HomeView recording actions", () => {
     expect(tauri.startRecording).toHaveBeenCalledTimes(1);
 
     resolveFirst();
+  });
+});
+
+describe("HomeView v2 redesign & navigation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setNavigator(null);
+    useToastStore.setState({ toasts: [] });
+    useAppStore.setState({
+      state: "idle",
+      durationSec: 0,
+      wordCount: null,
+      outcome: null,
+      errorMessage: null,
+    });
+    useSettingsStore.setState({
+      settings: {
+        language: "en",
+        groq_api_key_set: true,
+        mic_device: "Shure MV7 (USB Audio)",
+        stt_engine: "groq",
+        active_mode: "dictation",
+        hotkey: { key: "Ctrl+Space", mode: "ptt" },
+      },
+      loaded: true,
+      error: null,
+    });
+    useStatsStore.setState({
+      totals: { total_words: 28600, total_duration_ms: 12_240_000, total_sessions: 312 },
+      loaded: true,
+      error: null,
+    });
+    useHistoryStore.setState({
+      items: [
+        {
+          id: "rec-1",
+          text_raw: "Let us align on the API schema",
+          text_formatted: "Let's align on the API schema before Friday.",
+          mode: "message",
+          source_lang: "en",
+          duration_ms: 6000,
+          word_count: 8,
+          character_count: 44,
+          stt_engine: "groq",
+          llm_engine: "groq",
+          app_context: "Slack",
+          created_at: new Date().toISOString(),
+          is_pinned: false,
+        },
+      ],
+      loading: false,
+      error: null,
+      query: "",
+    });
+  });
+
+  it("navigates to Settings Audio, Settings STT, and History from quick links", async () => {
+    const navSpy = vi.fn();
+    setNavigator(navSpy);
+
+    render(<HomeView />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /Shure MV7/i }));
+    expect(navSpy).toHaveBeenCalledWith("settings", "audio");
+
+    await user.click(screen.getByRole("button", { name: /Groq Cloud/i }));
+    expect(navSpy).toHaveBeenCalledWith("settings", "stt");
+
+    await user.click(screen.getByRole("button", { name: /View all in History/i }));
+    expect(navSpy).toHaveBeenCalledWith("history", undefined);
+  });
+
+  it("renders Copy and Pin icon buttons for recent items and omits banned glass classes", async () => {
+    const entry = {
+      id: "rec-1",
+      text_raw: "Let us align on the API schema",
+      text_formatted: "Let's align on the API schema before Friday.",
+      mode: "message",
+      source_lang: "en",
+      duration_ms: 6000,
+      word_count: 8,
+      character_count: 44,
+      stt_engine: "groq",
+      llm_engine: "groq",
+      app_context: "Slack",
+      created_at: new Date().toISOString(),
+      is_pinned: false,
+    };
+    vi.mocked(tauri.getHistory).mockResolvedValueOnce([entry]);
+    useHistoryStore.setState({ items: [entry] });
+
+    const { container } = render(<HomeView />);
+    const user = userEvent.setup();
+    const writeText = vi
+      .spyOn(window.navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+
+    expect(container.querySelector(".backdrop-blur-md")).toBeNull();
+    expect(container.querySelector(".rounded-3xl")).toBeNull();
+    expect(container.querySelector(".blur-3xl")).toBeNull();
+    expect(container.querySelector('img[src="/logo.png"]')).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /^Copy$/i }));
+    expect(writeText).toHaveBeenCalledWith(
+      "Let's align on the API schema before Friday.",
+    );
+
+    await user.click(screen.getByRole("button", { name: /Pin transcription/i }));
+    expect(tauri.pinHistory).toHaveBeenCalledWith("rec-1", true);
+  });
+
+  it("shows recording timer and vx-mic-pulse when recording is active", () => {
+    useAppStore.setState({ state: "recording", durationSec: 14 });
+
+    const { container } = render(<HomeView />);
+
+    expect(screen.getByText("00:14")).toBeInTheDocument();
+    expect(screen.getByText("Recording · 00:14")).toBeInTheDocument();
+    expect(container.querySelector(".vx-mic-pulse")).not.toBeNull();
   });
 });

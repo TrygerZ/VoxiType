@@ -20,14 +20,14 @@ export function WpmHalfRing({ value, max = 400 }: WpmHalfRingProps) {
       {/* Track arc */}
       <path
         d={arc}
-        stroke="var(--color-vx-border)"
+        stroke="var(--vx-border-subtle)"
         strokeWidth={6}
         strokeLinecap="round"
       />
       {/* Progress arc */}
       <path
         d={arc}
-        stroke="var(--color-vx-accent)"
+        stroke="var(--vx-accent-ember)"
         strokeWidth={6}
         strokeLinecap="round"
         strokeDasharray={`${perimeter} ${perimeter * 5}`}
@@ -38,7 +38,7 @@ export function WpmHalfRing({ value, max = 400 }: WpmHalfRingProps) {
       <text
         x="70" y="82"
         textAnchor="middle"
-        fill="var(--color-vx-text-primary)"
+        fill="var(--vx-text-primary)"
         fontSize="28"
         fontWeight="700"
         fontFamily="var(--vx-font-family)"
@@ -50,7 +50,7 @@ export function WpmHalfRing({ value, max = 400 }: WpmHalfRingProps) {
       <text
         x="70" y="98"
         textAnchor="middle"
-        fill="var(--color-vx-text-secondary)"
+        fill="var(--vx-text-secondary)"
         fontSize="10"
         fontWeight="500"
         fontFamily="var(--vx-font-family)"
