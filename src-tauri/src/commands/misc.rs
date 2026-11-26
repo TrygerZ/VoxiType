@@ -906,9 +906,23 @@ pub async fn test_whisper_cpp(
     engine.transcribe(&silence, &config).await.map(|_| ())
 }
 
+#[tauri::command]
+pub async fn test_ollama(model: String) -> std::result::Result<(), AppError> {
+    super::check_non_empty("Ollama model", &model)?;
+    super::check_len("Ollama model", &model, super::MAX_IDENTIFIER_LEN)?;
+    let endpoint = crate::llm::OllamaConfig::default().endpoint;
+    crate::llm::ollama::check_model_ready(&endpoint, model.trim()).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_ollama_rejects_blank_model_name() {
+        let err = test_ollama("   ".to_string()).await.unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+    }
 
     #[test]
     fn parse_hotkey_mode_accepts_known_and_rejects_unknown() {

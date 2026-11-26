@@ -109,6 +109,74 @@ impl LlmFormatter for OllamaFormatter {
     }
 }
 
+const TAGS_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[derive(Debug, Deserialize)]
+struct OllamaTagsResponse {
+    #[serde(default)]
+    models: Vec<OllamaTagEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaTagEntry {
+    name: String,
+}
+
+/// Checks whether a requested Ollama model name matches any installed tag in `/api/tags`.
+pub fn model_matches_tag_list(requested: &str, available: &[String]) -> bool {
+    let req = requested.trim();
+    if req.is_empty() {
+        return false;
+    }
+    let latest = (!req.contains(':')).then(|| format!("{req}:latest"));
+    available.iter().any(|entry| {
+        let candidate = entry.trim();
+        candidate == req || latest.as_deref() == Some(candidate)
+    })
+}
+
+/// Verifies that the local Ollama daemon responds on `/api/tags` and hosts `model`.
+pub async fn check_model_ready(endpoint: &str, model: &str) -> Result<()> {
+    let trimmed = model.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::invalid_input("Ollama model cannot be empty"));
+    }
+
+    let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    let client = crate::util::http_client()?;
+    let resp = client
+        .get(&url)
+        .timeout(TAGS_CHECK_TIMEOUT)
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_connect() {
+                AppError::llm_connection_refused(format!("Ollama connection refused: {e}"))
+            } else if e.is_timeout() {
+                AppError::timeout(format!("Ollama readiness check timed out: {e}"))
+            } else {
+                AppError::from(e)
+            }
+        })?;
+
+    let status = resp.status();
+    let text = crate::util::read_body_capped(resp, crate::util::MAX_RESPONSE_BODY_BYTES).await?;
+    if !status.is_success() {
+        let safe_text = crate::util::sanitize_error_body(&text);
+        return Err(AppError::llm(format!("Ollama error {status}: {safe_text}"))
+            .with_http_status(status.as_u16()));
+    }
+
+    let parsed: OllamaTagsResponse = serde_json::from_str(&text)?;
+    let names: Vec<String> = parsed.models.into_iter().map(|entry| entry.name).collect();
+    if !model_matches_tag_list(trimmed, &names) {
+        return Err(AppError::llm(format!(
+            "Model '{trimmed}' is not installed in Ollama"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +193,23 @@ mod tests {
             parse_response_text(r#"{"response":"  Halo dunia. \n"}"#).unwrap(),
             "Halo dunia."
         );
+    }
+
+    #[test]
+    fn model_matches_exact_and_latest_tags() {
+        let installed = vec![
+            "qwen2.5:3b".to_string(),
+            "llama3.2:latest".to_string(),
+            "mistral:7b-instruct".to_string(),
+        ];
+
+        assert!(model_matches_tag_list("qwen2.5:3b", &installed));
+        assert!(model_matches_tag_list("llama3.2", &installed));
+        assert!(model_matches_tag_list("llama3.2:latest", &installed));
+        assert!(model_matches_tag_list("  qwen2.5:3b  ", &installed));
+        assert!(!model_matches_tag_list("gemma2:9b", &installed));
+        assert!(!model_matches_tag_list("", &installed));
+        assert!(!model_matches_tag_list("   ", &installed));
+        assert!(!model_matches_tag_list("qwen2.5:3b", &[]));
     }
 }

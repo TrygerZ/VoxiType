@@ -157,6 +157,8 @@ export const setWhisperCppPaths = (
 // --- Groq API ---
 export const testGroqApi = (key?: string | null) =>
   invoke<void>("test_groq_api", { apiKey: key ?? null });
+export const testOllama = (model: string) =>
+  invoke<void>("test_ollama", { model });
 export const testWhisperCpp = (
   binaryPath: string,
   modelPath: string,

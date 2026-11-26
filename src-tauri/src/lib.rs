@@ -423,6 +423,7 @@ pub fn run() {
             commands::get_data_directory,
             commands::restart_app,
             commands::test_groq_api,
+            commands::test_ollama,
             commands::test_whisper_cpp,
             commands::get_usage_stats,
         ])

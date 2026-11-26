@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
 // invoke wrappers under test are exercised.
 vi.unmock("./tauri");
 
-import { ackWidgetHide, ackWidgetReveal } from "./tauri";
+import { ackWidgetHide, ackWidgetReveal, testOllama } from "./tauri";
 
 describe("widget acknowledgement wrappers", () => {
   it("invokes ack_widget_reveal with the payload id", async () => {
@@ -22,5 +22,14 @@ describe("widget acknowledgement wrappers", () => {
   it("invokes ack_widget_hide with the payload id", async () => {
     await ackWidgetHide(3);
     expect(invokeMock).toHaveBeenCalledWith("ack_widget_hide", { id: 3 });
+  });
+});
+
+describe("testOllama wrapper", () => {
+  it("invokes test_ollama with the requested model", async () => {
+    await testOllama("qwen2.5:3b");
+    expect(invokeMock).toHaveBeenCalledWith("test_ollama", {
+      model: "qwen2.5:3b",
+    });
   });
 });
