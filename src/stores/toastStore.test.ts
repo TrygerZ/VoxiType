@@ -44,4 +44,16 @@ describe("toastStore.add", () => {
 
     expect(useToastStore.getState().toasts).toHaveLength(1);
   });
+
+  it("stores optional description on ToastItem", () => {
+    const { add } = useToastStore.getState();
+
+    add("Export complete", "success", undefined, "2 files saved to Downloads.");
+
+    expect(useToastStore.getState().toasts[0]).toMatchObject({
+      message: "Export complete",
+      type: "success",
+      description: "2 files saved to Downloads.",
+    });
+  });
 });

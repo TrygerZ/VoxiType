@@ -11,13 +11,19 @@ export interface ToastAction {
 export interface ToastItem {
   id: number;
   message: string;
+  description?: string;
   type: ToastType;
   action?: ToastAction;
 }
 
 interface ToastStore {
   toasts: ToastItem[];
-  add: (message: string, type?: ToastType, action?: ToastAction) => void;
+  add: (
+    message: string,
+    type?: ToastType,
+    action?: ToastAction,
+    description?: string,
+  ) => void;
   remove: (id: number) => void;
   clear: () => void;
 }
@@ -26,7 +32,12 @@ let nextToastId = 0;
 
 export const useToastStore = create<ToastStore>((set, get) => ({
   toasts: [],
-  add: (message: string, type: ToastType = "success", action?: ToastAction) => {
+  add: (
+    message: string,
+    type: ToastType = "success",
+    action?: ToastAction,
+    description?: string,
+  ) => {
     // Collapse an identical visible toast: repeated failures (e.g. retrying
     // the same action) must not stack N copies. The existing toast's
     // auto-dismiss timer keeps running.
@@ -34,19 +45,35 @@ export const useToastStore = create<ToastStore>((set, get) => ({
       (t) => t.message === message && t.type === type,
     );
     if (duplicate) {
-      // The newer failure carries newer recovery data (e.g. the latest
-      // transcript to copy). Keep the old action when the new one has none so
-      // the recovery path is never removed.
-      if (!action) return;
+      // Keep existing action/description when a duplicate omits them so
+      // recovery affordances and context are never cleared.
+      if (action === undefined && description === undefined) return;
       set((s) => ({
         toasts: s.toasts.map((t) =>
-          t.id === duplicate.id ? { ...t, action } : t,
+          t.id === duplicate.id
+            ? {
+                ...t,
+                ...(action !== undefined ? { action } : {}),
+                ...(description !== undefined ? { description } : {}),
+              }
+            : t,
         ),
       }));
       return;
     }
     const id = ++nextToastId;
-    set((s) => ({ toasts: [...s.toasts, { id, message, type, action }] }));
+    set((s) => ({
+      toasts: [
+        ...s.toasts,
+        {
+          id,
+          message,
+          type,
+          action,
+          ...(description !== undefined ? { description } : {}),
+        },
+      ],
+    }));
   },
   remove: (id: number) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
@@ -58,6 +85,7 @@ export function toast(
   message: string,
   type: ToastType = "success",
   action?: ToastAction,
+  description?: string,
 ) {
-  useToastStore.getState().add(message, type, action);
+  useToastStore.getState().add(message, type, action, description);
 }

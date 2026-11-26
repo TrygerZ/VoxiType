@@ -104,4 +104,53 @@ describe("ToastContainer", () => {
     });
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
+
+  it("positions container at top-4 right-4 and renders matte card without left stripe or translucent fill", () => {
+    const { container } = render(<ToastContainer />);
+
+    act(() => {
+      toast(
+        "Restart required",
+        "info",
+        { label: "Restart", onClick: vi.fn() },
+        "Data directory changes apply after restart.",
+      );
+    });
+
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.className).toContain("top-4");
+    expect(wrapper.className).toContain("right-4");
+    expect(wrapper.className).not.toContain("bottom-4");
+
+    expect(
+      screen.getByText("Data directory changes apply after restart."),
+    ).toBeInTheDocument();
+
+    const card = screen.getByText("Restart required").closest("[data-testid='toast-card']") as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(card.className).toContain("bg-vx-bg-elevated");
+    expect(card.className).toContain("border-vx-border-default");
+    expect(card.className).not.toContain("/10");
+    expect(card.className).not.toContain("border-l-");
+  });
+
+  it("renders a dismiss button across Info, Success, and Error toasts even with action", () => {
+    render(<ToastContainer />);
+
+    act(() => {
+      toast("Info notice", "info", { label: "Act", onClick: vi.fn() });
+      toast("Success notice", "success");
+      toast("Error notice", "error", { label: "Fix", onClick: vi.fn() });
+    });
+
+    const dismissButtons = screen.getAllByRole("button", { name: "Dismiss" });
+    expect(dismissButtons).toHaveLength(3);
+
+    act(() => {
+      dismissButtons[0].click();
+    });
+    expect(screen.queryByText("Info notice")).toBeNull();
+    expect(screen.getByText("Success notice")).toBeInTheDocument();
+    expect(screen.getByText("Error notice")).toBeInTheDocument();
+  });
 });

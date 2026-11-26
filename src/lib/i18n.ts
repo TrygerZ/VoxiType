@@ -23,6 +23,7 @@ export const id: Dict = {
   "home.inserted": "Teks dimasukkan ke aplikasi tujuan",
   "toast.success_label": "Berhasil:",
   "toast.info_label": "Info:",
+  "toast.dismiss": "Tutup",
   "error.settings_load_failed": "Gagal memuat pengaturan",
   "error.startup_title": "VoxiType tidak dapat dimulai",
   "error.startup_body":
@@ -49,7 +50,7 @@ export const id: Dict = {
   "nav.history": "Riwayat",
   "nav.dictionary": "Kamus",
   "nav.snippets": "Snippet",
-  "nav.file": "Transkrip File",
+  "nav.file": "File",
   "nav.about": "Tentang",
   "file.title": "Transkrip File",
   "file.subtitle": "Ubah file audio menjadi teks",
@@ -547,6 +548,7 @@ export const en: Dict = {
   "home.inserted": "Text inserted into the target app",
   "toast.success_label": "Success:",
   "toast.info_label": "Info:",
+  "toast.dismiss": "Dismiss",
   "error.settings_load_failed": "Failed to load settings",
   "error.startup_title": "VoxiType could not start",
   "error.startup_body":
@@ -573,7 +575,7 @@ export const en: Dict = {
   "nav.history": "History",
   "nav.dictionary": "Dictionary",
   "nav.snippets": "Snippets",
-  "nav.file": "File Transcription",
+  "nav.file": "File",
   "nav.about": "About",
   "file.title": "File Transcription",
   "file.subtitle": "Turn audio files into text",
