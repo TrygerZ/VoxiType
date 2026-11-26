@@ -73,7 +73,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (50 total across 9 modules)
+## IPC Commands (56 total across 9 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -82,16 +82,16 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `settings` | `get_settings`, `update_setting`, `set_floating_widget_enabled` |
 | `history` | `get_history`, `search_history`, `delete_history`, `pin_history`, `clear_history`, `re_inject`, `export_history` |
 | `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
-| `snippets` | `get_snippets`, `add_snippet`, `delete_snippet` |
-| `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app` |
-| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `restrict_data_directory`, `get_data_directory`, `test_groq_api`, `test_whisper_cpp`, `restart_app`, `set_mic_meter` |
+| `snippets` | `get_snippets`, `add_snippet`, `set_snippet_active`, `delete_snippet` |
+| `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app`, `list_running_apps` |
+| `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `restrict_data_directory`, `get_data_directory`, `restart_app`, `test_groq_api`, `test_ollama`, `test_whisper_cpp`, `set_mic_meter` |
 | `stats` | `get_usage_stats` |
-| `file_transcription` | `pick_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
+| `file_transcription` | `pick_audio_files`, `register_dropped_audio_files`, `remove_queued_audio_file`, `clear_queued_audio_files`, `transcribe_file`, `cancel_file_transcription`, `pick_export_directory`, `export_transcripts` |
 
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (50 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (56 commands)
 - `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica and defined CP1252 WinAnsi mappings)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
@@ -117,7 +117,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 ## Frontend Components
 | Module | Files |
 |--------|-------|
-| `ui/` | Button, Input, Select, Switch, Toast, AclRestrictPrompt |
+| `ui/` | Button, IconButton, Input, Keycap, Select, StatusBadge, Switch, Toast, AclRestrictPrompt |
 | `common/` | FloatingDock, HomeView, PanelHeader, WpmHalfRing |
 | `floating-widget/` | FloatingWidget, Waveform |
 | `settings/` | SettingsLayout, SettingsPanel, GeneralTab, AudioTab, STTTab, LLMTab, ModesTab, PerAppTab, ShortcutsTab, AboutTab, HotkeyRecorder |
@@ -151,7 +151,10 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `floating_widget_auto_hide_seconds` | number | Idle seconds before the floating widget auto-hides (0 disables) |
 | `floating_widget_pos` | object | Persisted floating widget screen position |
 | `onboarding_completed` | bool | First-run onboarding completion flag |
+| `onboarding_resume_step` | string | Persisted step ID to resume after data-directory restart during onboarding |
 | `language` | string | UI language code ("en" or "id") |
+| `theme` | string | Appearance theme ("dark", "light", or "system") |
+| `history_retention_days` | number | Days to keep history entries (30, 90, 180, or 0 for forever) |
 | `stt_model` | string | Model name for the selected STT engine |
 | `auto_start` | bool | Launch VoxiType at sign-in (Windows Run key, macOS LaunchAgent, Linux XDG autostart) |
 | `auto_update` | bool | Check for updates automatically |
@@ -172,6 +175,7 @@ A custom directory is rejected when its DACL grants write access to any principa
 | `navigate` | `string` | System tray route navigation request for main window |
 | `file_transcription_progress` | `{ stage: "transcribing"\|"formatting", done, total }` | File job progress; `total` is 0 when the file reports no duration |
 | `notice` | `{ code, message }` | User-visible notice; `code` identifies the notice and `message` provides fallback text |
+| `theme_changed` | `{ theme }` | Synchronized theme preference broadcast to secondary windows |
 
 ## Architecture Rules
 1. **Modules = traits + factories** - SttEngine, LlmFormatter, TextInjector
