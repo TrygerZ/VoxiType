@@ -298,6 +298,14 @@ export const id: Dict = {
   "history.unpin_tooltip": "Lepas pin",
   "history.copy_tooltip": "Salin",
   "history.re_inject_tooltip": "Masukkan ulang",
+  "history.subtitle_v2": "Cari, periksa teks mentah vs rapi, atau sisipkan ulang transkripsi lalu.",
+  "history.clear_unpinned": "Bersihkan unpinned",
+  "history.filter_all": "Semua",
+  "history.filter_pinned": "Terpin",
+  "history.tab_formatted": "Terformat",
+  "history.tab_raw": "STT Mentah",
+  "history.copied": "Tersalin",
+  "history.empty_reader": "Pilih item untuk membaca transkripsi lengkapnya",
 
   // Dictionary Panel
   "dictionary.title": "Kamus",
@@ -864,6 +872,14 @@ export const en: Dict = {
   "history.unpin_tooltip": "Unpin",
   "history.copy_tooltip": "Copy",
   "history.re_inject_tooltip": "Re-inject",
+  "history.subtitle_v2": "Search, inspect raw vs formatted text, or re-inject past transcriptions.",
+  "history.clear_unpinned": "Clear unpinned",
+  "history.filter_all": "All",
+  "history.filter_pinned": "Pinned",
+  "history.tab_formatted": "Formatted",
+  "history.tab_raw": "Raw STT",
+  "history.copied": "Copied",
+  "history.empty_reader": "Select an entry to inspect the full transcript",
 
   // Dictionary Panel
   "dictionary.title": "Dictionary",
