@@ -1,8 +1,8 @@
-import { ArrowLeft, ChevronRight, Keyboard } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 
+import { HotkeyRecorder } from "../../settings/HotkeyRecorder";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
-import { HotkeyRecorder } from "../../settings/HotkeyRecorder";
 import { StepShell } from "../shared/StepShell";
 import type { Step, TFunc } from "../types";
 
@@ -40,7 +40,6 @@ export function HotkeyStep({
       step={step}
       currentStepIdx={currentStepIdx}
       t={t}
-      icon={<Keyboard className="h-7 w-7" />}
       title={t("onboarding.step4.title")}
       description={t("onboarding.step4.body")}
       error={error}
@@ -57,21 +56,23 @@ export function HotkeyStep({
         </>
       }
     >
-      <div className="flex w-full max-w-sm flex-col gap-5 rounded-xl border border-vx-border bg-vx-bg-secondary p-5 text-left shadow-vx-sm">
+      <div className="flex w-full max-w-md flex-col gap-5 rounded-[12px] border border-vx-border-subtle bg-vx-bg-surface p-5 text-left">
         <HotkeyRecorder
           value={hotkeyKey}
           onChange={onKeyChange}
           platform={platform}
         />
-        <Select
-          label={t("onboarding.step4.mode_label")}
-          options={[
-            { value: "ptt", label: t("onboarding.step4.mode_ptt") },
-            { value: "toggle", label: t("onboarding.step4.mode_toggle") },
-          ]}
-          value={hotkeyMode}
-          onChange={(event) => onModeChange(event.target.value)}
-        />
+        <div className="border-t border-vx-border-subtle pt-4">
+          <Select
+            label={t("onboarding.step4.mode_label")}
+            options={[
+              { value: "ptt", label: t("onboarding.step4.mode_ptt") },
+              { value: "toggle", label: t("onboarding.step4.mode_toggle") },
+            ]}
+            value={hotkeyMode}
+            onChange={(event) => onModeChange(event.target.value)}
+          />
+        </div>
       </div>
     </StepShell>
   );

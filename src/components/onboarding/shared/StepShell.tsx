@@ -7,7 +7,7 @@ interface StepShellProps {
   step: Step;
   currentStepIdx: number;
   t: TFunc;
-  icon: ReactNode;
+  icon?: ReactNode;
   title: string;
   description: string;
   children: ReactNode;
@@ -20,7 +20,6 @@ export function StepShell({
   step,
   currentStepIdx,
   t,
-  icon,
   title,
   description,
   children,
@@ -29,37 +28,38 @@ export function StepShell({
   wide = false,
 }: StepShellProps) {
   return (
-    <main className="vx-app-bg flex h-full flex-col overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+    <main className="vx-app-bg flex h-full flex-col overflow-y-auto px-6 py-5 sm:px-8 sm:py-6">
       <div
-        className={`mx-auto flex w-full flex-1 flex-col gap-6 ${wide ? "max-w-5xl" : "max-w-xl"}`}
+        className={`mx-auto flex w-full flex-1 flex-col justify-between gap-4 ${wide ? "max-w-3xl" : "max-w-xl"}`}
       >
         <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
-        <header className="vx-animate-in flex flex-col items-center gap-3 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-vx-accent-soft text-vx-accent">
-            {icon}
-          </span>
-          <h1 className="text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
-            {title}
-          </h1>
-          <p className="max-w-2xl text-pretty text-sm leading-relaxed text-vx-text-dim">
-            {description}
-          </p>
-        </header>
-        <section className="flex flex-1 flex-col items-center gap-6">
-          {children}
-        </section>
-        {error && (
-          <p
-            role="alert"
-            className="rounded-lg border border-vx-error/30 bg-vx-error/10 px-3 py-2 text-center text-xs text-vx-error"
-          >
-            {error}
-          </p>
-        )}
-        {actions && (
-          <footer className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        <div className="vx-panel-reveal my-auto flex flex-col items-center gap-5 py-2">
+          <header className="flex flex-col items-center gap-1.5 text-center">
+            <h1 className="text-balance text-2xl font-semibold tracking-tight text-vx-text-primary">
+              {title}
+            </h1>
+            <p className="max-w-lg text-pretty text-sm leading-relaxed text-vx-text-secondary">
+              {description}
+            </p>
+          </header>
+          <section className="flex w-full flex-col items-center gap-4">
+            {children}
+          </section>
+          {error && (
+            <p
+              role="alert"
+              className="w-full max-w-md rounded-[8px] border border-vx-semantic-error/30 bg-vx-semantic-error-soft px-3 py-2 text-center text-xs text-vx-semantic-error"
+            >
+              {error}
+            </p>
+          )}
+        </div>
+        {actions ? (
+          <footer className="flex flex-wrap items-center justify-center gap-3 pb-1">
             {actions}
           </footer>
+        ) : (
+          <div />
         )}
       </div>
     </main>

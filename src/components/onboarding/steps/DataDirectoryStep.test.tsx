@@ -233,4 +233,28 @@ describe("DataDirectoryStep", () => {
     expect(screen.getByTestId("restart-app-button")).toBeInTheDocument();
     expect(tauri.restartApp).toHaveBeenCalledTimes(1);
   });
+
+  it("persists onboarding_resume_step to hotkey before calling restartApp", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getDataDirectory).mockResolvedValueOnce({
+      active: "/active/data/dir",
+      default: "/default/data/dir",
+      pending: "/pending/restart/dir",
+      lastError: null,
+    });
+    vi.mocked(tauri.updateSetting).mockResolvedValueOnce(undefined);
+    vi.mocked(tauri.restartApp).mockResolvedValueOnce(undefined);
+
+    render(<DataDirectoryStep {...defaultProps} />);
+
+    await user.click(await screen.findByTestId("restart-app-button"));
+
+    await waitFor(() => {
+      expect(tauri.updateSetting).toHaveBeenCalledWith("onboarding_resume_step", "hotkey");
+      expect(tauri.restartApp).toHaveBeenCalledWith(false);
+    });
+    const updateOrder = vi.mocked(tauri.updateSetting).mock.invocationCallOrder[0];
+    const restartOrder = vi.mocked(tauri.restartApp).mock.invocationCallOrder[0];
+    expect(updateOrder).toBeLessThan(restartOrder);
+  });
 });

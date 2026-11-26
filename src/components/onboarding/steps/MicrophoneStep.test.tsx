@@ -1,4 +1,5 @@
-import { act, render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { t } from "../../../lib/i18n";
@@ -132,5 +133,30 @@ describe("MicrophoneStep", () => {
     // Old device stopped, new device started.
     expect(tauri.setMicMeter).toHaveBeenCalledWith(false, null);
     expect(tauri.setMicMeter).toHaveBeenCalledWith(true, "second-mic");
+  });
+
+  it("refreshes devices, renders error prop alert, and shows live input level meter", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.getMicrophones)
+      .mockResolvedValueOnce([{ id: "mic-1", name: "Built-in Mic", is_default: true }])
+      .mockResolvedValueOnce([
+        { id: "mic-1", name: "Built-in Mic", is_default: true },
+        { id: "mic-2", name: "Studio USB", is_default: false },
+      ]);
+
+    render(
+      <MicrophoneStep
+        {...defaultProps}
+        selectedDevice="mic-1"
+        error="Permission check failed"
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Permission check failed");
+    const refreshBtn = screen.getByRole("button", { name: "Refresh" });
+    await user.click(refreshBtn);
+
+    expect(tauri.getMicrophones).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("option", { name: "Studio USB" })).toBeInTheDocument();
   });
 });

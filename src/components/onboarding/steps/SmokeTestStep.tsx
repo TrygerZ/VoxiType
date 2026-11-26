@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Check, ChevronRight, Mic } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight } from "lucide-react";
 
 import { onEvent } from "../../../lib/tauri";
+import { useAppStore } from "../../../stores/appStore";
 import type {
   TranscriptionCompleteEvent,
   TranscriptionErrorEvent,
 } from "../../../types/events";
+import { Waveform } from "../../floating-widget/Waveform";
 import { Button } from "../../ui/Button";
+import { StatusBadge } from "../../ui/StatusBadge";
 import { StepShell } from "../shared/StepShell";
 import type { Step, TFunc } from "../types";
 
@@ -34,6 +37,7 @@ export function SmokeTestStep({
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [timedOut, setTimedOut] = useState(false);
+  const appState = useAppStore((s) => s.state);
 
   useEffect(() => {
     const listeners = [
@@ -57,12 +61,13 @@ export function SmokeTestStep({
   const inlineError = error
     ? `${t("onboarding.smoke_test.error", { message: error })} ${t("onboarding.smoke_test.troubleshoot")}`
     : undefined;
+  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+
   return (
     <StepShell
       step={step}
       currentStepIdx={currentStepIdx}
       t={t}
-      icon={<Mic className="h-7 w-7" />}
       title={t("onboarding.smoke_test.title")}
       description={t("onboarding.smoke_test.body", { key: hotkeyDisplay })}
       error={inlineError}
@@ -87,26 +92,47 @@ export function SmokeTestStep({
         </>
       }
     >
-      <div className="flex min-h-28 w-full max-w-sm items-center justify-center rounded-xl border border-vx-border bg-vx-bg-secondary p-5 text-sm shadow-vx-sm">
-        {text ? (
-          <span className="text-left text-vx-text-primary">{text}</span>
-        ) : (
-          <span className="text-vx-text-dim">
-            {t("onboarding.smoke_test.waiting")}
-          </span>
+      <div className="flex w-full max-w-md flex-col gap-3.5 rounded-[12px] border border-vx-border-subtle bg-vx-bg-surface p-5 text-left">
+        <div className="flex items-center justify-center gap-3">
+          <StatusBadge tone={appState === "recording" ? "ember" : "neutral"}>
+            {t("onboarding.smoke_test.listening", { key: hotkeyDisplay })}
+          </StatusBadge>
+          <div className="flex w-16 items-center">
+            <Waveform
+              active={appState === "recording"}
+              barClassName="bg-vx-accent-ember"
+            />
+          </div>
+        </div>
+
+        <div className="flex min-h-24 items-center justify-center rounded-[8px] border border-vx-border-subtle bg-vx-bg-subtle p-4 text-sm">
+          {text ? (
+            <p className="vx-panel-reveal w-full text-left leading-relaxed text-vx-text-primary">
+              {text}
+            </p>
+          ) : (
+            <span className="text-vx-text-muted">
+              {t("onboarding.smoke_test.waiting")}
+            </span>
+          )}
+        </div>
+
+        {timedOut && !text && !error && (
+          <p className="text-center text-xs text-vx-text-muted">
+            {t("onboarding.smoke_test.timeout")}
+          </p>
+        )}
+
+        {text && (
+          <p className="flex items-center justify-center gap-1.5 text-xs text-vx-semantic-success">
+            <Check className="h-3.5 w-3.5" />
+            <span>
+              {t("onboarding.smoke_test.success")} ·{" "}
+              {t("onboarding.smoke_test.words", { count: wordCount })}
+            </span>
+          </p>
         )}
       </div>
-      {timedOut && !text && !error && (
-        <p className="max-w-sm text-center text-xs text-vx-text-dim">
-          {t("onboarding.smoke_test.timeout")}
-        </p>
-      )}
-      {text && (
-        <p className="flex items-center gap-1 text-xs text-vx-success">
-          <Check className="h-3.5 w-3.5" />
-          {t("onboarding.smoke_test.success")}
-        </p>
-      )}
     </StepShell>
   );
 }

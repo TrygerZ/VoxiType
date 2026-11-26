@@ -1,5 +1,5 @@
 import type { Step, TFunc } from "../types";
-import { SETUP_STEPS, STEP_LABELS, STEPS } from "../types";
+import { STEP_LABELS, STEPS } from "../types";
 
 export function StepProgress({
   step,
@@ -10,7 +10,6 @@ export function StepProgress({
   currentStepIdx: number;
   t: TFunc;
 }) {
-  const setupIdx = SETUP_STEPS.indexOf(step);
   return (
     <div
       className="mx-auto flex w-full max-w-md flex-col gap-2 px-1"
@@ -20,14 +19,12 @@ export function StepProgress({
         <span className="font-medium text-vx-text-secondary">
           {t(STEP_LABELS[step])}
         </span>
-        {setupIdx >= 0 && (
-          <span className="text-vx-text-dim">
-            {t("onboarding.steps.counter", {
-              current: setupIdx + 1,
-              total: SETUP_STEPS.length,
-            })}
-          </span>
-        )}
+        <span className="text-vx-text-muted">
+          {t("onboarding.steps.counter", {
+            current: currentStepIdx + 1,
+            total: STEPS.length,
+          })}
+        </span>
       </div>
       <div
         className="flex gap-1.5"
@@ -36,14 +33,20 @@ export function StepProgress({
         aria-valuemax={STEPS.length}
         aria-valuenow={currentStepIdx + 1}
       >
-        {STEPS.map((currentStep, idx) => (
-          <div
-            key={currentStep}
-            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-              idx <= currentStepIdx ? "bg-vx-accent" : "bg-vx-border"
-            }`}
-          />
-        ))}
+        {STEPS.map((currentStep, idx) => {
+          const segmentClass =
+            idx < currentStepIdx
+              ? "bg-vx-text-primary"
+              : idx === currentStepIdx
+                ? "bg-vx-accent-ember"
+                : "bg-vx-border-subtle";
+          return (
+            <div
+              key={currentStep}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${segmentClass}`}
+            />
+          );
+        })}
       </div>
     </div>
   );

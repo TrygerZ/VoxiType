@@ -1,10 +1,17 @@
-import { ArrowLeft, ChevronRight, Settings } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 
+import type { ThemePreference } from "../../../types/app";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
 import { Switch } from "../../ui/Switch";
 import { StepShell } from "../shared/StepShell";
 import type { Step, TFunc } from "../types";
+
+const THEME_OPTIONS: Array<{ value: ThemePreference; labelKey: string }> = [
+  { value: "dark", labelKey: "settings.general.theme_dark" },
+  { value: "light", labelKey: "settings.general.theme_light" },
+  { value: "system", labelKey: "settings.general.theme_system" },
+];
 
 interface Props {
   step: Step;
@@ -13,8 +20,10 @@ interface Props {
   error: string;
   busy: boolean;
   lang: string;
+  theme: ThemePreference;
   soundCues: boolean;
   onLanguageChange: (value: string) => void;
+  onThemeChange: (value: ThemePreference) => void;
   onSoundCuesChange: (value: boolean) => void;
   onBack: () => void;
   onContinue: () => void;
@@ -27,8 +36,10 @@ export function QuickSettingsStep({
   error,
   busy,
   lang,
+  theme,
   soundCues,
   onLanguageChange,
+  onThemeChange,
   onSoundCuesChange,
   onBack,
   onContinue,
@@ -38,7 +49,6 @@ export function QuickSettingsStep({
       step={step}
       currentStepIdx={currentStepIdx}
       t={t}
-      icon={<Settings className="h-7 w-7" />}
       title={t("onboarding.step2.title")}
       description={t("onboarding.step2.body")}
       error={error}
@@ -55,7 +65,7 @@ export function QuickSettingsStep({
         </>
       }
     >
-      <div className="flex w-full max-w-sm flex-col gap-5 rounded-xl border border-vx-border bg-vx-bg-secondary p-5 text-left shadow-vx-sm">
+      <div className="flex w-full max-w-md flex-col gap-4 rounded-[12px] border border-vx-border-subtle bg-vx-bg-surface p-5 text-left">
         <Select
           autoFocus
           label={t("onboarding.ui_language")}
@@ -66,12 +76,43 @@ export function QuickSettingsStep({
           value={lang}
           onChange={(event) => onLanguageChange(event.target.value)}
         />
-        <div className="flex items-center justify-between gap-4 border-t border-vx-divider pt-4">
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-vx-text-secondary">
+            {t("onboarding.step2.theme")}
+          </span>
+          <div
+            role="group"
+            aria-label={t("onboarding.step2.theme")}
+            className="grid grid-cols-3 rounded-[8px] border border-vx-border-subtle bg-vx-bg-subtle p-1"
+          >
+            {THEME_OPTIONS.map((opt) => {
+              const active = theme === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onThemeChange(opt.value)}
+                  className={`rounded-[6px] px-3 py-1.5 text-xs font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
+                    active
+                      ? "bg-vx-bg-elevated text-vx-text-primary"
+                      : "text-vx-text-muted hover:text-vx-text-primary"
+                  }`}
+                >
+                  {t(opt.labelKey)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 border-t border-vx-border-subtle pt-4">
           <div>
             <p className="text-sm font-medium text-vx-text-primary">
               {t("onboarding.sound_cues")}
             </p>
-            <p className="mt-1 text-xs text-vx-text-dim">
+            <p className="mt-0.5 text-xs text-vx-text-muted">
               {soundCues
                 ? t("onboarding.sound_cues_on")
                 : t("onboarding.sound_cues_off")}
@@ -80,7 +121,7 @@ export function QuickSettingsStep({
           <Switch
             checked={soundCues}
             onChange={onSoundCuesChange}
-            label={t("onboarding.sound_cues")}
+            ariaLabel={t("onboarding.sound_cues")}
           />
         </div>
       </div>
