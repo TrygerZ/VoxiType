@@ -73,7 +73,7 @@ All code in this project must follow **Clean Code** principles:
 | Rust build check | rtk cargo check (in src-tauri/) |
 | Rust single test | rtk cargo test test_name |
 
-## IPC Commands (56 total across 9 modules)
+## IPC Commands (57 total across 9 modules)
 Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.rs`.
 
 | Module | Commands |
@@ -81,7 +81,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 | `recording` | `start_recording`, `stop_recording` |
 | `settings` | `get_settings`, `update_setting`, `set_floating_widget_enabled` |
 | `history` | `get_history`, `search_history`, `delete_history`, `pin_history`, `clear_history`, `re_inject`, `export_history` |
-| `dictionary` | `get_dictionary`, `add_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
+| `dictionary` | `get_dictionary`, `add_dictionary_word`, `update_dictionary_word`, `set_dictionary_active`, `delete_dictionary_word`, `export_dictionary`, `import_dictionary` |
 | `snippets` | `get_snippets`, `add_snippet`, `set_snippet_active`, `delete_snippet` |
 | `per_app` | `get_per_app_modes`, `set_per_app_mode`, `delete_per_app_mode`, `get_active_app`, `list_running_apps` |
 | `misc` | `get_microphones`, `set_hotkey`, `get_app_info`, `check_updates`, `open_url`, `reveal_floating_widget`, `reset_widget_idle_timer`, `ack_widget_hide`, `ack_widget_reveal`, `pick_setup_file`, `set_whisper_cpp_paths`, `pick_data_directory`, `set_data_directory`, `restrict_data_directory`, `get_data_directory`, `restart_app`, `test_groq_api`, `test_ollama`, `test_whisper_cpp`, `set_mic_meter` |
@@ -91,7 +91,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 ## Critical Files
 - `src-tauri/src/main.rs` - Tauri entry, plugin registration
 - `src-tauri/src/lib.rs` - Module declarations, AppStateInner, Tauri builder setup
-- `src-tauri/src/commands/mod.rs` - IPC handler registration (56 commands)
+- `src-tauri/src/commands/mod.rs` - IPC handler registration (57 commands)
 - `src-tauri/src/export.rs` - Transcript export writers (TXT, DOCX via `zip`, hand-written PDF with built-in Helvetica and defined CP1252 WinAnsi mappings)
 - `src-tauri/src/pipeline/state_machine.rs` - Idle→Recording→Processing→Error (Error→Recording)
 - `src-tauri/src/pipeline/batch.rs` - run_batch: STT → LLM → translate → replacements → snippets → injection
