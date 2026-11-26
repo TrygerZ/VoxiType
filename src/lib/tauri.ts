@@ -91,6 +91,8 @@ export const importDictionary = (data: string) =>
 export const getSnippets = () => invoke<Snippet[]>("get_snippets");
 export const addSnippet = (snippet: Snippet) =>
   invoke<void>("add_snippet", { snippet });
+export const setSnippetActive = (id: string, active: boolean) =>
+  invoke<void>("set_snippet_active", { id, active });
 export const deleteSnippet = (id: string) =>
   invoke<void>("delete_snippet", { id });
 

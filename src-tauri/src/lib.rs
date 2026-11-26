@@ -403,6 +403,7 @@ pub fn run() {
             commands::import_dictionary,
             commands::get_snippets,
             commands::add_snippet,
+            commands::set_snippet_active,
             commands::delete_snippet,
             commands::get_per_app_modes,
             commands::set_per_app_mode,

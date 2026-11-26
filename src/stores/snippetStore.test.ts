@@ -229,4 +229,45 @@ describe("snippetStore", () => {
     expect(state.error).toBeNull();
     expect(state.snippets).toEqual([]);
   });
+
+  it("toggleActive optimistically updates is_active and calls setSnippetActive", async () => {
+    const initial: Snippet = {
+      id: "s1",
+      name: "Sign off",
+      trigger_phrase: "sign off",
+      content: "Best regards",
+      category: null,
+      mode: null,
+      usage_count: 2,
+      is_active: true,
+    };
+    useSnippetStore.setState({ snippets: [initial] });
+    vi.mocked(tauri.setSnippetActive).mockResolvedValueOnce(undefined);
+
+    await useSnippetStore.getState().toggleActive("s1", false);
+
+    expect(tauri.setSnippetActive).toHaveBeenCalledWith("s1", false);
+    expect(useSnippetStore.getState().snippets[0].is_active).toBe(false);
+  });
+
+  it("toggleActive rolls back is_active when setSnippetActive rejects", async () => {
+    const initial: Snippet = {
+      id: "s1",
+      name: "Sign off",
+      trigger_phrase: "sign off",
+      content: "Best regards",
+      category: null,
+      mode: null,
+      usage_count: 2,
+      is_active: true,
+    };
+    useSnippetStore.setState({ snippets: [initial] });
+    vi.mocked(tauri.setSnippetActive).mockRejectedValueOnce(new Error("db locked"));
+
+    await expect(
+      useSnippetStore.getState().toggleActive("s1", false),
+    ).rejects.toThrow("db locked");
+
+    expect(useSnippetStore.getState().snippets[0].is_active).toBe(true);
+  });
 });

@@ -5,6 +5,7 @@ import {
   deleteSnippet,
   formatTauriError,
   getSnippets,
+  setSnippetActive,
 } from "../lib/tauri";
 
 interface SnippetStore {
@@ -13,10 +14,11 @@ interface SnippetStore {
   error: string | null;
   load: () => Promise<void>;
   add: (snippet: Snippet) => Promise<void>;
+  toggleActive: (id: string, active: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
-export const useSnippetStore = create<SnippetStore>((set) => {
+export const useSnippetStore = create<SnippetStore>((set, get) => {
   // Monotonic token: every fetch captures the current value and only commits
   // its result if it is still the latest, so a slow earlier load cannot
   // overwrite fresher snippets out of order.
@@ -56,6 +58,32 @@ export const useSnippetStore = create<SnippetStore>((set) => {
         }
       } catch (err) {
         set({ loading: false });
+        throw err;
+      }
+    },
+
+    toggleActive: async (id, active) => {
+      const previous = get().snippets.find((x) => x.id === id)?.is_active;
+      ++requestSeq;
+      set((s) => ({
+        snippets: s.snippets.map((x) =>
+          x.id === id ? { ...x, is_active: active } : x,
+        ),
+        loading: false,
+      }));
+      try {
+        await setSnippetActive(id, active);
+      } catch (err) {
+        if (previous !== undefined) {
+          set((s) => ({
+            snippets: s.snippets.map((x) =>
+              x.id === id ? { ...x, is_active: previous } : x,
+            ),
+            loading: false,
+          }));
+        } else {
+          set({ loading: false });
+        }
         throw err;
       }
     },

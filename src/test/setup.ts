@@ -58,6 +58,7 @@ vi.mock("../lib/tauri", () => ({
   reInject: vi.fn().mockResolvedValue(undefined),
   getSnippets: vi.fn().mockResolvedValue([]),
   addSnippet: vi.fn().mockResolvedValue(undefined),
+  setSnippetActive: vi.fn().mockResolvedValue(undefined),
   deleteSnippet: vi.fn().mockResolvedValue(undefined),
   pickAudioFiles: vi.fn().mockResolvedValue([]),
   registerDroppedAudioFiles: vi.fn().mockResolvedValue([]),

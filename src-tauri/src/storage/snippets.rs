@@ -95,6 +95,16 @@ impl<'a> SnippetRepository<'a> {
             Ok(())
         })
     }
+
+    pub fn set_active(&self, id: &str, active: bool) -> Result<()> {
+        self.db.with_conn(|c| {
+            c.execute(
+                "UPDATE snippets SET is_active = ?1, updated_at = datetime('now') WHERE id = ?2",
+                rusqlite::params![active as i32, id],
+            )?;
+            Ok(())
+        })
+    }
 }
 
 fn row_to_snippet(r: &rusqlite::Row) -> rusqlite::Result<Snippet> {
@@ -311,5 +321,32 @@ mod tests {
         repo.upsert(&first).unwrap();
         assert!(repo.upsert(&second).is_err());
         assert_eq!(repo.get_all().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn set_active_toggles_flag_and_excludes_from_active_expansions() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = SnippetRepository::new(&db);
+        repo.upsert(&Snippet {
+            id: "s1".into(),
+            name: "Sign off".into(),
+            trigger_phrase: "sign off".into(),
+            content: "Best regards".into(),
+            category: None,
+            mode: None,
+            usage_count: 0,
+            is_active: true,
+        })
+        .unwrap();
+
+        assert_eq!(repo.get_active_expansions().unwrap().len(), 1);
+
+        repo.set_active("s1", false).unwrap();
+        assert!(!repo.get_all().unwrap()[0].is_active);
+        assert!(repo.get_active_expansions().unwrap().is_empty());
+
+        repo.set_active("s1", true).unwrap();
+        assert!(repo.get_all().unwrap()[0].is_active);
+        assert_eq!(repo.get_active_expansions().unwrap().len(), 1);
     }
 }

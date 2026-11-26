@@ -49,6 +49,16 @@ pub fn add_snippet(
 }
 
 #[tauri::command]
+pub fn set_snippet_active(
+    state: State<'_, AppStateInner>,
+    id: String,
+    active: bool,
+) -> std::result::Result<(), AppError> {
+    super::check_non_empty("snippet id", &id)?;
+    SnippetRepository::new(&state.db).set_active(&id, active)
+}
+
+#[tauri::command]
 pub fn delete_snippet(
     state: State<'_, AppStateInner>,
     id: String,
