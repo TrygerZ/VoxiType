@@ -409,6 +409,7 @@ pub fn run() {
             commands::set_per_app_mode,
             commands::delete_per_app_mode,
             commands::get_active_app,
+            commands::list_running_apps,
             commands::set_hotkey,
             commands::get_microphones,
             commands::set_mic_meter,

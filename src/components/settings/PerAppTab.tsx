@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Trash2, Crosshair } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
+import type { PerAppMode } from "../../types/app";
 import { modeLabel, useT } from "../../lib/i18n";
 import { SettingsHeader, SettingsGroup, SettingsRow } from "./SettingsLayout";
 import { Button } from "../ui/Button";
@@ -11,13 +12,6 @@ import { Switch } from "../ui/Switch";
 import { invokeAction } from "../../lib/invokeAction";
 import { getBooleanSetting } from "../../lib/settingsGuards";
 import { usePlatform } from "../../lib/usePlatform";
-
-interface PerAppMode {
-  id: number;
-  app_process_name: string;
-  app_display_name?: string | null;
-  mode_id: string;
-}
 
 export function PerAppTab() {
   const t = useT();

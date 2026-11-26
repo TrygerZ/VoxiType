@@ -28,6 +28,7 @@ import type {
   DictionaryEntry,
   FileTranscriptionRequest,
   FileTranscriptionResult,
+  PerAppMode,
   Snippet,
   TranscriptExportFormat,
   TranscriptExportItem,
@@ -95,6 +96,16 @@ export const setSnippetActive = (id: string, active: boolean) =>
   invoke<void>("set_snippet_active", { id, active });
 export const deleteSnippet = (id: string) =>
   invoke<void>("delete_snippet", { id });
+
+// --- Per-App Modes ---
+export const getPerAppModes = () =>
+  invoke<PerAppMode[]>("get_per_app_modes");
+export const setPerAppMode = (mapping: PerAppMode) =>
+  invoke<void>("set_per_app_mode", { mapping });
+export const deletePerAppMode = (id: number) =>
+  invoke<void>("delete_per_app_mode", { id });
+export const getActiveApp = () => invoke<string | null>("get_active_app");
+export const listRunningApps = () => invoke<string[]>("list_running_apps");
 
 // --- System ---
 export const getMicrophones = () => invoke<DeviceInfo[]>("get_microphones");

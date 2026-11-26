@@ -103,6 +103,13 @@ export interface TranscriptExportItem {
   text: string;
 }
 
+export interface PerAppMode {
+  id: number;
+  app_process_name: string;
+  app_display_name?: string | null;
+  mode_id: string;
+}
+
 export interface UpdateInfo {
   available: boolean;
   current_version: string;

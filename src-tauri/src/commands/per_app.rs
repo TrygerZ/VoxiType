@@ -46,3 +46,8 @@ pub fn delete_per_app_mode(
 pub fn get_active_app() -> Option<String> {
     crate::active_window::foreground_process_name()
 }
+
+#[tauri::command]
+pub fn list_running_apps() -> Vec<String> {
+    crate::active_window::list_visible_app_processes()
+}

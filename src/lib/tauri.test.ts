@@ -11,7 +11,16 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
 // invoke wrappers under test are exercised.
 vi.unmock("./tauri");
 
-import { ackWidgetHide, ackWidgetReveal, testOllama } from "./tauri";
+import {
+  ackWidgetHide,
+  ackWidgetReveal,
+  deletePerAppMode,
+  getActiveApp,
+  getPerAppModes,
+  listRunningApps,
+  setPerAppMode,
+  testOllama,
+} from "./tauri";
 
 describe("widget acknowledgement wrappers", () => {
   it("invokes ack_widget_reveal with the payload id", async () => {
@@ -31,5 +40,31 @@ describe("testOllama wrapper", () => {
     expect(invokeMock).toHaveBeenCalledWith("test_ollama", {
       model: "qwen2.5:3b",
     });
+  });
+});
+
+describe("per-app wrappers", () => {
+  it("invokes typed per-app commands with matching arguments", async () => {
+    const mapping = {
+      id: 0,
+      app_process_name: "code",
+      app_display_name: "VS Code",
+      mode_id: "dictation",
+    };
+
+    await getPerAppModes();
+    expect(invokeMock).toHaveBeenCalledWith("get_per_app_modes");
+
+    await setPerAppMode(mapping);
+    expect(invokeMock).toHaveBeenCalledWith("set_per_app_mode", { mapping });
+
+    await deletePerAppMode(42);
+    expect(invokeMock).toHaveBeenCalledWith("delete_per_app_mode", { id: 42 });
+
+    await getActiveApp();
+    expect(invokeMock).toHaveBeenCalledWith("get_active_app");
+
+    await listRunningApps();
+    expect(invokeMock).toHaveBeenCalledWith("list_running_apps");
   });
 });

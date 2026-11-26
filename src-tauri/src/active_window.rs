@@ -27,14 +27,36 @@ pub fn normalize_process_name(name: &str) -> String {
     lowered.strip_suffix(".exe").unwrap_or(&lowered).to_string()
 }
 
+const SELF_PROCESS_EXECUTABLE: &str = "voxitype.exe";
+
+/// Normalizes, deduplicates, filters `voxitype.exe`, and sorts running app names.
+pub fn normalize_visible_app_processes<S: AsRef<str>, I: IntoIterator<Item = S>>(
+    names: I,
+) -> Vec<String> {
+    names
+        .into_iter()
+        .map(|name| name.as_ref().trim().to_lowercase())
+        .filter(|name| !name.is_empty() && name != SELF_PROCESS_EXECUTABLE)
+        .collect::<std::collections::BTreeSet<String>>()
+        .into_iter()
+        .collect()
+}
+
+/// Lists unique visible application process executables sorted alphabetically.
+pub fn list_visible_app_processes() -> Vec<String> {
+    platform::list_visible_app_processes()
+}
+
 #[cfg(windows)]
 mod platform {
-    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM};
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
+    };
 
     /// Buffer length for `QueryFullProcessImageNameW`. 260 (`MAX_PATH`) truncates
     /// longer process paths; 1024 covers them and stays well under any limit.
@@ -49,21 +71,12 @@ mod platform {
         Some(hwnd.0 as isize)
     }
 
-    pub fn foreground_process_name() -> Option<String> {
+    fn process_name_for_pid(pid: u32) -> Option<String> {
+        if pid == 0 {
+            return None;
+        }
         unsafe {
-            let hwnd = GetForegroundWindow();
-            if hwnd.0.is_null() {
-                return None;
-            }
-
-            let mut pid: u32 = 0;
-            GetWindowThreadProcessId(hwnd, Some(&mut pid));
-            if pid == 0 {
-                return None;
-            }
-
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-
             let mut buf = [0u16; PROCESS_PATH_BUF_LEN];
             let mut len = buf.len() as u32;
             let res = QueryFullProcessImageNameW(
@@ -75,17 +88,50 @@ mod platform {
             if let Err(e) = CloseHandle(handle) {
                 tracing::warn!("Failed to close process handle: {e}");
             }
-
             if res.is_err() || len == 0 {
                 return None;
             }
-
             let full_path = String::from_utf16_lossy(&buf[..len as usize]);
-            let name = std::path::Path::new(&full_path)
+            std::path::Path::new(&full_path)
                 .file_name()
-                .and_then(|n| n.to_str())?;
-            Some(super::normalize_process_name(name))
+                .and_then(|n| n.to_str())
+                .map(str::to_string)
         }
+    }
+
+    pub fn foreground_process_name() -> Option<String> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let mut pid: u32 = 0;
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        process_name_for_pid(pid).map(|name| super::normalize_process_name(&name))
+    }
+
+    unsafe extern "system" fn collect_visible_window_process(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if let Some(name) = process_name_for_pid(pid) {
+            if let Some(names) = (lparam.0 as *mut Vec<String>).as_mut() {
+                names.push(name);
+            }
+        }
+        BOOL(1)
+    }
+
+    pub fn list_visible_app_processes() -> Vec<String> {
+        let mut collected: Vec<String> = Vec::new();
+        let lparam = LPARAM(&mut collected as *mut Vec<String> as isize);
+        if let Err(e) = unsafe { EnumWindows(Some(collect_visible_window_process), lparam) } {
+            tracing::debug!("EnumWindows returned error: {e}");
+        }
+        super::normalize_visible_app_processes(collected)
     }
 }
 
@@ -97,6 +143,10 @@ mod platform {
 
     pub fn foreground_window_id() -> Option<isize> {
         None
+    }
+
+    pub fn list_visible_app_processes() -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -161,5 +211,30 @@ mod tests {
                 .and_then(|n| n.to_str());
             println!("name: {:?}", name);
         }
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::normalize_visible_app_processes;
+
+    #[test]
+    fn visible_processes_dedups_lowercases_excludes_self_and_sorts() {
+        let raw = [
+            "Code.exe",
+            "chrome.exe",
+            "VoxiType.exe",
+            "slack.exe",
+            "CODE.EXE",
+            "voxitype.exe",
+            "   ",
+            "Obsidian.exe",
+        ];
+
+        let filtered = normalize_visible_app_processes(raw);
+        assert_eq!(
+            filtered,
+            vec!["chrome.exe", "code.exe", "obsidian.exe", "slack.exe"]
+        );
     }
 }
