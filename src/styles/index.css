@@ -1,41 +1,148 @@
 @import "tailwindcss";
 
-@theme {
-  /* Base surfaces — slightly cooler, premium dark grays */
-  --color-vx-bg-primary: #121214;
-  --color-vx-bg-secondary: #18181b;
-  --color-vx-bg-tertiary: #1e1e24;
-  --color-vx-bg-elevated: #27272a;
-
-  /* Brand — soft clay (muted, premium) */
-  --color-vx-accent: #D97757;
-  --color-vx-accent-hover: #c4a48d;
-  --color-vx-accent-soft: #2a2218;
-
-  /* Semantic — desaturated, calm */
-  --color-vx-success: #8aae93;
-  --color-vx-warning: #d4b685;
-  --color-vx-error: #cc8b7d;
-
-  /* Text — warm off-white descending to dim stone */
-  --color-vx-text-primary: #EBEBF2;
-  --color-vx-text-secondary: #A3A8B2;
-  --color-vx-text-dim: #9a938a;
-
-  /* Lines — hairline dividers, used sparingly */
-  --color-vx-border: #313840;
-  --color-vx-border-strong: #404953;
-  --color-vx-divider: #1C2025;
-
-  /* Shadows — soft elevation only, no colored glow */
-  --shadow-vx-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-vx-md: 0 4px 20px rgba(0, 0, 0, 0.3);
-  --shadow-vx-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
-}
-
 :root {
+  color-scheme: dark;
+
+  /* Typography */
   --vx-font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --vx-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  /* Surfaces (Dark - Warm Obsidian) */
+  --vx-bg-canvas: #141312;
+  --vx-bg-surface: #1b1a18;
+  --vx-bg-subtle: #21201d;
+  --vx-bg-elevated: #282623;
+  --vx-bg-dock: #1b1a18;
+  --vx-bg-inverse: #f4f2ec;
+
+  /* Text */
+  --vx-text-primary: #f4f2ec;
+  --vx-text-secondary: #9b968b;
+  --vx-text-muted: #767268;
+  --vx-text-inverse: #141312;
+
+  /* Borders */
+  --vx-border-subtle: #282623;
+  --vx-border-default: #33312d;
+  --vx-border-strong: #57534b;
+
+  /* Accents & Semantics */
+  --vx-accent-ember: #e05a2b;
+  --vx-accent-ember-soft: #2b1810;
+  --vx-semantic-success: #5ea675;
+  --vx-semantic-success-soft: #14261a;
+  --vx-semantic-warning: #d9a441;
+  --vx-semantic-warning-soft: #292011;
+  --vx-semantic-error: #e06c65;
+  --vx-semantic-error-soft: #2b1615;
+  --vx-stone-0: #ffffff;
+
+  /* Radii */
+  --vx-radius-xs: 4px;
+  --vx-radius-sm: 6px;
+  --vx-radius-md: 8px;
+  --vx-radius-lg: 12px;
+  --vx-radius-xl: 16px;
+  --vx-radius-full: 999px;
+
+  /* Motion */
+  --duration-vx-instant: 120ms;
+  --duration-vx-snappy: 180ms;
+  --duration-vx-smooth: 220ms;
+  --duration-vx-deliberate: 260ms;
+  --ease-vx-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-vx-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-vx-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces (Light - Warm Paper) */
+  --vx-bg-canvas: #faf9f6;
+  --vx-bg-surface: #ffffff;
+  --vx-bg-subtle: #f4f2ec;
+  --vx-bg-elevated: #eceae2;
+  --vx-bg-dock: #ffffff;
+  --vx-bg-inverse: #181715;
+
+  /* Text */
+  --vx-text-primary: #181715;
+  --vx-text-secondary: #57534b;
+  --vx-text-muted: #767268;
+  --vx-text-inverse: #faf9f6;
+
+  /* Borders */
+  --vx-border-subtle: #e3e0d6;
+  --vx-border-default: #d5d1c5;
+  --vx-border-strong: #b8b3a6;
+
+  /* Accents & Semantics */
+  --vx-accent-ember: #c84b1f;
+  --vx-accent-ember-soft: #fdf2ec;
+  --vx-semantic-success: #246b3d;
+  --vx-semantic-success-soft: #eef6f0;
+  --vx-semantic-warning: #9a650b;
+  --vx-semantic-warning-soft: #fdf6e7;
+  --vx-semantic-error: #b8322a;
+  --vx-semantic-error-soft: #fdeeec;
+}
+
+@theme inline {
+  --font-sans: var(--vx-font-family);
+  --font-mono: var(--vx-font-mono);
+
+  /* VoxiType v2 semantic tokens (runtime CSS variable backed for Dark/Light) */
+  --color-vx-bg-canvas: var(--vx-bg-canvas);
+  --color-vx-bg-surface: var(--vx-bg-surface);
+  --color-vx-bg-subtle: var(--vx-bg-subtle);
+  --color-vx-bg-elevated: var(--vx-bg-elevated);
+  --color-vx-bg-dock: var(--vx-bg-dock);
+  --color-vx-bg-inverse: var(--vx-bg-inverse);
+
+  --color-vx-text-primary: var(--vx-text-primary);
+  --color-vx-text-secondary: var(--vx-text-secondary);
+  --color-vx-text-muted: var(--vx-text-muted);
+  --color-vx-text-inverse: var(--vx-text-inverse);
+
+  --color-vx-border-subtle: var(--vx-border-subtle);
+  --color-vx-border-default: var(--vx-border-default);
+  --color-vx-border-strong: var(--vx-border-strong);
+
+  --color-vx-accent-ember: var(--vx-accent-ember);
+  --color-vx-accent-ember-soft: var(--vx-accent-ember-soft);
+  --color-vx-semantic-success: var(--vx-semantic-success);
+  --color-vx-semantic-success-soft: var(--vx-semantic-success-soft);
+  --color-vx-semantic-warning: var(--vx-semantic-warning);
+  --color-vx-semantic-warning-soft: var(--vx-semantic-warning-soft);
+  --color-vx-semantic-error: var(--vx-semantic-error);
+  --color-vx-semantic-error-soft: var(--vx-semantic-error-soft);
+  --color-vx-stone-0: var(--vx-stone-0);
+
+  /* Compatibility aliases for existing utility classes */
+  --color-vx-bg-primary: var(--vx-bg-canvas);
+  --color-vx-bg-secondary: var(--vx-bg-surface);
+  --color-vx-bg-tertiary: var(--vx-bg-subtle);
+  --color-vx-accent: var(--vx-accent-ember);
+  --color-vx-accent-hover: var(--vx-accent-ember);
+  --color-vx-accent-soft: var(--vx-accent-ember-soft);
+  --color-vx-success: var(--vx-semantic-success);
+  --color-vx-warning: var(--vx-semantic-warning);
+  --color-vx-error: var(--vx-semantic-error);
+  --color-vx-text-dim: var(--vx-text-muted);
+  --color-vx-border: var(--vx-border-default);
+  --color-vx-divider: var(--vx-border-subtle);
+
+  /* Neutral black shadows only */
+  --shadow-vx-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.12);
+  --shadow-vx-card: 0 2px 8px 0 rgba(0, 0, 0, 0.16);
+  --shadow-vx-dock: 0 8px 24px -4px rgba(0, 0, 0, 0.28);
+  --shadow-vx-widget: 0 6px 20px -2px rgba(0, 0, 0, 0.26);
+
+  /* Shadow compatibility aliases */
+  --shadow-vx-sm: var(--shadow-vx-subtle);
+  --shadow-vx-md: var(--shadow-vx-card);
+  --shadow-vx-lg: var(--shadow-vx-dock);
 }
 
 * {
@@ -51,32 +158,33 @@ body,
 
 body {
   font-family: var(--vx-font-family);
-  color: var(--color-vx-text-primary);
+  color: var(--vx-text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 body:not(.vx-transparent) {
-  background-color: var(--color-vx-bg-primary);
+  background-color: var(--vx-bg-canvas);
 }
 
-/* Flat, calm backdrop for the main shell — no ambient gradient */
+/* Flat, matte canvas backdrop */
 .vx-app-bg {
-  background: var(--color-vx-bg-primary);
+  background: var(--vx-bg-canvas);
 }
 
-/* Hairline dividers — the primary separator in the borderless language */
+/* Hairline dividers */
 .vx-hairline {
-  border-color: var(--color-vx-divider);
-}
-.vx-divide > * + * {
-  border-top: 1px solid var(--color-vx-divider);
+  border-color: var(--vx-border-subtle);
 }
 
-/* Soft raised surface — elevation without a hard border */
+.vx-divide > * + * {
+  border-top: 1px solid var(--vx-border-subtle);
+}
+
+/* Matte raised surface */
 .vx-raised {
-  background: var(--color-vx-bg-secondary);
-  box-shadow: var(--shadow-vx-md);
+  background: var(--vx-bg-surface);
+  box-shadow: var(--shadow-vx-card);
 }
 
 /* Transparent overlay window (floating widget) */
@@ -91,21 +199,24 @@ html.vx-transparent #root {
   width: 10px;
   height: 10px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--color-vx-border-strong);
+  background: var(--vx-border-strong);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-vx-text-dim);
+  background: var(--vx-text-muted);
   background-clip: content-box;
 }
 
-/* Animations */
+/* Motion keyframes */
 @keyframes vx-pulse {
   0%,
   100% {
@@ -138,19 +249,80 @@ html.vx-transparent #root {
   }
 }
 
+@keyframes vx-panel-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vx-card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vx-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes vx-mic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.88;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
 .vx-animate-in {
-  animation: vx-fade-in 0.3s ease both;
+  animation: vx-fade-in var(--duration-vx-smooth) var(--ease-vx-out) both;
 }
 
 .vx-scale-in {
-  animation: vx-scale-in 0.2s ease both;
+  animation: vx-scale-in var(--duration-vx-snappy) var(--ease-vx-out) both;
+}
+
+.vx-panel-reveal {
+  animation: vx-panel-reveal 240ms var(--ease-vx-out) both;
+}
+
+.vx-card-rise {
+  animation: vx-card-rise var(--duration-vx-smooth) var(--ease-vx-out) both;
+}
+
+.vx-toast-in {
+  animation: vx-toast-in var(--duration-vx-smooth) var(--ease-vx-out) both;
+}
+
+.vx-mic-pulse {
+  animation: vx-mic-pulse 1600ms var(--ease-vx-in-out) infinite;
 }
 
 /* Floating Widget Auto-Hide & Reveal Transitions */
 .vx-widget-pill {
   transform-origin: center center;
   transition:
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 200ms var(--ease-vx-out),
     opacity 150ms ease-in-out,
     border-color 300ms ease,
     background-color 300ms ease,
@@ -187,6 +359,12 @@ html.vx-transparent #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vx-panel-reveal,
+  .vx-card-rise,
+  .vx-toast-in,
+  .vx-mic-pulse {
+    transform: none !important;
+  }
   .vx-widget-pill {
     transition:
       opacity 120ms ease-in-out,
@@ -204,9 +382,6 @@ html.vx-transparent #root {
     transform: none !important;
     opacity: 0;
   }
-  /* Every remaining animation (spinners, pulses, fades) collapses to a single
-     near-instant frame. Iteration is pinned to 1 so an infinite spinner does
-     not restart thousands of times per second. */
   *,
   *::before,
   *::after {
@@ -215,13 +390,6 @@ html.vx-transparent #root {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* Glass surface helper — calmer, less saturated blur */
-.vx-glass {
-  background: color-mix(in srgb, var(--color-vx-bg-secondary) 88%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 /* Hide native password reveal button in Edge and Chrome */
