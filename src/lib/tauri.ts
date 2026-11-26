@@ -172,8 +172,14 @@ export const testWhisperCpp = (
 export const getUsageStats = () => invoke<UsageStats>("get_usage_stats");
 
 // --- File transcription ---
-// transcribe_file only accepts paths from the latest pickAudioFiles result.
+// transcribe_file only accepts paths from pickAudioFiles or registerDroppedAudioFiles.
 export const pickAudioFiles = () => invoke<string[]>("pick_audio_files");
+export const registerDroppedAudioFiles = (paths: string[]) =>
+  invoke<string[]>("register_dropped_audio_files", { paths });
+export const removeQueuedAudioFile = (path: string) =>
+  invoke<void>("remove_queued_audio_file", { path });
+export const clearQueuedAudioFiles = () =>
+  invoke<void>("clear_queued_audio_files");
 export const transcribeFile = (request: FileTranscriptionRequest) =>
   invoke<FileTranscriptionResult>("transcribe_file", { request });
 export const cancelFileTranscription = () =>

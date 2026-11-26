@@ -2,14 +2,18 @@ import { create } from "zustand";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   cancelFileTranscription,
+  clearQueuedAudioFiles,
   errorCode,
   exportTranscripts,
   formatTauriError,
   onEvent,
   pickAudioFiles,
   pickExportDirectory,
+  registerDroppedAudioFiles,
+  removeQueuedAudioFile,
   transcribeFile,
 } from "../lib/tauri";
+import { t } from "../lib/i18n";
 import { toast } from "../components/ui/Toast";
 import { useHistoryStore } from "./historyStore";
 import type {
@@ -35,6 +39,7 @@ export interface FileItem {
 }
 
 const CANCELLED_CODE = "Cancelled";
+const MAX_BATCH_FILES = 20;
 
 const queuedItem = (path: string): FileItem => ({
   path,
@@ -45,6 +50,41 @@ const queuedItem = (path: string): FileItem => ({
   startedAt: null,
   finishedAt: null,
 });
+
+function mergeIncomingPaths(
+  existing: FileItem[],
+  incoming: string[],
+): { nextItems: FileItem[]; addedCount: number } {
+  const seen = new Set(existing.map((item) => item.path));
+  const toAdd: FileItem[] = [];
+  let duplicateCount = 0;
+  let limitReached = false;
+
+  for (const path of incoming) {
+    if (seen.has(path)) {
+      duplicateCount += 1;
+      continue;
+    }
+    if (existing.length + toAdd.length >= MAX_BATCH_FILES) {
+      limitReached = true;
+      break;
+    }
+    seen.add(path);
+    toAdd.push(queuedItem(path));
+  }
+
+  if (duplicateCount > 0) {
+    toast(t("file.duplicates_skipped", { count: duplicateCount }), "info");
+  }
+  if (limitReached) {
+    toast(t("file.queue_limit_reached", { max: MAX_BATCH_FILES }), "info");
+  }
+
+  return {
+    nextItems: toAdd.length > 0 ? [...existing, ...toAdd] : existing,
+    addedCount: toAdd.length,
+  };
+}
 
 // Lives in a store (not component state) so a running batch's options,
 // progress, and results survive navigating away from the panel.
@@ -62,7 +102,9 @@ interface FileTranscriptionStore {
   initOptions: (defaults: FileJobOptions) => void;
   setExportFormat: (format: TranscriptExportFormat) => void;
   pick: () => Promise<void>;
+  addDroppedPaths: (paths: string[]) => Promise<void>;
   remove: (path: string) => void;
+  clear: () => void;
   start: () => Promise<void>;
   cancel: () => Promise<void>;
   /** Exports the given finished files; resolves to the written paths, or null if the folder dialog was closed. */
@@ -115,8 +157,6 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>(
 
       setExportFormat: (exportFormat) => set({ exportFormat }),
 
-      // A new pick replaces the queue: the backend only accepts paths from
-      // the latest dialog result.
       pick: async () => {
         const { picking, status } = get();
         if (picking || isBusy(status)) return;
@@ -124,16 +164,46 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>(
         try {
           const paths = await pickAudioFiles();
           if (paths.length > 0) {
-            set({ items: paths.map(queuedItem), cancelled: false });
+            const { nextItems, addedCount } = mergeIncomingPaths(
+              get().items,
+              paths,
+            );
+            if (addedCount > 0) {
+              set({ items: nextItems, cancelled: false });
+            }
           }
         } finally {
           set({ picking: false });
         }
       },
 
+      addDroppedPaths: async (paths) => {
+        if (isBusy(get().status) || paths.length === 0) return;
+        try {
+          const registered = await registerDroppedAudioFiles(paths);
+          if (registered.length === 0) return;
+          const { nextItems, addedCount } = mergeIncomingPaths(
+            get().items,
+            registered,
+          );
+          if (addedCount > 0) {
+            set({ items: nextItems, cancelled: false });
+          }
+        } catch (err: unknown) {
+          toast(formatTauriError(err), "error");
+        }
+      },
+
       remove: (path) => {
         if (isBusy(get().status)) return;
         set({ items: get().items.filter((item) => item.path !== path) });
+        void removeQueuedAudioFile(path).catch(() => {});
+      },
+
+      clear: () => {
+        if (isBusy(get().status)) return;
+        set({ items: [], cancelled: false });
+        void clearQueuedAudioFiles().catch(() => {});
       },
 
       start: async () => {

@@ -12,8 +12,9 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::misc::{
-    canonical_to_clean_string, ensure_picker_backed_path, pick_directory_blocking,
-    pick_gated_files, remember_picker_paths, PICKER_KIND_AUDIO_FILE,
+    append_picker_paths, canonical_to_clean_string, clear_picker_paths, ensure_picker_backed_path,
+    pick_directory_blocking, pick_gated_files, remember_picker_paths, remove_picker_path,
+    PICKER_KIND_AUDIO_FILE,
 };
 use super::runtime::{
     build_stt_config_for_language, build_stt_for_kind, llm_configs_from_settings, SettingsSnapshot,
@@ -127,6 +128,70 @@ pub async fn pick_audio_files<R: Runtime>(
         return Ok(Vec::new());
     };
     pick_gated_files(&app, &state, PICKER_KIND_AUDIO_FILE, MAX_BATCH_FILES).await
+}
+
+const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "webm", "wma",
+];
+
+pub(crate) fn validate_dropped_audio_paths(
+    paths: &[String],
+) -> std::result::Result<Vec<PathBuf>, AppError> {
+    let mut canonical_paths = Vec::with_capacity(paths.len());
+    for raw_path in paths {
+        let canonical = Path::new(raw_path).canonicalize().map_err(|e| {
+            AppError::invalid_input(format!("Invalid dropped file '{raw_path}': {e}"))
+        })?;
+        if canonical.is_dir() {
+            return Err(AppError::invalid_input(
+                "Folders cannot be dropped; drop audio files instead",
+            ));
+        }
+        let valid_ext = canonical
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                SUPPORTED_AUDIO_EXTENSIONS
+                    .iter()
+                    .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+            });
+        if !valid_ext {
+            return Err(AppError::invalid_input(format!(
+                "Unsupported audio format for '{raw_path}'"
+            )));
+        }
+        canonical_paths.push(canonical);
+    }
+    Ok(canonical_paths)
+}
+
+#[tauri::command]
+pub fn register_dropped_audio_files(
+    state: State<'_, AppStateInner>,
+    paths: Vec<String>,
+) -> std::result::Result<Vec<String>, AppError> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let canonical = validate_dropped_audio_paths(&paths)?;
+    append_picker_paths(&state, PICKER_KIND_AUDIO_FILE, canonical, MAX_BATCH_FILES)
+}
+
+#[tauri::command]
+pub fn remove_queued_audio_file(
+    state: State<'_, AppStateInner>,
+    path: String,
+) -> std::result::Result<(), AppError> {
+    remove_picker_path(&state, PICKER_KIND_AUDIO_FILE, &path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_queued_audio_files(
+    state: State<'_, AppStateInner>,
+) -> std::result::Result<(), AppError> {
+    clear_picker_paths(&state, PICKER_KIND_AUDIO_FILE);
+    Ok(())
 }
 
 const EXPORT_DIRECTORY_TITLE: &str = "Select a folder for the exported transcripts";
@@ -566,5 +631,38 @@ mod tests {
         empty.text = "   ".to_string();
         let err = merge_decode_failure(empty, 2, AppError::internal("corrupt frame")).unwrap_err();
         assert_eq!(err.message, "corrupt frame");
+    }
+
+    #[test]
+    fn validate_dropped_audio_paths_rejects_directories_and_unsupported_extensions() {
+        let dir = std::env::temp_dir().join("voxitype-drop-test-invalid");
+        std::fs::create_dir_all(&dir).unwrap();
+        let txt = dir.join("notes.txt");
+        std::fs::write(&txt, b"hello").unwrap();
+
+        let dir_err =
+            validate_dropped_audio_paths(&[dir.to_string_lossy().into_owned()]).unwrap_err();
+        assert_eq!(dir_err.code, crate::error::ErrorCode::InvalidInput);
+
+        let ext_err =
+            validate_dropped_audio_paths(&[txt.to_string_lossy().into_owned()]).unwrap_err();
+        assert_eq!(ext_err.code, crate::error::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn validate_dropped_audio_paths_accepts_case_insensitive_audio_extensions() {
+        let dir = std::env::temp_dir().join("voxitype-drop-test-valid");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mp3 = dir.join("clip.MP3");
+        let flac = dir.join("voice.FlAc");
+        std::fs::write(&mp3, b"a").unwrap();
+        std::fs::write(&flac, b"b").unwrap();
+
+        let valid = validate_dropped_audio_paths(&[
+            mp3.to_string_lossy().into_owned(),
+            flac.to_string_lossy().into_owned(),
+        ])
+        .unwrap();
+        assert_eq!(valid.len(), 2);
     }
 }

@@ -134,7 +134,7 @@ describe("fileTranscriptionStore", () => {
     expect(tauri.transcribeFile).not.toHaveBeenCalled();
   });
 
-  it("opens only one picker and replaces the queue with its result", async () => {
+  it("opens only one picker and appends its result to the queue without overwriting", async () => {
     let resolvePick!: (paths: string[]) => void;
     vi.mocked(tauri.pickAudioFiles).mockImplementationOnce(
       () => new Promise((resolve) => (resolvePick = resolve)),
@@ -146,8 +146,68 @@ describe("fileTranscriptionStore", () => {
     await first;
 
     expect(tauri.pickAudioFiles).toHaveBeenCalledTimes(1);
-    expect(items().map((i) => i.path)).toEqual(["D:\\new.wav"]);
+    expect(items().map((i) => i.path)).toEqual([FIRST, SECOND, "D:\\new.wav"]);
     expect(useFileTranscriptionStore.getState().picking).toBe(false);
+  });
+
+  it("merges multiple picks from different folders, deduplicates, and caps at 20 files", async () => {
+    useFileTranscriptionStore.setState({ items: [] });
+    vi.mocked(tauri.pickAudioFiles)
+      .mockResolvedValueOnce(["C:\\folderA\\a.mp3"])
+      .mockResolvedValueOnce(["C:\\folderA\\a.mp3", "D:\\folderB\\b.wav"]);
+
+    await useFileTranscriptionStore.getState().pick();
+    await useFileTranscriptionStore.getState().pick();
+
+    expect(items().map((i) => i.path)).toEqual([
+      "C:\\folderA\\a.mp3",
+      "D:\\folderB\\b.wav",
+    ]);
+
+    const batch = Array.from({ length: 22 }, (_, idx) => `E:\\bulk\\f${idx}.mp3`);
+    vi.mocked(tauri.pickAudioFiles).mockResolvedValueOnce(batch);
+    await useFileTranscriptionStore.getState().pick();
+
+    expect(items()).toHaveLength(20);
+  });
+
+  it("registers dropped audio paths, deduplicates, and ignores empty batches", async () => {
+    vi.mocked(tauri.registerDroppedAudioFiles).mockResolvedValueOnce([
+      FIRST,
+      "D:\\dropped\\clip.flac",
+    ]);
+
+    await useFileTranscriptionStore
+      .getState()
+      .addDroppedPaths([FIRST, "D:\\dropped\\clip.flac"]);
+
+    expect(tauri.registerDroppedAudioFiles).toHaveBeenCalledWith([
+      FIRST,
+      "D:\\dropped\\clip.flac",
+    ]);
+    expect(items().map((i) => i.path)).toEqual([
+      FIRST,
+      SECOND,
+      "D:\\dropped\\clip.flac",
+    ]);
+  });
+
+  it("removes a single item and clears the whole queue when idle", () => {
+    useFileTranscriptionStore.getState().remove(FIRST);
+    expect(tauri.removeQueuedAudioFile).toHaveBeenCalledWith(FIRST);
+    expect(items().map((i) => i.path)).toEqual([SECOND]);
+
+    useFileTranscriptionStore.getState().clear();
+    expect(tauri.clearQueuedAudioFiles).toHaveBeenCalledTimes(1);
+    expect(items()).toEqual([]);
+  });
+
+  it("does not clear queue while a batch is running", () => {
+    useFileTranscriptionStore.setState({ status: "running" });
+    useFileTranscriptionStore.getState().clear();
+
+    expect(tauri.clearQueuedAudioFiles).not.toHaveBeenCalled();
+    expect(items()).toHaveLength(2);
   });
 
   it("keeps the queue when the picker is closed", async () => {

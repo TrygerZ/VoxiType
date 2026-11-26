@@ -323,7 +323,11 @@ pub(crate) async fn pick_gated_files<R: Runtime>(
         .map(|p| canonical_to_clean_string(p))
         .collect();
     if !canonical_paths.is_empty() {
-        remember_picker_paths(state, kind, canonical_paths);
+        if kind == PICKER_KIND_AUDIO_FILE {
+            append_picker_paths(state, kind, canonical_paths, max_files)?;
+        } else {
+            remember_picker_paths(state, kind, canonical_paths);
+        }
     }
     Ok(clean)
 }
@@ -350,6 +354,68 @@ pub(super) fn remember_picker_paths(state: &AppStateInner, kind: &str, canonical
         }
         Err(_) => {
             tracing::warn!("Picker directory state poisoned; next gated write may be refused")
+        }
+    }
+}
+
+/// Append deduplicated canonical paths to `last_picker_dirs[kind]` up to `max_files`.
+/// Rejects before mutating state if the new unique paths would exceed `max_files`.
+pub(crate) fn append_picker_paths(
+    state: &AppStateInner,
+    kind: &str,
+    canonical: Vec<PathBuf>,
+    max_files: usize,
+) -> std::result::Result<Vec<String>, AppError> {
+    let mut dirs = state
+        .last_picker_dirs
+        .lock()
+        .map_err(|_| AppError::internal("Internal picker state unavailable"))?;
+    let existing = dirs.get(kind).map(Vec::as_slice).unwrap_or(&[]);
+    let mut new_paths = Vec::with_capacity(canonical.len());
+    for path in canonical {
+        if !existing.contains(&path) && !new_paths.contains(&path) {
+            new_paths.push(path);
+        }
+    }
+    if existing.len().saturating_add(new_paths.len()) > max_files {
+        return Err(AppError::invalid_input(format!(
+            "Select at most {max_files} files at a time"
+        )));
+    }
+    let added_clean = new_paths
+        .iter()
+        .map(|p| canonical_to_clean_string(p))
+        .collect();
+    dirs.entry(kind.to_string()).or_default().extend(new_paths);
+    Ok(added_clean)
+}
+
+pub(crate) fn remove_picker_path(state: &AppStateInner, kind: &str, path: &str) {
+    let canonical_target = Path::new(path).canonicalize().ok();
+    match state.last_picker_dirs.lock() {
+        Ok(mut dirs) => {
+            if let Some(paths) = dirs.get_mut(kind) {
+                paths.retain(|stored| {
+                    let matches_canonical = canonical_target
+                        .as_ref()
+                        .is_some_and(|target| target == stored);
+                    !matches_canonical && canonical_to_clean_string(stored) != path
+                });
+            }
+        }
+        Err(_) => {
+            tracing::warn!("Picker directory state poisoned; could not remove queued path")
+        }
+    }
+}
+
+pub(crate) fn clear_picker_paths(state: &AppStateInner, kind: &str) {
+    match state.last_picker_dirs.lock() {
+        Ok(mut dirs) => {
+            dirs.remove(kind);
+        }
+        Err(_) => {
+            tracing::warn!("Picker directory state poisoned; could not clear queued paths")
         }
     }
 }
@@ -1158,5 +1224,53 @@ mod tests {
         assert_ne!(err.message, "Groq API key is not set");
         assert!(err.message.contains("decrypt") || err.message.contains("master key"));
         assert!(!err.message.contains(secret));
+    }
+
+    #[test]
+    fn append_picker_paths_merges_folders_dedups_and_enforces_limit() {
+        let state = test_app_state([9u8; 32]);
+        let (first, first_clean) = scratch_dir_with_file("append-a");
+        let (second, second_clean) = scratch_dir_with_file("append-b");
+
+        let added1 = append_picker_paths(
+            &state,
+            PICKER_KIND_AUDIO_FILE,
+            vec![first.clone(), first.clone()],
+            20,
+        )
+        .unwrap();
+        assert_eq!(added1, vec![first_clean.clone()]);
+
+        let added2 = append_picker_paths(
+            &state,
+            PICKER_KIND_AUDIO_FILE,
+            vec![first.clone(), second.clone()],
+            20,
+        )
+        .unwrap();
+        assert_eq!(added2, vec![second_clean.clone()]);
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &first_clean).is_ok());
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &second_clean).is_ok());
+
+        // Limit enforcement: cap=2 already reached; adding a new path fails.
+        let (third, third_clean) = scratch_dir_with_file("append-c");
+        let err = append_picker_paths(&state, PICKER_KIND_AUDIO_FILE, vec![third], 2).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &third_clean).is_err());
+    }
+
+    #[test]
+    fn remove_and_clear_picker_paths_update_whitelist() {
+        let state = test_app_state([10u8; 32]);
+        let (first, first_clean) = scratch_dir_with_file("rem-a");
+        let (second, second_clean) = scratch_dir_with_file("rem-b");
+        append_picker_paths(&state, PICKER_KIND_AUDIO_FILE, vec![first, second], 20).unwrap();
+
+        remove_picker_path(&state, PICKER_KIND_AUDIO_FILE, &first_clean);
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &first_clean).is_err());
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &second_clean).is_ok());
+
+        clear_picker_paths(&state, PICKER_KIND_AUDIO_FILE);
+        assert!(ensure_picker_backed_path(&state, PICKER_KIND_AUDIO_FILE, &second_clean).is_err());
     }
 }
