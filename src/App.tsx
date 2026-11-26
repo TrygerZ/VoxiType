@@ -19,6 +19,7 @@ import { toast } from "./stores/toastStore";
 import type { NoticeEvent } from "./types/events";
 import { setLanguage, useT } from "./lib/i18n";
 import { navigate, setNavigator, setOnboardingHandler } from "./lib/navigate";
+import { applyTheme, normalizeThemePreference } from "./lib/theme";
 import { ToastContainer } from "./components/ui/Toast";
 
 export default function App() {
@@ -58,6 +59,12 @@ export default function App() {
       setLanguage(settings.language);
     }
   }, [loaded, settings.language]);
+
+  // Apply the saved theme preference once settings load and track system changes.
+  useEffect(() => {
+    if (!loaded) return;
+    return applyTheme(normalizeThemePreference(settings.theme));
+  }, [loaded, settings.theme]);
 
   useEffect(() => {
     if (loaded && !error && settings.onboarding_completed !== true) {

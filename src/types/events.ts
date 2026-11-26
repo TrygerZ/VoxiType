@@ -1,6 +1,6 @@
 // Backend -> frontend event payloads.
 
-import type { AppStateEnum } from "./app";
+import type { AppStateEnum, ThemePreference } from "./app";
 
 export interface StateChangedEvent {
   state: AppStateEnum;
@@ -44,4 +44,8 @@ export interface WidgetRevealRequestedEvent {
 export interface NoticeEvent {
   code: string;
   message: string;
+}
+
+export interface ThemeChangedEvent {
+  theme: ThemePreference;
 }

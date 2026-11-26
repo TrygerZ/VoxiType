@@ -111,8 +111,13 @@ export interface UpdateInfo {
   url: string;
 }
 
+export type ThemePreference = "dark" | "light" | "system";
+
 // Settings is a flat key->value map (values are JSON).
 export interface KnownSettings {
+  theme?: ThemePreference;
+  history_retention_days?: number;
+  onboarding_resume_step?: string | null;
   groq_api_key?: string;
   groq_api_key_set?: boolean;
   stt_engine?: string;

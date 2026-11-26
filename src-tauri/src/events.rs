@@ -52,6 +52,11 @@ pub struct Notice {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ThemeChanged {
+    pub theme: String,
+}
+
 pub fn emit_file_transcription_progress<R: Runtime>(
     app: &AppHandle<R>,
     progress: crate::pipeline::file_job::Progress,
@@ -135,5 +140,16 @@ pub fn emit_widget_reveal_requested<R: Runtime>(app: &AppHandle<R>, id: u64) {
         WidgetRevealRequested { id },
     ) {
         tracing::warn!("Failed to emit floating_widget_reveal_requested: {e}");
+    }
+}
+
+pub fn emit_theme_changed<R: Runtime>(app: &AppHandle<R>, theme: &str) {
+    if let Err(e) = app.emit(
+        "theme_changed",
+        ThemeChanged {
+            theme: theme.to_string(),
+        },
+    ) {
+        tracing::warn!("Failed to emit theme_changed: {e}");
     }
 }

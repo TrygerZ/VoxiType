@@ -110,4 +110,36 @@ describe("App onboarding gating", () => {
 
     expect(screen.getByText("hotkey unavailable")).toBeInTheDocument();
   });
+
+  it("applies dataset.theme on documentElement once settings load", async () => {
+    delete document.documentElement.dataset.theme;
+    vi.mocked(tauri.getSettings).mockResolvedValue({
+      onboarding_completed: true,
+      theme: "light",
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Home" });
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("updates dataset.theme when settings.theme changes", async () => {
+    delete document.documentElement.dataset.theme;
+    vi.mocked(tauri.getSettings).mockResolvedValue({
+      onboarding_completed: true,
+      theme: "dark",
+    });
+
+    render(<App />);
+    await screen.findByRole("button", { name: "Home" });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+
+    act(() => {
+      useSettingsStore.setState((s) => ({
+        settings: { ...s.settings, theme: "light" },
+      }));
+    });
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
 });

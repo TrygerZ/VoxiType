@@ -39,7 +39,10 @@ pub(crate) fn sanitize_settings_for_frontend(all: &mut Value) {
 /// is written backend-side only.
 const SETTABLE_KEYS: &[&str] = &[
     "onboarding_completed",
+    "onboarding_resume_step",
     "language",
+    "theme",
+    "history_retention_days",
     "sound_cues",
     "stt_engine",
     "stt_language",
@@ -73,6 +76,11 @@ pub fn update_setting<R: Runtime>(
     validate_setting_value(&key, &value)?;
     let encoded = encode_setting_value(&key, &value, &state.master_key)?;
     SettingsManager::new(&state.db).set_raw(&key, &encoded)?;
+    if key == "theme" {
+        if let Some(theme_str) = value.as_str() {
+            crate::events::emit_theme_changed(&app, theme_str);
+        }
+    }
     if key == "floating_widget_auto_hide_seconds" {
         crate::overlay::reset_idle_timer_and_reconcile(&app);
     }
@@ -152,6 +160,19 @@ const MAX_ACTIVE_MODE_LEN: usize = 64;
 const STT_ENGINES: &[&str] = &["groq", "whisper_cpp"];
 const LLM_ENGINES: &[&str] = &["off", "ollama", "groq", "rule_based"];
 const UI_LANGUAGES: &[&str] = &["en", "id"];
+const THEMES: &[&str] = &["dark", "light", "system"];
+const MIN_RETENTION_DAYS: i64 = 7;
+const MAX_RETENTION_DAYS: i64 = 3650;
+const ONBOARDING_RESUME_STEPS: &[&str] = &[
+    "welcome",
+    "quick_settings",
+    "microphone",
+    "stt_setup",
+    "data_directory",
+    "hotkey",
+    "smoke_test",
+    "complete",
+];
 
 /// Validate a setting value at the write boundary. Enum-valued keys are
 /// checked against their known sets so garbage can never persist and degrade
@@ -167,6 +188,9 @@ fn validate_setting_value(key: &str, value: &Value) -> std::result::Result<(), A
         "stt_engine" => validate_enum(key, value, STT_ENGINES),
         "llm_engine" => validate_enum(key, value, LLM_ENGINES),
         "language" => validate_enum(key, value, UI_LANGUAGES),
+        "theme" => validate_enum(key, value, THEMES),
+        "history_retention_days" => validate_history_retention_days(value),
+        "onboarding_resume_step" => validate_onboarding_resume_step(value),
         // stt_language accepts the "auto" sentinel in addition to a language code.
         "stt_language" => validate_language_or_auto(key, value),
         "translation_target" => validate_language_code(key, value),
@@ -179,6 +203,35 @@ fn validate_setting_value(key: &str, value: &Value) -> std::result::Result<(), A
         "auto_start" | "auto_update" => validate_bool(key, value),
         _ => Ok(()),
     }
+}
+
+/// Accept 0 (never prune) or a retention window from 7 to 3650 days.
+fn validate_history_retention_days(value: &Value) -> std::result::Result<(), AppError> {
+    let days = value.as_i64().ok_or_else(|| {
+        AppError::invalid_input("Setting 'history_retention_days' must be an integer")
+    })?;
+    if days != 0 && !(MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(&days) {
+        return Err(AppError::invalid_input(format!(
+            "Setting 'history_retention_days' must be 0 or between {MIN_RETENTION_DAYS} and {MAX_RETENTION_DAYS}"
+        )));
+    }
+    Ok(())
+}
+
+/// Accept null, empty string (cleared), or a known onboarding step id.
+fn validate_onboarding_resume_step(value: &Value) -> std::result::Result<(), AppError> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let step = value.as_str().ok_or_else(|| {
+        AppError::invalid_input("Setting 'onboarding_resume_step' must be a string or null")
+    })?;
+    if !step.is_empty() && !ONBOARDING_RESUME_STEPS.contains(&step) {
+        return Err(AppError::invalid_input(format!(
+            "Setting 'onboarding_resume_step' has unknown step '{step}'"
+        )));
+    }
+    Ok(())
 }
 
 /// Reject a value that is not a JSON boolean for `key`. This runs before the
@@ -315,6 +368,9 @@ mod tests {
             "llm_engine",
             "active_mode",
             "floating_widget_auto_hide_seconds",
+            "theme",
+            "history_retention_days",
+            "onboarding_resume_step",
         ] {
             assert!(
                 SETTABLE_KEYS.contains(&known),
@@ -568,5 +624,74 @@ mod tests {
         sanitize_settings_for_frontend(&mut missing_val);
         assert_eq!(missing_val["groq_api_key"], "");
         assert_eq!(missing_val["groq_api_key_set"], false);
+    }
+
+    #[test]
+    fn validate_setting_theme_accepts_valid_and_rejects_invalid() {
+        for ok in ["dark", "light", "system"] {
+            assert!(
+                validate_setting_value("theme", &serde_json::json!(ok)).is_ok(),
+                "theme {ok}"
+            );
+        }
+        for bad in [
+            serde_json::json!("sepia"),
+            serde_json::json!(""),
+            serde_json::json!(123),
+            serde_json::json!(null),
+        ] {
+            assert_invalid("theme", bad);
+        }
+    }
+
+    #[test]
+    fn validate_setting_history_retention_days_rules() {
+        for ok in [0, 7, 30, 90, 3650] {
+            assert!(
+                validate_setting_value("history_retention_days", &serde_json::json!(ok)).is_ok(),
+                "retention {ok}"
+            );
+        }
+        for bad in [
+            serde_json::json!(-1),
+            serde_json::json!(1),
+            serde_json::json!(6),
+            serde_json::json!(3651),
+            serde_json::json!(30.5),
+            serde_json::json!("abc"),
+            serde_json::json!(null),
+            serde_json::json!(true),
+        ] {
+            assert_invalid("history_retention_days", bad);
+        }
+    }
+
+    #[test]
+    fn validate_setting_onboarding_resume_step_rules() {
+        for ok in [
+            serde_json::json!(null),
+            serde_json::json!(""),
+            serde_json::json!("welcome"),
+            serde_json::json!("quick_settings"),
+            serde_json::json!("microphone"),
+            serde_json::json!("stt_setup"),
+            serde_json::json!("data_directory"),
+            serde_json::json!("hotkey"),
+            serde_json::json!("smoke_test"),
+            serde_json::json!("complete"),
+        ] {
+            assert!(
+                validate_setting_value("onboarding_resume_step", &ok).is_ok(),
+                "resume step {ok}"
+            );
+        }
+        for bad in [
+            serde_json::json!("evil"),
+            serde_json::json!("step_99"),
+            serde_json::json!(123),
+            serde_json::json!(true),
+        ] {
+            assert_invalid("onboarding_resume_step", bad);
+        }
     }
 }
