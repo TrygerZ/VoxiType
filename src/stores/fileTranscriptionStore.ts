@@ -105,6 +105,7 @@ interface FileTranscriptionStore {
   addDroppedPaths: (paths: string[]) => Promise<void>;
   remove: (path: string) => void;
   clear: () => void;
+  retry: (path: string) => Promise<void>;
   start: () => Promise<void>;
   cancel: () => Promise<void>;
   /** Exports the given finished files; resolves to the written paths, or null if the folder dialog was closed. */
@@ -133,6 +134,41 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>(
           finishedAt: Date.now(),
         });
         return !wasCancel;
+      }
+    };
+
+    const attachProgressListener = (): Promise<UnlistenFn> =>
+      onEvent<FileTranscriptionProgressEvent>(
+        "file_transcription_progress",
+        (progress) => {
+          const running = get().items.find((item) => item.status === "running");
+          if (running) patchItem(running.path, { progress });
+        },
+      );
+
+    const executePaths = async (paths: string[], options: FileJobOptions) => {
+      set({ status: "running", cancelled: false });
+      let unlisten: UnlistenFn | null = null;
+      let stoppedByCancel = false;
+      try {
+        unlisten = await attachProgressListener();
+        for (const path of paths) {
+          // Checked before each file: the backend clears its cancel flag
+          // when a new job begins, so a cancel between files must stop here.
+          if (get().status === "cancelling" || !(await runItem(path, options))) {
+            stoppedByCancel = true;
+            break;
+          }
+        }
+      } catch (err: unknown) {
+        toast(formatTauriError(err), "error");
+      } finally {
+        unlisten?.();
+        set({
+          status: "idle",
+          cancelled: stoppedByCancel || get().status === "cancelling",
+        });
+        void useHistoryStore.getState().load();
       }
     };
 
@@ -206,36 +242,19 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>(
         void clearQueuedAudioFiles().catch(() => {});
       },
 
+      retry: async (path) => {
+        const { options, status, picking } = get();
+        if (!options || picking || isBusy(status)) return;
+        await executePaths([path], options);
+      },
+
       start: async () => {
         const { options, status, picking, items } = get();
-        const pending = items.filter((item) => item.status !== "done").map((item) => item.path);
+        const pending = items
+          .filter((item) => item.status !== "done")
+          .map((item) => item.path);
         if (!options || picking || isBusy(status) || pending.length === 0) return;
-        set({ status: "running", cancelled: false });
-        let unlisten: UnlistenFn | null = null;
-        let stoppedByCancel = false;
-        try {
-          unlisten = await onEvent<FileTranscriptionProgressEvent>(
-            "file_transcription_progress",
-            (progress) => {
-              const running = get().items.find((item) => item.status === "running");
-              if (running) patchItem(running.path, { progress });
-            },
-          );
-          for (const path of pending) {
-            // Checked before each file: the backend clears its cancel flag
-            // when a new job begins, so a cancel between files must stop here.
-            if (get().status === "cancelling" || !(await runItem(path, options))) {
-              stoppedByCancel = true;
-              break;
-            }
-          }
-        } catch (err: unknown) {
-          toast(formatTauriError(err), "error");
-        } finally {
-          unlisten?.();
-          set({ status: "idle", cancelled: stoppedByCancel || get().status === "cancelling" });
-          void useHistoryStore.getState().load();
-        }
+        await executePaths(pending, options);
       },
 
       cancel: async () => {

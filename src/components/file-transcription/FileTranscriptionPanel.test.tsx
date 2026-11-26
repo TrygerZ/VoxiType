@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { FileTranscriptionPanel } from "./FileTranscriptionPanel";
 import { formatElapsed } from "./FileQueueItem";
+import * as tauri from "../../lib/tauri";
 import { useFileTranscriptionStore, type FileItem } from "../../stores/fileTranscriptionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useToastStore } from "../../stores/toastStore";
 
 const MEETING = "C:\\audio\\meeting.mp3";
 const LECTURE = "C:\\audio\\lecture.wav";
@@ -30,6 +33,8 @@ const done = (path: string, text: string, startedAt: number, finishedAt: number)
 
 describe("FileTranscriptionPanel", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    useToastStore.setState({ toasts: [] });
     useSettingsStore.setState({ settings: { groq_api_key_set: true, llm_engine: "groq" } });
     useFileTranscriptionStore.setState({
       items: [item(MEETING)],
@@ -62,25 +67,26 @@ describe("FileTranscriptionPanel", () => {
     render(<FileTranscriptionPanel />);
 
     expect(screen.getByRole("alert")).toHaveTextContent("API key");
-    expect(screen.getByRole("button", { name: /Start transcription/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Start/ })).toBeDisabled();
   });
 
-  it("lists every queued file and exports only finished ones", () => {
+  it("lists every queued file, shows folder path, and exports only finished ones", () => {
     useFileTranscriptionStore.setState({
       items: [done(MEETING, "halo dunia", 0, 65_000), item(LECTURE)],
     });
     render(<FileTranscriptionPanel />);
 
-    expect(screen.getByText("Selected: 2")).toBeInTheDocument();
+    expect(screen.getByText("2 / 20 files")).toBeInTheDocument();
     expect(screen.getByText("meeting.mp3")).toBeInTheDocument();
     expect(screen.getByText("lecture.wav")).toBeInTheDocument();
-    expect(screen.getByText("01:05")).toBeInTheDocument();
+    expect(screen.getByText("C:\\audio")).toBeInTheDocument();
+    expect(screen.getByText(/01:05/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export meeting.mp3" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Export lecture.wav" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export all \(1\)/ })).toBeEnabled();
   });
 
-  it("ticks the timer of the running file", () => {
+  it("ticks the timer of the running file and locks queue mutations", () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
     useFileTranscriptionStore.setState({
@@ -89,6 +95,8 @@ describe("FileTranscriptionPanel", () => {
     });
     render(<FileTranscriptionPanel />);
     expect(screen.getByText("00:00")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel batch" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(3_000);
@@ -96,6 +104,98 @@ describe("FileTranscriptionPanel", () => {
 
     expect(screen.getByText("00:03")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remove meeting.mp3" })).not.toBeInTheDocument();
+  });
+
+  it("supports + Add files... and Clear when queue has items", async () => {
+    vi.mocked(tauri.pickAudioFiles).mockResolvedValueOnce([LECTURE]);
+    render(<FileTranscriptionPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add files..." }));
+    await waitFor(() => {
+      expect(useFileTranscriptionStore.getState().items).toHaveLength(2);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(useFileTranscriptionStore.getState().items).toHaveLength(0);
+  });
+
+  it("highlights dropzone on hover and registers dropped audio paths via Tauri webview event", async () => {
+    let handler: ((event: { payload: { type: string; paths?: string[] } }) => void) | undefined;
+    const webview = getCurrentWebview();
+    vi.mocked(webview.onDragDropEvent).mockImplementation(async (cb) => {
+      handler = cb as typeof handler;
+      return () => undefined;
+    });
+    vi.mocked(tauri.registerDroppedAudioFiles).mockResolvedValueOnce([LECTURE]);
+
+    useFileTranscriptionStore.setState({ items: [] });
+    render(<FileTranscriptionPanel />);
+
+    await waitFor(() => {
+      expect(handler).toBeDefined();
+    });
+
+    const dropzone = screen.getByTestId("file-dropzone");
+    act(() => {
+      handler?.({ payload: { type: "enter", paths: [LECTURE] } });
+    });
+    expect(dropzone.className).toContain("border-vx-accent-ember");
+
+    await act(async () => {
+      handler?.({ payload: { type: "drop", paths: [LECTURE] } });
+    });
+    expect(tauri.registerDroppedAudioFiles).toHaveBeenCalledWith([LECTURE]);
+    await waitFor(() => {
+      expect(useFileTranscriptionStore.getState().items.map((i) => i.path)).toContain(LECTURE);
+    });
+  });
+
+  it("renders Partial STT badge, warning banner, and Retry button for partial transcripts", () => {
+    useFileTranscriptionStore.setState({
+      items: [
+        item(MEETING, {
+          status: "done",
+          result: {
+            id: "partial-1",
+            text: "Preserved partial text",
+            word_count: 3,
+            duration_ms: 4000,
+            stt_issue: { count: 1, total: 2, reason: "corrupt AAC frame" },
+            llm_issue: null,
+          },
+        }),
+      ],
+    });
+    const retrySpy = vi.fn().mockResolvedValue(undefined);
+    useFileTranscriptionStore.setState({ retry: retrySpy });
+
+    render(<FileTranscriptionPanel />);
+
+    expect(screen.getByText("Partial STT")).toBeInTheDocument();
+    const banner = screen.getByRole("alert");
+    expect(banner.className).toContain("bg-vx-semantic-warning-soft");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(retrySpy).toHaveBeenCalledWith(MEETING);
+  });
+
+  it("fires a success toast with destination folder after batch export", async () => {
+    useFileTranscriptionStore.setState({
+      items: [done(MEETING, "halo dunia", 0, 5000)],
+    });
+    vi.mocked(tauri.pickExportDirectory).mockResolvedValueOnce("D:\\Exports");
+    vi.mocked(tauri.exportTranscripts).mockResolvedValueOnce(["D:\\Exports\\meeting.txt"]);
+
+    render(<FileTranscriptionPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Export all \(1\)/ }));
+
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0].type).toBe("success");
+      expect(toasts[0].message).toContain("1");
+      expect(toasts[0].description).toBe("D:\\Exports");
+    });
   });
 
   it("formats elapsed time with hours only when needed", () => {

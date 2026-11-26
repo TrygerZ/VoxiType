@@ -4,6 +4,14 @@ import { beforeEach, vi } from "vitest";
 
 import { resetPlatformCache } from "../lib/usePlatform";
 
+const webviewOnDragDropEvent = vi.fn().mockResolvedValue(() => undefined);
+
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: vi.fn(() => ({
+    onDragDropEvent: webviewOnDragDropEvent,
+  })),
+}));
+
 vi.mock("../lib/tauri", () => ({
   formatTauriError: (error: unknown) => {
     if (error instanceof Error) return error.message;
