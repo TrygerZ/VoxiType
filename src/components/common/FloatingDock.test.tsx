@@ -24,7 +24,7 @@ describe("FloatingDock", () => {
     expect(dividers).toHaveLength(2);
   });
 
-  it("marks active item with aria-current=page, matte pill, and visible label without active dot or backdrop blur", () => {
+  it("renders shared sliding active pill, marks active item with aria-current=page, and omits backdrop blur or active dot", () => {
     const { container } = render(
       <FloatingDock active="history" onChange={vi.fn()} />,
     );
@@ -34,9 +34,13 @@ describe("FloatingDock", () => {
     expect(dock.className).not.toContain("backdrop-blur");
     expect(dock.className).not.toContain("/70");
 
+    const activePill = screen.getByTestId("dock-active-pill");
+    expect(activePill.className).toContain("bg-vx-bg-elevated");
+    expect(activePill.className).toContain("border-vx-border-default");
+    expect(activePill.className).toContain("duration-[240ms]");
+
     const historyBtn = screen.getByRole("button", { name: "History" });
     expect(historyBtn).toHaveAttribute("aria-current", "page");
-    expect(historyBtn.className).toContain("bg-vx-bg-elevated");
     expect(historyBtn).toHaveTextContent("History");
 
     const homeBtn = screen.getByRole("button", { name: "Home" });
@@ -44,12 +48,21 @@ describe("FloatingDock", () => {
     expect(dock.querySelector(".h-1.w-1")).toBeNull();
   });
 
-  it("calls onChange with selected view id", async () => {
+  it("calls onChange with selected view id and updates active tab state on rerender", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<FloatingDock active="home" onChange={onChange} />);
+    const { rerender } = render(<FloatingDock active="home" onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: "Snippets" }));
     expect(onChange).toHaveBeenCalledWith("snippets");
+
+    rerender(<FloatingDock active="snippets" onChange={onChange} />);
+    expect(screen.getByRole("button", { name: "Snippets" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 });
