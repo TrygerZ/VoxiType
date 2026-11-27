@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-27
+
+### New Features
+- Added Dark (Warm Obsidian), Light (Warm Paper), and System theme modes in General settings, synchronized automatically across the main window and the floating widget overlay.
+- Redesigned the entire desktop interface with a warm monochrome matte design system, ember focus accents, directional page transitions, sliding tab/mode indicators, tactile button feedback, and full `prefers-reduced-motion` support.
+- Redesigned the Home workspace with a single-core 4-state microphone console (clean idle button, audio-reactive recording ripples with Stop morph, orbiting processing ring, and brief success confirmation flash), a calibrated WPM semicircle gauge in a two-column Lifetime Telemetry card, a sliding mode selector, and quick-navigation shortcuts.
+- Upgraded the Floating Dock into three hairline-separated navigation groups with a synchronized sliding active indicator pill and expanding active labels, and redesigned toast notifications as top-right elevated cards with optional descriptions and persistent dismiss buttons.
+- Redesigned the floating overlay widget into an ultra-compact morphing pill (`92x34` idle with logo and dormant bars, expanding smoothly across recording, formatting, success, and error states) with capsule auto-hide and spring-bloom reveal choreography.
+- Redesigned History into a two-column split layout with search, mode filter, All/Pinned segmented toggle, and an Editorial Reader featuring Formatted and Raw STT tabs alongside Pin, Copy, Re-inject, and Delete actions.
+- Added multi-folder file appending (up to 20 deduplicated files), native webview drag-and-drop with backend path authorization, per-item queue controls, partial-result retry, and export toast feedback in File Transcription.
+- Added search, All/Active/Replacements filter chips, and inline editing to Dictionary, plus search, inline editing, an active trigger count badge, and per-snippet active toggles to Snippets.
+- Redesigned all 8 Settings tabs with a sliding vertical navigation rail and added history retention options (30, 90, 180 days, or Forever), an Ollama endpoint and model readiness test, a live Audio microphone level meter with device refresh, and a running-applications picker with a 3-second active-app countdown in App Rules.
+- Redesigned the 8-step Onboarding wizard with an updated progress layout and persisted resume-step support across data-directory restarts.
+
+### Bug Fixes
+- Fixed duplicate controls in General settings and routed the system tray About action directly into the Settings About tab.
+- Fixed inline dictionary edits to update records atomically by ID so entry identity and usage counts are preserved instead of replacing rows.
+- Fixed onboarding navigation when returning from STT setup to the Microphone step and ensured persisted resume state clears cleanly on completion.
+
+### Improvements
+- Added English and Indonesian translations across all redesigned v2 screens, settings controls, and compact widget states.
+- Expanded automated test coverage across UI primitives, theme synchronization, FloatingDock, HomeView, FloatingWidget, History, Dictionary, Snippets, File Transcription, Settings tabs, and Onboarding (264 frontend tests and 488 Rust tests).
+
 ## [0.7.1] - 2026-10-19
 
 ### Bug Fixes
