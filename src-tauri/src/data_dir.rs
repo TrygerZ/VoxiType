@@ -481,26 +481,27 @@ pub(crate) fn validate_data_dir(path: &Path) -> Result<()> {
     ensure_free_space(path)
 }
 
+#[cfg(windows)]
 fn is_network_path(path: &Path) -> bool {
     if path.to_string_lossy().starts_with(r"\\") {
         return true;
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        use windows::Win32::Storage::FileSystem::GetDriveTypeW;
-        use windows::Win32::System::WindowsProgramming::{DRIVE_REMOTE, DRIVE_REMOVABLE};
-        let value = path.as_os_str().encode_wide().collect::<Vec<_>>();
-        if value.get(1) != Some(&(':' as u16)) {
-            return false;
-        }
-        let mut root = value[..value.len().min(3)].to_vec();
-        root.push(0);
-        let drive_type = unsafe { GetDriveTypeW(windows::core::PCWSTR(root.as_ptr())) };
-        drive_type == DRIVE_REMOTE || drive_type == DRIVE_REMOVABLE
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::GetDriveTypeW;
+    use windows::Win32::System::WindowsProgramming::{DRIVE_REMOTE, DRIVE_REMOVABLE};
+    let value = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    if value.get(1) != Some(&(':' as u16)) {
+        return false;
     }
-    #[cfg(not(windows))]
-    false
+    let mut root = value[..value.len().min(3)].to_vec();
+    root.push(0);
+    let drive_type = unsafe { GetDriveTypeW(windows::core::PCWSTR(root.as_ptr())) };
+    drive_type == DRIVE_REMOTE || drive_type == DRIVE_REMOVABLE
+}
+
+#[cfg(not(windows))]
+fn is_network_path(path: &Path) -> bool {
+    path.to_string_lossy().starts_with(r"\\")
 }
 
 #[cfg(windows)]
