@@ -6,8 +6,10 @@ import { HomeView } from "./HomeView";
 import * as tauri from "../../lib/tauri";
 import { setNavigator } from "../../lib/navigate";
 import { useAppStore } from "../../stores/appStore";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useDictionaryStore } from "../../stores/dictionaryStore";
 import { useHistoryStore } from "../../stores/historyStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { useSnippetStore } from "../../stores/snippetStore";
 import { useStatsStore } from "../../stores/statsStore";
 import { useToastStore } from "../../stores/toastStore";
 
@@ -32,6 +34,8 @@ describe("HomeView recording actions", () => {
       error: null,
       query: "",
     });
+    useDictionaryStore.setState({ entries: [], loading: false, error: null });
+    useSnippetStore.setState({ snippets: [], loading: false, error: null });
     useStatsStore.setState({
       totals: { total_words: 0, total_duration_ms: 0, total_sessions: 0 },
       loaded: false,
@@ -168,10 +172,54 @@ describe("HomeView v2 redesign & navigation", () => {
         groq_api_key_set: true,
         mic_device: "Shure MV7 (USB Audio)",
         stt_engine: "groq",
+        llm_engine: "groq",
+        stt_language: "auto",
         active_mode: "dictation",
         hotkey: { key: "Ctrl+Space", mode: "ptt" },
       },
       loaded: true,
+      error: null,
+    });
+    useDictionaryStore.setState({
+      entries: [
+        {
+          id: "d1",
+          word: "VoxiType",
+          pronunciation: null,
+          category: "custom",
+          replacement: null,
+          language: "en",
+          usage_count: 3,
+          is_active: true,
+        },
+        {
+          id: "d2",
+          word: "Tauri",
+          pronunciation: null,
+          category: "custom",
+          replacement: null,
+          language: "en",
+          usage_count: 1,
+          is_active: false,
+        },
+      ],
+      loading: false,
+      error: null,
+    });
+    useSnippetStore.setState({
+      snippets: [
+        {
+          id: "s1",
+          name: "signoff",
+          trigger_phrase: "sign off",
+          content: "Best regards,",
+          category: null,
+          mode: null,
+          usage_count: 2,
+          is_active: true,
+        },
+      ],
+      loading: false,
       error: null,
     });
     useStatsStore.setState({
@@ -203,7 +251,7 @@ describe("HomeView v2 redesign & navigation", () => {
     });
   });
 
-  it("navigates to Settings Audio, Settings STT, and History from quick links", async () => {
+  it("navigates to Settings Audio, Settings STT, Dictionary, Snippets, and History from quick links", async () => {
     const navSpy = vi.fn();
     setNavigator(navSpy);
 
@@ -213,11 +261,30 @@ describe("HomeView v2 redesign & navigation", () => {
     await user.click(screen.getByRole("button", { name: /Shure MV7/i }));
     expect(navSpy).toHaveBeenCalledWith("settings", "audio");
 
-    await user.click(screen.getByRole("button", { name: /Groq Cloud/i }));
+    await user.click(screen.getByRole("button", { name: /Groq Whisper/i }));
     expect(navSpy).toHaveBeenCalledWith("settings", "stt");
+
+    await user.click(screen.getByRole("button", { name: /terms/i }));
+    expect(navSpy).toHaveBeenCalledWith("dictionary", undefined);
+
+    await user.click(screen.getByRole("button", { name: /snippets/i }));
+    expect(navSpy).toHaveBeenCalledWith("snippets", undefined);
 
     await user.click(screen.getByRole("button", { name: /View all in History/i }));
     expect(navSpy).toHaveBeenCalledWith("history", undefined);
+  });
+
+  it("updates stt_language via the 1-click Active Setup language switcher", async () => {
+    render(<HomeView />);
+    const user = userEvent.setup();
+
+    const autoBtn = screen.getByRole("button", { name: /^Auto$/i });
+    const idBtn = screen.getByRole("button", { name: /^ID$/i });
+    expect(autoBtn).toHaveAttribute("aria-pressed", "true");
+    expect(idBtn).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(idBtn);
+    expect(tauri.updateSetting).toHaveBeenCalledWith("stt_language", "id");
   });
 
   it("renders Copy and Pin icon buttons for recent items and omits banned glass classes", async () => {
