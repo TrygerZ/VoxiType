@@ -53,6 +53,7 @@
   --ease-vx-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-vx-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-vx-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-vx-spring: cubic-bezier(0.22, 1.15, 0.36, 1);
 }
 
 :root[data-theme="light"] {
@@ -260,6 +261,28 @@ html.vx-transparent #root {
   }
 }
 
+@keyframes vx-page-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes vx-page-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 @keyframes vx-card-rise {
   from {
     opacity: 0;
@@ -294,6 +317,63 @@ html.vx-transparent #root {
   }
 }
 
+@keyframes vx-mic-ripple-inner {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.48;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.22;
+  }
+}
+
+@keyframes vx-mic-ripple-outer {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.24;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.08;
+  }
+}
+
+@keyframes vx-mic-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes vx-mic-activate {
+  0% {
+    transform: scale(0.93);
+  }
+  55% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes vx-mic-success {
+  0% {
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .vx-animate-in {
   animation: vx-fade-in var(--duration-vx-smooth) var(--ease-vx-out) both;
 }
@@ -306,8 +386,28 @@ html.vx-transparent #root {
   animation: vx-panel-reveal 240ms var(--ease-vx-out) both;
 }
 
+.vx-page-slide-left {
+  animation: vx-page-slide-left 220ms var(--ease-vx-out) both;
+}
+
+.vx-page-slide-right {
+  animation: vx-page-slide-right 220ms var(--ease-vx-out) both;
+}
+
 .vx-card-rise {
   animation: vx-card-rise var(--duration-vx-smooth) var(--ease-vx-out) both;
+}
+
+.vx-stagger-1 {
+  animation-delay: 0ms;
+}
+
+.vx-stagger-2 {
+  animation-delay: 35ms;
+}
+
+.vx-stagger-3 {
+  animation-delay: 70ms;
 }
 
 .vx-toast-in {
@@ -318,41 +418,103 @@ html.vx-transparent #root {
   animation: vx-mic-pulse 1600ms var(--ease-vx-in-out) infinite;
 }
 
-/* Floating Widget Auto-Hide & Reveal Transitions */
+.vx-mic-ripple-inner {
+  animation: vx-mic-ripple-inner 1400ms var(--ease-vx-in-out) infinite;
+}
+
+.vx-mic-ripple-outer {
+  animation: vx-mic-ripple-outer 1400ms var(--ease-vx-in-out) 180ms infinite;
+}
+
+.vx-mic-orbit {
+  animation: vx-mic-orbit 1100ms linear infinite;
+}
+
+.vx-mic-activate {
+  animation: vx-mic-activate 220ms var(--ease-vx-out) both;
+}
+
+.vx-mic-success {
+  animation: vx-mic-success 220ms var(--ease-vx-out) both;
+}
+
+/* Floating Widget Option B & Dynamic Island Hide/Reveal Transitions */
 .vx-widget-pill {
   transform-origin: center center;
   transition:
-    width 200ms var(--ease-vx-out),
-    height 200ms var(--ease-vx-out),
-    opacity 150ms ease-in-out,
-    border-color 300ms ease,
-    background-color 300ms ease,
-    box-shadow 300ms ease;
-  will-change: width, height, opacity;
+    width 220ms var(--ease-vx-out),
+    height 220ms var(--ease-vx-out),
+    transform 220ms var(--ease-vx-out),
+    opacity 160ms var(--ease-vx-in-out),
+    border-color 220ms var(--ease-vx-out),
+    background-color 220ms var(--ease-vx-out),
+    box-shadow 220ms var(--ease-vx-out);
+  will-change: width, height, transform, opacity;
 }
 
-.vx-widget-pill--normal {
-  width: fit-content;
-  max-width: 164px;
+.vx-widget-pill--bloom {
+  transition:
+    width 260ms var(--ease-vx-spring),
+    height 260ms var(--ease-vx-spring),
+    transform 260ms var(--ease-vx-spring),
+    opacity 160ms var(--ease-vx-out),
+    border-color 220ms var(--ease-vx-out),
+    background-color 220ms var(--ease-vx-out),
+    box-shadow 220ms var(--ease-vx-out);
+}
+
+.vx-widget-pill--idle {
+  width: 92px;
+  height: 34px;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.vx-widget-pill--recording {
+  width: 168px;
   height: 40px;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.vx-widget-pill--processing {
+  width: 148px;
+  height: 40px;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.vx-widget-pill--success {
+  width: 140px;
+  height: 40px;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.vx-widget-pill--error {
+  width: 160px;
+  height: 40px;
+  transform: translateY(0) scale(1);
   opacity: 1;
 }
 
 .vx-widget-pill--capsule {
-  width: 64px;
-  height: 28px;
+  width: 48px;
+  height: 24px;
+  transform: translateY(4px) scale(1);
   opacity: 1;
 }
 
 .vx-widget-pill--hidden {
-  width: 64px;
-  height: 28px;
+  width: 40px;
+  height: 18px;
+  transform: translateY(12px) scale(0.86);
   opacity: 0;
   pointer-events: none !important;
 }
 
 .vx-widget-content {
-  transition: opacity 150ms ease-in-out;
+  transition: opacity 100ms var(--ease-vx-out);
 }
 
 .vx-widget-content--visible {
@@ -365,21 +527,33 @@ html.vx-transparent #root {
 
 @media (prefers-reduced-motion: reduce) {
   .vx-panel-reveal,
+  .vx-page-slide-left,
+  .vx-page-slide-right,
   .vx-card-rise,
   .vx-toast-in,
-  .vx-mic-pulse {
+  .vx-mic-pulse,
+  .vx-mic-ripple-inner,
+  .vx-mic-ripple-outer,
+  .vx-mic-orbit,
+  .vx-mic-activate,
+  .vx-mic-success {
     transform: none !important;
   }
-  .vx-widget-pill {
+  .vx-widget-pill,
+  .vx-widget-pill--bloom {
     transition:
       opacity 120ms ease-in-out,
-      border-color 300ms ease,
-      background-color 300ms ease,
-      box-shadow 300ms ease !important;
+      border-color 220ms ease,
+      background-color 220ms ease,
+      box-shadow 220ms ease !important;
     transform: none !important;
     will-change: opacity;
   }
-  .vx-widget-pill--normal,
+  .vx-widget-pill--idle,
+  .vx-widget-pill--recording,
+  .vx-widget-pill--processing,
+  .vx-widget-pill--success,
+  .vx-widget-pill--error,
   .vx-widget-pill--capsule {
     transform: none !important;
   }

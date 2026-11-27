@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { FloatingDock, type View } from "./components/common/FloatingDock";
 import { HomeView } from "./components/common/HomeView";
@@ -22,6 +22,18 @@ import { navigate, setNavigator, setOnboardingHandler } from "./lib/navigate";
 import { applyTheme, normalizeThemePreference } from "./lib/theme";
 import { ToastContainer } from "./components/ui/Toast";
 
+const VIEW_ORDER: View[] = [
+  "home",
+  "file",
+  "history",
+  "dictionary",
+  "snippets",
+  "settings",
+  "about",
+];
+
+type NavDirection = "initial" | "left" | "right";
+
 export default function App() {
   useTauriEvents();
   const t = useT();
@@ -32,9 +44,35 @@ export default function App() {
     settings: s.settings,
     error: s.error,
   })));
-  const [view, setView] = useState<View>("home");
+  const [navState, setNavState] = useState<{ view: View; direction: NavDirection }>({
+    view: "home",
+    direction: "initial",
+  });
   const [settingsTab, setSettingsTab] = useState<string | undefined>(undefined);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const navigateView = useCallback((nextView: View) => {
+    setNavState((prev) => {
+      if (prev.view === nextView) return prev;
+      const prevIdx = VIEW_ORDER.indexOf(prev.view);
+      const nextIdx = VIEW_ORDER.indexOf(nextView);
+      const direction: NavDirection =
+        prevIdx === -1 || nextIdx === -1
+          ? "initial"
+          : nextIdx > prevIdx
+            ? "left"
+            : "right";
+      return { view: nextView, direction };
+    });
+  }, []);
+
+  const view = navState.view;
+  const pageTransitionClass =
+    navState.direction === "left"
+      ? "vx-page-slide-left"
+      : navState.direction === "right"
+        ? "vx-page-slide-right"
+        : "vx-panel-reveal";
 
   useEffect(() => {
     void loadSettings();
@@ -43,7 +81,7 @@ export default function App() {
   // Let non-React callers (toast actions, event handlers) drive navigation.
   useEffect(() => {
     setNavigator((next, tab) => {
-      setView(next);
+      navigateView(next);
       setSettingsTab(tab);
     });
     setOnboardingHandler(() => setShowOnboarding(true));
@@ -51,7 +89,7 @@ export default function App() {
       setNavigator(null);
       setOnboardingHandler(null);
     };
-  }, []);
+  }, [navigateView]);
 
   // Apply the saved UI language once settings are loaded.
   useEffect(() => {
@@ -87,12 +125,12 @@ export default function App() {
       if (!active) return;
       if (route === "about") {
         setSettingsTab("about");
-        setView("settings");
+        navigateView("settings");
       } else if (isValidRoute(route)) {
         if (route === "settings") {
           setSettingsTab(undefined);
         }
-        setView(route);
+        navigateView(route);
       }
     });
 
@@ -100,7 +138,7 @@ export default function App() {
       active = false;
       unsub.then((fn) => fn()).catch(() => {});
     };
-  }, []);
+  }, [navigateView]);
 
   // Backend notices (for example a discarded no-speech recording).
   useEffect(() => {
@@ -196,24 +234,26 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="flex h-full w-full flex-col vx-app-bg relative">
-        <main className="flex-1 overflow-y-auto pb-36">
-          {view === "home" && <HomeView />}
-          {view === "settings" && (
-            <SettingsPanel key={settingsTab ?? "general"} initialTab={settingsTab} />
-          )}
-          {view === "history" && <HistoryPanel />}
-          {view === "dictionary" && <DictionaryPanel />}
-          {view === "snippets" && <SnippetsPanel />}
-          {view === "file" && <FileTranscriptionPanel />}
-          {view === "about" && (
-            <div className="mx-auto w-full max-w-4xl px-8 pt-7 pb-24">
-              <AboutTab />
-            </div>
-          )}
+        <main className="flex-1 overflow-x-hidden overflow-y-auto pb-36">
+          <div key={view} className={`h-full ${pageTransitionClass}`}>
+            {view === "home" && <HomeView />}
+            {view === "settings" && (
+              <SettingsPanel key={settingsTab ?? "general"} initialTab={settingsTab} />
+            )}
+            {view === "history" && <HistoryPanel />}
+            {view === "dictionary" && <DictionaryPanel />}
+            {view === "snippets" && <SnippetsPanel />}
+            {view === "file" && <FileTranscriptionPanel />}
+            {view === "about" && (
+              <div className="mx-auto w-full max-w-4xl px-8 pt-7 pb-24">
+                <AboutTab />
+              </div>
+            )}
+          </div>
         </main>
 
         {/* Absolute floating dock at the bottom */}
-        <FloatingDock active={view} onChange={setView} />
+        <FloatingDock active={view} onChange={navigateView} />
         <ToastContainer />
       </div>
     </ErrorBoundary>

@@ -37,7 +37,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     ref,
   ) => {
     const base =
-      "inline-flex items-center justify-center shrink-0 transition-[background-color,border-color,color,opacity] duration-[120ms] ease-[var(--ease-vx-out)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-canvas";
+      "inline-flex items-center justify-center shrink-0 transition-[background-color,border-color,color,opacity,transform] duration-[120ms] ease-[var(--ease-vx-out)] active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-1 focus-visible:ring-offset-vx-bg-canvas";
     return (
       <button
         ref={ref}
