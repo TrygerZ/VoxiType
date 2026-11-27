@@ -52,7 +52,7 @@ enigo = "0.3"
 arboard = "3.4"
 
 # --- Storage ---
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 
 # --- API key encryption (AES-256-GCM at rest) ---
