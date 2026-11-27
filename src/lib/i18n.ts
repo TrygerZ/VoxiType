@@ -645,6 +645,8 @@ export const id: Dict = {
   "widget.formatting": "Memformat...",
   "widget.injected_words": "Masuk · {count}w",
   "widget.copied_fallback": "Tersalin · tempel manual",
+  "widget.words": "{count} kata",
+  "widget.saved_to_history": "Tersimpan di Riwayat",
 };
 
 export const en: Dict = {
@@ -1287,6 +1289,8 @@ export const en: Dict = {
   "widget.formatting": "Formatting...",
   "widget.injected_words": "Injected · {count}w",
   "widget.copied_fallback": "Copied · paste manually",
+  "widget.words": "{count} words",
+  "widget.saved_to_history": "Saved to History",
 };
 
 const dictionaries: Record<string, Dict> = { id, en };

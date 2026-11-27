@@ -32,14 +32,15 @@ describe("FloatingWidget", () => {
     vi.useRealTimers();
   });
 
-  it("renders when alwaysRender is true in idle state", () => {
+  it("renders Option B compact idle pill when alwaysRender is true", () => {
     render(<FloatingWidget alwaysRender />);
 
     const pill = screen.getByTestId("floating-widget-pill");
     expect(pill).toBeInTheDocument();
     expect(pill).toHaveClass("pointer-events-auto");
     expect(pill).toHaveAttribute("data-animation-phase", "normal");
-    expect(pill).toHaveClass("vx-widget-pill--normal");
+    expect(pill).toHaveClass("vx-widget-pill--idle");
+    expect(screen.getByTestId("widget-dormant-bars")).toBeInTheDocument();
   });
 
   it("calls resetWidgetIdleTimer on pointerEnter and pointerDown", () => {
@@ -53,71 +54,75 @@ describe("FloatingWidget", () => {
     expect(tauri.resetWidgetIdleTimer).toHaveBeenCalledTimes(2);
   });
 
-  it("completes full hide animation sequence: normal -> capsule -> faded -> ack", async () => {
+  it("completes Dynamic Island hide sequence: content fade -> capsule morph -> sink out -> ack", async () => {
     vi.useFakeTimers();
     render(<FloatingWidget alwaysRender />);
 
     const pill = screen.getByTestId("floating-widget-pill");
     expect(pill).toHaveAttribute("data-animation-phase", "normal");
 
-    // Backend requests hide
     await act(async () => {
       eventHandlers["floating_widget_hide_requested"]?.({ id: 101 });
     });
 
-    // Step 1: shrink into capsule
+    // Step 1: content fade (100ms) while retaining idle dimensions
+    expect(pill).toHaveAttribute("data-animation-phase", "hiding-content");
+    expect(pill).toHaveClass("vx-widget-pill--idle");
+
+    // Advance 100ms -> Step 2: shrink into 48x24 capsule
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
     expect(pill).toHaveAttribute("data-animation-phase", "hiding-shrink");
     expect(pill).toHaveClass("vx-widget-pill--capsule");
 
-    // Advance 200ms -> Step 2: fade out
+    // Advance 220ms (160ms shrink + 60ms hold) -> Step 3: sink out
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(220);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "hiding-fade");
     expect(pill).toHaveClass("vx-widget-pill--hidden");
 
-    // Advance 150ms -> Step 3: hidden and ACK sent
+    // Advance 220ms -> Step 4: hidden and ACK sent
     act(() => {
-      vi.advanceTimersByTime(150);
+      vi.advanceTimersByTime(220);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "hidden");
     expect(tauri.ackWidgetHide).toHaveBeenCalledWith(101);
   });
 
-  it("completes full reveal animation sequence: faded capsule -> visible capsule -> expanded normal", async () => {
+  it("completes Dynamic Island reveal sequence: capsule rise -> spring bloom -> normal", async () => {
     vi.useFakeTimers();
     render(<FloatingWidget alwaysRender />);
 
     const pill = screen.getByTestId("floating-widget-pill");
 
-    // Put widget into hidden state through hide sequence
     await act(async () => {
       eventHandlers["floating_widget_hide_requested"]?.({ id: 102 });
     });
     act(() => {
-      vi.advanceTimersByTime(350);
+      vi.advanceTimersByTime(540);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "hidden");
 
-    // Backend reveals window and requests animation
     await act(async () => {
       eventHandlers["floating_widget_reveal_requested"]?.({ id: 103 });
     });
 
-    // Step 1: fade in capsule
+    // Step 1: rise into capsule
     expect(pill).toHaveAttribute("data-animation-phase", "revealing-fade");
     expect(pill).toHaveClass("vx-widget-pill--capsule");
 
-    // Advance 120ms -> Step 2: expand to normal
+    // Advance 150ms -> Step 2: bloom to idle pill
     act(() => {
-      vi.advanceTimersByTime(120);
+      vi.advanceTimersByTime(150);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "revealing-expand");
-    expect(pill).toHaveClass("vx-widget-pill--normal");
+    expect(pill).toHaveClass("vx-widget-pill--idle", "vx-widget-pill--bloom");
 
-    // Advance 200ms -> Step 3: normal visible
+    // Advance 260ms -> Step 3: normal visible
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(260);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "normal");
   });
@@ -132,7 +137,6 @@ describe("FloatingWidget", () => {
       eventHandlers["floating_widget_reveal_requested"]?.({ id: 7 });
     });
 
-    // ACK fires on receipt: no animation timer has advanced yet.
     expect(tauri.ackWidgetReveal).toHaveBeenCalledWith(7);
     expect(pill).toHaveAttribute("data-animation-phase", "revealing-fade");
   });
@@ -167,24 +171,25 @@ describe("FloatingWidget", () => {
 
     const pill = screen.getByTestId("floating-widget-pill");
 
-    // Trigger hide
     await act(async () => {
       eventHandlers["floating_widget_hide_requested"]?.({ id: 104 });
     });
+    expect(pill).toHaveAttribute("data-animation-phase", "hiding-content");
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
     expect(pill).toHaveAttribute("data-animation-phase", "hiding-shrink");
 
-    // Hover occurs during shrink animation
     act(() => {
       fireEvent.pointerEnter(pill);
     });
 
-    // Should immediately revert to normal and reset backend timer
     expect(pill).toHaveAttribute("data-animation-phase", "normal");
     expect(tauri.resetWidgetIdleTimer).toHaveBeenCalled();
 
-    // Advance past hide duration: ackWidgetHide must NOT be called
     act(() => {
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(600);
     });
     expect(tauri.ackWidgetHide).not.toHaveBeenCalled();
   });
@@ -207,20 +212,17 @@ describe("FloatingWidget", () => {
       render(<FloatingWidget alwaysRender />);
       const pill = screen.getByTestId("floating-widget-pill");
 
-      // Hide request with reduced motion: skips shrink, goes directly to fading
       await act(async () => {
         eventHandlers["floating_widget_hide_requested"]?.({ id: 105 });
       });
       expect(pill).toHaveAttribute("data-animation-phase", "hiding-fade");
 
-      // 120ms fade -> hidden and ACK sent
       act(() => {
         vi.advanceTimersByTime(120);
       });
       expect(pill).toHaveAttribute("data-animation-phase", "hidden");
       expect(tauri.ackWidgetHide).toHaveBeenCalledWith(105);
 
-      // Reveal request with reduced motion
       await act(async () => {
         eventHandlers["floating_widget_reveal_requested"]?.({ id: 106 });
       });
@@ -241,16 +243,14 @@ describe("FloatingWidget", () => {
 
     const pill = screen.getByTestId("floating-widget-pill");
 
-    // Hide widget
     await act(async () => {
       eventHandlers["floating_widget_hide_requested"]?.({ id: 107 });
     });
     act(() => {
-      vi.advanceTimersByTime(350);
+      vi.advanceTimersByTime(540);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "hidden");
 
-    // Recording begins
     act(() => {
       useAppStore.setState({ state: "recording" });
     });
@@ -258,12 +258,12 @@ describe("FloatingWidget", () => {
     expect(pill).toHaveAttribute("data-animation-phase", "revealing-fade");
 
     act(() => {
-      vi.advanceTimersByTime(120);
+      vi.advanceTimersByTime(150);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "revealing-expand");
 
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(260);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "normal");
   });
@@ -276,22 +276,20 @@ describe("FloatingWidget", () => {
     render(<FloatingWidget alwaysRender />);
     const pill = screen.getByTestId("floating-widget-pill");
 
-    // Pointer activity rejection should not throw uncaught error
     expect(() => {
       fireEvent.pointerEnter(pill);
     }).not.toThrow();
 
-    // Hide ACK rejection should not throw uncaught error
     await act(async () => {
       eventHandlers["floating_widget_hide_requested"]?.({ id: 108 });
     });
     act(() => {
-      vi.advanceTimersByTime(350);
+      vi.advanceTimersByTime(540);
     });
     expect(pill).toHaveAttribute("data-animation-phase", "hidden");
   });
 
-  it("does not show the success tint when the text missed the target app", () => {
+  it("shows Saved to History with error border when text missed the target app", () => {
     useAppStore.setState({
       state: "idle",
       wordCount: 4,
@@ -302,8 +300,8 @@ describe("FloatingWidget", () => {
 
     const pill = screen.getByTestId("floating-widget-pill");
     expect(pill).not.toHaveClass("border-vx-semantic-success");
-    expect(pill).toHaveClass("border-vx-semantic-error");
-    expect(screen.getByText("Copied · paste manually")).toBeInTheDocument();
+    expect(pill).toHaveClass("border-vx-semantic-error", "vx-widget-pill--error");
+    expect(screen.getByText("Saved to History")).toBeInTheDocument();
   });
 
   it("unregisters listeners immediately if resolved after effect unmount (disposed flag)", async () => {
@@ -320,29 +318,30 @@ describe("FloatingWidget", () => {
     });
 
     const { unmount } = render(<FloatingWidget alwaysRender />);
-
-    // Unmount before onEvent promise resolves
     unmount();
 
-    // Now async listener promise resolves after unmount
     await act(async () => {
       resolveHideListener(hideUnlistenMock);
     });
 
-    // Disposed check must call unlisten immediately
     expect(hideUnlistenMock).toHaveBeenCalledTimes(1);
   });
 
-  it("renders idle matte pill with official logo, shortcut, and zero glow or glass classes", () => {
+  it("renders Option B idle pill with official logo, dormant bars, zero text, and zero glow or glass classes", () => {
     render(<FloatingWidget alwaysRender />);
 
     const pill = screen.getByTestId("floating-widget-pill");
-    expect(pill).toHaveClass("bg-vx-bg-elevated", "shadow-vx-widget", "border-vx-border-default");
+    expect(pill).toHaveClass(
+      "bg-vx-bg-elevated",
+      "shadow-vx-widget",
+      "border-vx-border-default",
+      "vx-widget-pill--idle",
+    );
     expect(pill.className).not.toMatch(/backdrop-blur|vx-glass|shadow-\[/);
 
     const logo = screen.getByAltText("VoxiType Logo");
     expect(logo).toHaveAttribute("src", "/logo.png");
-    expect(screen.getByText("Ctrl + Space")).toBeInTheDocument();
+    expect(screen.queryByText("Ctrl + Space")).not.toBeInTheDocument();
   });
 
   it("renders recording state with Ember border, 12-bar Waveform, and timer", () => {
@@ -350,15 +349,22 @@ describe("FloatingWidget", () => {
     render(<FloatingWidget alwaysRender />);
 
     const pill = screen.getByTestId("floating-widget-pill");
-    expect(pill).toHaveClass("border-vx-accent-ember");
+    expect(pill).toHaveClass(
+      "border-vx-accent-ember",
+      "vx-widget-pill--recording",
+      "vx-widget-pill--bloom",
+    );
     expect(screen.getByText("00:08")).toBeInTheDocument();
     expect(pill.querySelectorAll(".vx-wave-bar")).toHaveLength(12);
   });
 
-  it("renders processing and injected success states with semantic borders", () => {
+  it("renders processing and injected success states with Option B dimensions and semantic borders", () => {
     useAppStore.setState({ state: "processing" });
     const { rerender } = render(<FloatingWidget alwaysRender />);
 
+    expect(screen.getByTestId("floating-widget-pill")).toHaveClass(
+      "vx-widget-pill--processing",
+    );
     expect(screen.getByText("Formatting...")).toBeInTheDocument();
 
     act(() => {
@@ -371,8 +377,8 @@ describe("FloatingWidget", () => {
     rerender(<FloatingWidget alwaysRender />);
 
     const pill = screen.getByTestId("floating-widget-pill");
-    expect(pill).toHaveClass("border-vx-semantic-success");
-    expect(screen.getByText("Injected · 24w")).toBeInTheDocument();
+    expect(pill).toHaveClass("border-vx-semantic-success", "vx-widget-pill--success");
+    expect(screen.getByText("24 words")).toBeInTheDocument();
   });
 
   it("renders capsule phase with border-vx-border-strong and visible centered logo", async () => {
@@ -381,6 +387,9 @@ describe("FloatingWidget", () => {
 
     await act(async () => {
       eventHandlers["floating_widget_hide_requested"]?.({ id: 201 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
     });
 
     const pill = screen.getByTestId("floating-widget-pill");

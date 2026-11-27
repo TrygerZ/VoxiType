@@ -2,36 +2,35 @@ import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from "r
 import { AlertTriangle, Check } from "lucide-react";
 
 import { useT } from "../../lib/i18n";
-import { getHotkeySetting } from "../../lib/settingsGuards";
 import {
   ackWidgetHide,
   ackWidgetReveal,
   onEvent,
   resetWidgetIdleTimer,
 } from "../../lib/tauri";
-import { usePlatform } from "../../lib/usePlatform";
 import { useAppStore } from "../../stores/appStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 import type {
   WidgetHideRequestedEvent,
   WidgetRevealRequestedEvent,
 } from "../../types/events";
-import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { Waveform } from "./Waveform";
 
 export type WidgetPhase =
   | "normal"
+  | "hiding-content"
   | "hiding-shrink"
   | "hiding-fade"
   | "hidden"
   | "revealing-fade"
   | "revealing-expand";
 
-const HIDE_SHRINK_MS = 200;
-const HIDE_FADE_MS = 150;
-const REVEAL_FADE_MS = 120;
-const REVEAL_EXPAND_MS = 200;
+const HIDE_CONTENT_MS = 100;
+const HIDE_SHRINK_MS = 220; // 160ms capsule morph + 60ms micro-hold
+const HIDE_FADE_MS = 220;
+const REVEAL_FADE_MS = 150;
+const REVEAL_EXPAND_MS = 260;
 const REDUCED_MOTION_FADE_MS = 120;
+const DORMANT_BAR_HEIGHTS = [4, 7, 10, 7, 4] as const;
 
 const prefersReducedMotion = (): boolean =>
   typeof window !== "undefined" &&
@@ -60,6 +59,14 @@ function hideBrokenLogo(event: SyntheticEvent<HTMLImageElement>) {
   event.currentTarget.style.display = "none";
 }
 
+function isHidingPhase(phase: WidgetPhase): boolean {
+  return (
+    phase === "hiding-content" ||
+    phase === "hiding-shrink" ||
+    phase === "hiding-fade"
+  );
+}
+
 export function FloatingWidget({
   alwaysRender = false,
 }: {
@@ -72,8 +79,6 @@ export function FloatingWidget({
   const errorMessage = useAppStore((s) => s.errorMessage);
   const outcome = useAppStore((s) => s.outcome);
   const reset = useAppStore((s) => s.reset);
-  const rawHotkey = useSettingsStore((s) => s.settings.hotkey);
-  const platform = usePlatform();
 
   const [phase, setPhase] = useState<WidgetPhase>("normal");
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -121,15 +126,19 @@ export function FloatingWidget({
         return;
       }
 
-      setPhase("hiding-shrink");
+      setPhase("hiding-content");
       const t1 = setTimeout(() => {
-        setPhase("hiding-fade");
+        setPhase("hiding-shrink");
         const t2 = setTimeout(() => {
-          setPhase("hidden");
-          void ackWidgetHide(hideId).catch((_err: unknown) => {});
-        }, HIDE_FADE_MS);
+          setPhase("hiding-fade");
+          const t3 = setTimeout(() => {
+            setPhase("hidden");
+            void ackWidgetHide(hideId).catch((_err: unknown) => {});
+          }, HIDE_FADE_MS);
+          timersRef.current.push(t3);
+        }, HIDE_SHRINK_MS);
         timersRef.current.push(t2);
-      }, HIDE_SHRINK_MS);
+      }, HIDE_CONTENT_MS);
       timersRef.current.push(t1);
     },
     [clearAnimationTimers],
@@ -193,7 +202,7 @@ export function FloatingWidget({
     if (state === "recording") {
       if (phase === "hidden") {
         startReveal();
-      } else if (phase === "hiding-shrink" || phase === "hiding-fade") {
+      } else if (isHidingPhase(phase)) {
         cancelHide();
       }
     }
@@ -218,7 +227,7 @@ export function FloatingWidget({
   const isInjectedSuccess = isSuccess && reachedTarget;
 
   const handlePointerActivity = () => {
-    if (phase === "hiding-shrink" || phase === "hiding-fade") {
+    if (isHidingPhase(phase)) {
       cancelHide();
     }
     void resetWidgetIdleTimer().catch((_err: unknown) => {});
@@ -230,12 +239,26 @@ export function FloatingWidget({
     phase === "hidden" ||
     phase === "revealing-fade";
 
+  const activeStateSizeClass = isErrorOrMissed
+    ? "vx-widget-pill--error"
+    : isInjectedSuccess
+      ? "vx-widget-pill--success"
+      : state === "processing"
+        ? "vx-widget-pill--processing"
+        : state === "recording"
+          ? "vx-widget-pill--recording"
+          : "vx-widget-pill--idle";
+
   const pillPhaseClass =
-    phase === "normal" || phase === "revealing-expand"
-      ? "vx-widget-pill--normal"
-      : phase === "hiding-shrink" || phase === "revealing-fade"
-        ? "vx-widget-pill--capsule"
-        : "vx-widget-pill--hidden";
+    phase === "hiding-shrink" || phase === "revealing-fade"
+      ? "vx-widget-pill--capsule"
+      : phase === "hiding-fade" || phase === "hidden"
+        ? "vx-widget-pill--hidden"
+        : activeStateSizeClass;
+
+  const useBloomTiming =
+    phase === "revealing-expand" ||
+    (!isCapsuleOrHidden && state === "recording");
 
   const isContentVisible =
     phase === "normal" || phase === "revealing-expand";
@@ -243,20 +266,14 @@ export function FloatingWidget({
   const stateBorderClass = isCapsuleOrHidden
     ? "border-vx-border-strong justify-center px-2"
     : isErrorOrMissed
-      ? "border-vx-semantic-error px-3 gap-2"
+      ? "border-vx-semantic-error px-3 gap-[7px]"
       : isInjectedSuccess
-        ? "border-vx-semantic-success px-3 gap-2"
-        : state === "recording"
-          ? "border-vx-accent-ember px-2.5 gap-2"
-          : "border-vx-border-default hover:border-vx-border-strong px-2.5 gap-2";
-
-  const hotkey = getHotkeySetting(rawHotkey, {
-    key: "Ctrl+Space",
-    mode: "ptt",
-  });
-  const hotkeyLabel = formatAccelerator(hotkey.key, platform)
-    .split("+")
-    .join(" + ");
+        ? "border-vx-semantic-success px-3 gap-[7px]"
+        : state === "processing"
+          ? "border-vx-border-strong px-3 gap-2"
+          : state === "recording"
+            ? "border-[1.5px] border-vx-accent-ember px-2.5 gap-2"
+            : "border-vx-border-default hover:border-vx-border-strong px-2.5 gap-2";
 
   return (
     <div
@@ -265,25 +282,25 @@ export function FloatingWidget({
       data-animation-phase={phase}
       onPointerEnter={handlePointerActivity}
       onPointerDown={handlePointerActivity}
-      className={`vx-widget-pill pointer-events-auto flex items-center rounded-full border bg-vx-bg-elevated shadow-vx-widget select-none ${pillPhaseClass} ${stateBorderClass}`}
+      className={`vx-widget-pill ${useBloomTiming ? "vx-widget-pill--bloom" : ""} pointer-events-auto flex items-center justify-center overflow-hidden rounded-full border bg-vx-bg-elevated shadow-vx-widget select-none ${pillPhaseClass} ${stateBorderClass}`}
     >
       {isCapsuleOrHidden ? (
         <div
           data-tauri-drag-region
-          className="pointer-events-none flex h-[18px] w-[18px] shrink-0 items-center justify-center"
+          className="pointer-events-none flex h-3.5 w-3.5 shrink-0 items-center justify-center"
         >
           <img
             data-tauri-drag-region
             src="/logo.png"
             alt="VoxiType Logo"
-            className="h-[18px] w-[18px] object-contain"
+            className="h-3.5 w-3.5 object-contain"
             onError={hideBrokenLogo}
           />
         </div>
       ) : (
         <div
           data-tauri-drag-region
-          className={`vx-widget-content pointer-events-none flex min-w-0 items-center gap-2 ${
+          className={`vx-widget-content pointer-events-none flex min-w-0 items-center justify-center gap-2 ${
             isContentVisible
               ? "vx-widget-content--visible"
               : "vx-widget-content--hidden"
@@ -296,7 +313,7 @@ export function FloatingWidget({
                 strokeWidth={1.75}
               />
               <span className="truncate whitespace-nowrap text-[11px] font-medium text-vx-text-primary">
-                {t("widget.copied_fallback")}
+                {t("widget.saved_to_history")}
               </span>
             </>
           ) : isInjectedSuccess ? (
@@ -306,15 +323,15 @@ export function FloatingWidget({
                 strokeWidth={2}
               />
               <span className="whitespace-nowrap text-[11px] font-medium text-vx-text-primary">
-                {t("widget.injected_words", { count: wordCount ?? 0 })}
+                {t("widget.words", { count: wordCount ?? 0 })}
               </span>
             </>
           ) : state === "processing" ? (
             <>
-              <div className="flex h-4 items-center gap-[3px]" aria-hidden>
-                <span className="h-2 w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse" />
-                <span className="h-3.5 w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse [animation-delay:150ms]" />
-                <span className="h-2 w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse [animation-delay:300ms]" />
+              <div className="flex h-3.5 items-center gap-[3px]" aria-hidden>
+                <span className="h-[7px] w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse" />
+                <span className="h-[13px] w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse [animation-delay:150ms]" />
+                <span className="h-[7px] w-[2.5px] rounded-full bg-vx-accent-ember animate-pulse [animation-delay:300ms]" />
               </div>
               <span className="whitespace-nowrap text-[11px] font-medium text-vx-text-primary">
                 {t("widget.formatting")}
@@ -322,19 +339,13 @@ export function FloatingWidget({
             </>
           ) : state === "recording" ? (
             <>
-              <div
-                data-tauri-drag-region
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-vx-bg-subtle"
+              <span
+                aria-hidden="true"
+                className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-vx-accent-ember-soft"
               >
-                <img
-                  data-tauri-drag-region
-                  src="/logo.png"
-                  alt="VoxiType Logo"
-                  className="h-5 w-5 object-contain"
-                  onError={hideBrokenLogo}
-                />
-              </div>
-              <div className="flex w-11 items-center">
+                <span className="h-2 w-2 rounded-full bg-vx-accent-ember vx-mic-pulse" />
+              </span>
+              <div className="flex w-[76px] items-center">
                 <Waveform
                   active
                   barCount={12}
@@ -347,21 +358,26 @@ export function FloatingWidget({
             </>
           ) : (
             <>
-              <div
+              <img
                 data-tauri-drag-region
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-vx-bg-subtle"
+                src="/logo.png"
+                alt="VoxiType Logo"
+                className="h-4 w-4 shrink-0 object-contain"
+                onError={hideBrokenLogo}
+              />
+              <div
+                data-testid="widget-dormant-bars"
+                aria-hidden="true"
+                className="flex h-3 items-center gap-[2.5px]"
               >
-                <img
-                  data-tauri-drag-region
-                  src="/logo.png"
-                  alt="VoxiType Logo"
-                  className="h-5 w-5 object-contain"
-                  onError={hideBrokenLogo}
-                />
+                {DORMANT_BAR_HEIGHTS.map((height, idx) => (
+                  <span
+                    key={idx}
+                    className="w-[2px] rounded-full bg-vx-border-strong"
+                    style={{ height: `${height}px` }}
+                  />
+                ))}
               </div>
-              <span className="whitespace-nowrap font-mono text-[11px] font-medium text-vx-text-secondary">
-                {hotkeyLabel}
-              </span>
             </>
           )}
         </div>
