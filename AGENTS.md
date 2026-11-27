@@ -102,7 +102,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/stt/mod.rs` - SttEngine trait + factory (Groq + whisper.cpp)
 - `src-tauri/src/llm/mod.rs` - LlmFormatter trait + factory with FallbackFormatter
 - `src-tauri/src/storage/db.rs` - SQLite schema migrations (current schema v3) + pre-migration backup
-- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, notice, floating_widget_hide_requested, floating_widget_reveal_requested)
+- `src-tauri/src/events.rs` - Event emitters (state_changed, transcription_complete, transcription_error, audio_level, notice, file_transcription_progress, navigate, floating_widget_hide_requested, floating_widget_reveal_requested, theme_changed)
 - `src-tauri/src/crypto.rs` - AES-256-GCM API key encryption
 - `src-tauri/src/data_dir.rs` - Data-directory marker resolution, validation, and copy-on-migrate
 - `src-tauri/src/data_dir_acl.rs` - Windows ACL validation and one-click restriction for custom data directories
@@ -111,7 +111,7 @@ Commands are registered in `src-tauri/src/commands/mod.rs` and exposed via `lib.
 - `src-tauri/src/injection/mod.rs` - TextInjector trait (clipboard, keystroke, command)
 - `src-tauri/src/active_window.rs` - Win32 foreground process and window detection
 - `src-tauri/src/logging.rs` - tracing init (stderr + file rotation)
-- `tauri.conf.json` - Tauri config, capabilities, windows
+- `tauri.conf.json` - Tauri config, capabilities, windows (main: 900x600 default / 680x520 min; floating-widget: 180x88)
 - `vite.config.ts` - Vite + Tailwind + React plugin config
 
 ## Frontend Components
