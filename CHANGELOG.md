@@ -25,10 +25,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fixed duplicate controls in General settings and routed the system tray About action directly into the Settings About tab.
 - Fixed inline dictionary edits to update records atomically by ID so entry identity and usage counts are preserved instead of replacing rows.
 - Fixed onboarding navigation when returning from STT setup to the Microphone step and ensured persisted resume state clears cleanly on completion.
+- Fixed a non-Windows Clippy `needless_bool` failure in data-directory network path detection on macOS and Linux.
 
 ### Improvements
 - Added English and Indonesian translations across all redesigned v2 screens, settings controls, Active Setup quick-switcher, and compact widget states.
 - Expanded automated test coverage across UI primitives, theme synchronization, FloatingDock, HomeView, FloatingWidget, History, Dictionary, Snippets, File Transcription, Settings tabs, and Onboarding (265 frontend tests and 488 Rust tests).
+
+### Security
+- Upgraded `rusqlite` to 0.43.0 (bundled SQLite 3.54.1) and updated `cookie`, `rustls-webpki`, and `url` to clear four RustSec security advisories (`RUSTSEC-2026-0382`, `RUSTSEC-2026-0459`, `RUSTSEC-2026-0592`, and `RUSTSEC-2026-0594`).
 
 ## [0.7.1] - 2026-10-19
 
