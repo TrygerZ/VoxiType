@@ -1,10 +1,18 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowRight,
   Check,
   Copy,
   Languages,
-  Loader2,
   Mic,
   Pin,
   Sparkles,
@@ -20,13 +28,14 @@ import {
   type HotkeyConfig,
   isHotkeyConfig,
 } from "../../lib/settingsGuards";
-import { reInject, startRecording, stopRecording } from "../../lib/tauri";
+import { onEvent, reInject, startRecording, stopRecording } from "../../lib/tauri";
 import { usePlatform } from "../../lib/usePlatform";
 import { type InjectionOutcome, useAppStore } from "../../stores/appStore";
 import { useHistoryStore } from "../../stores/historyStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useStatsStore } from "../../stores/statsStore";
 import type { AppStateEnum, TranscriptionEntry, UsageStats } from "../../types/app";
+import type { AudioLevelEvent } from "../../types/events";
 import { Waveform } from "../floating-widget/Waveform";
 import { formatAccelerator } from "../settings/HotkeyRecorder";
 import { Button } from "../ui/Button";
@@ -35,9 +44,11 @@ import { Keycap } from "../ui/Keycap";
 import { StatusBadge } from "../ui/StatusBadge";
 import { Switch } from "../ui/Switch";
 import { toast } from "../ui/Toast";
+import { WpmHalfRing } from "./WpmHalfRing";
 
 const MAX_PLAUSIBLE_WPM = 400;
 const BUILT_IN_CONSOLE_MODES = new Set(["dictation", "message", "email", "file"]);
+const MIC_SUCCESS_FLASH_MS = 450;
 
 function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60).toString().padStart(2, "0");
@@ -100,6 +111,92 @@ function computeAvgWpm(historyItems: TranscriptionEntry[]): number {
   }
   if (rates.length === 0) return 0;
   return Math.round(rates.reduce((sum, w) => sum + w, 0) / rates.length);
+}
+
+function useMicAudioLevel(active: boolean): number {
+  const [level, setLevel] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setLevel(0);
+      return;
+    }
+    let disposed = false;
+    const unlistenPromise = onEvent<AudioLevelEvent>("audio_level", (payload) => {
+      if (disposed) return;
+      const boosted = payload.level > 0 ? Math.min(1, Math.pow(payload.level, 0.45) * 1.6) : 0;
+      setLevel(boosted);
+    });
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [active]);
+
+  return level;
+}
+
+function useMicSuccessFlash(
+  state: AppStateEnum,
+  wordCount: number | null,
+  outcome: InjectionOutcome | null,
+): boolean {
+  const [showSuccess, setShowSuccess] = useState(false);
+  const prevStateRef = useRef<AppStateEnum>(state);
+
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    prevStateRef.current = state;
+
+    if (
+      prev === "processing" &&
+      state === "idle" &&
+      wordCount !== null &&
+      outcome?.injected !== false
+    ) {
+      setShowSuccess(true);
+      const timer = setTimeout(() => setShowSuccess(false), MIC_SUCCESS_FLASH_MS);
+      return () => clearTimeout(timer);
+    }
+
+    if (state !== "idle") {
+      setShowSuccess(false);
+    }
+  }, [state, wordCount, outcome]);
+
+  return showSuccess;
+}
+
+function useSlidingHorizontalIndicator(
+  activeKey: string,
+  containerRef: RefObject<HTMLDivElement | null>,
+  buttonRefs: RefObject<Record<string, HTMLButtonElement | null>>,
+) {
+  const [indicator, setIndicator] = useState<{
+    left: number;
+    width: number;
+    ready: boolean;
+  }>({ left: 0, width: 0, ready: false });
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const btn = buttonRefs.current?.[activeKey];
+      if (!btn || btn.offsetWidth <= 0) return;
+      setIndicator({
+        left: btn.offsetLeft,
+        width: btn.offsetWidth,
+        ready: true,
+      });
+    };
+
+    update();
+    if (typeof ResizeObserver === "undefined" || !containerRef.current) return;
+    const ro = new ResizeObserver(update);
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [activeKey, containerRef, buttonRefs]);
+
+  return indicator;
 }
 
 function HomeTopBar({
@@ -198,6 +295,9 @@ function VoiceConsoleCard({
 }) {
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
+  const audioLevel = useMicAudioLevel(isRecording);
+  const showSuccess = useMicSuccessFlash(state, wordCount, outcome);
+
   const micTooltip = isRecording
     ? t("home.mic_recording_tooltip")
     : t("home.mic_tooltip");
@@ -213,15 +313,13 @@ function VoiceConsoleCard({
     .map((p) => p.trim())
     .filter(Boolean);
 
-  const outerRingClass = isRecording
-    ? "bg-vx-accent-ember-soft border-[1.5px] border-vx-accent-ember vx-mic-pulse"
+  const coreStateClass = isRecording
+    ? "bg-vx-accent-ember border-[1.5px] border-vx-accent-ember text-vx-text-inverse vx-mic-activate"
     : isProcessing
-      ? "bg-vx-bg-subtle border border-vx-border-strong"
-      : "bg-vx-bg-subtle border border-vx-border-default group-hover:border-vx-border-strong";
-
-  const innerCoreClass = isRecording
-    ? "bg-vx-accent-ember border-vx-accent-ember text-vx-text-inverse"
-    : "bg-vx-bg-elevated border-vx-border-strong text-vx-text-primary";
+      ? "bg-vx-bg-elevated border border-vx-border-subtle text-vx-text-muted"
+      : showSuccess
+        ? "bg-vx-semantic-success-soft border-[1.5px] border-vx-semantic-success text-vx-semantic-success vx-mic-success"
+        : "bg-vx-bg-elevated border border-vx-border-strong text-vx-text-primary hover:border-vx-text-secondary";
 
   const micLabel =
     micDevice === "default"
@@ -232,8 +330,10 @@ function VoiceConsoleCard({
       ? t("home.local_whisper")
       : t("home.groq_cloud");
 
+  const rippleScaleBoost = isRecording ? 1 + audioLevel * 0.05 : 0.65;
+
   return (
-    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-6 pt-7 pb-6 flex flex-col items-center justify-between gap-6 min-h-[460px]">
+    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-6 pt-6 pb-5 flex flex-col items-center justify-between gap-5 min-h-[460px]">
       <div className="flex flex-col items-center gap-1 text-center">
         <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-vx-text-muted">
           {t("home.voice_console")}
@@ -241,28 +341,78 @@ function VoiceConsoleCard({
         <p className="text-xs text-vx-text-secondary">{subtitle}</p>
       </div>
 
-      <button
-        type="button"
-        onClick={onMicClick}
-        disabled={isProcessing}
-        title={micTooltip}
-        aria-label={micTooltip}
-        className="group relative flex items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-canvas disabled:cursor-not-allowed"
-      >
+      {/* Single clean 96px machined-matte button at Idle; sonic ripples & orbiting ring appear only when active */}
+      <div className="relative flex size-[148px] items-center justify-center">
         <span
-          className={`size-[136px] rounded-full flex items-center justify-center transition-colors duration-[180ms] ${outerRingClass}`}
+          aria-hidden="true"
+          style={isRecording ? { transform: `scale(${rippleScaleBoost.toFixed(3)})` } : undefined}
+          className={`pointer-events-none absolute size-[144px] rounded-full border border-vx-accent-ember transition-[opacity,transform] duration-[220ms] ease-[var(--ease-vx-out)] ${
+            isRecording
+              ? "vx-mic-pulse vx-mic-ripple-outer"
+              : "scale-[0.65] opacity-0"
+          }`}
+        />
+        <span
+          aria-hidden="true"
+          style={
+            isRecording
+              ? { transform: `scale(${(1 + audioLevel * 0.035).toFixed(3)})` }
+              : undefined
+          }
+          className={`pointer-events-none absolute size-[120px] rounded-full border-[1.5px] border-vx-accent-ember transition-[opacity,transform] duration-[200ms] ease-[var(--ease-vx-out)] ${
+            isRecording
+              ? "vx-mic-pulse vx-mic-ripple-inner"
+              : "scale-[0.75] opacity-0"
+          }`}
+        />
+
+        {/* Orbiting 270-deg Ember hairline ring during Processing */}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 108 108"
+          fill="none"
+          data-testid="mic-orbit-ring"
+          className={`pointer-events-none absolute size-[108px] transition-opacity duration-[180ms] ease-[var(--ease-vx-out)] ${
+            isProcessing ? "opacity-100 vx-mic-orbit" : "opacity-0 scale-95"
+          }`}
         >
-          <span
-            className={`size-[84px] rounded-full flex items-center justify-center border transition-colors duration-[180ms] ${innerCoreClass}`}
-          >
-            {isProcessing ? (
-              <Loader2 className="h-8 w-8 animate-spin" />
-            ) : (
-              <Mic className="h-8 w-8" />
-            )}
-          </span>
-        </span>
-      </button>
+          <path
+            d="M 54 4 A 50 50 0 1 1 4 54"
+            stroke="var(--vx-accent-ember)"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+
+        <button
+          type="button"
+          onClick={onMicClick}
+          disabled={isProcessing}
+          title={micTooltip}
+          aria-label={micTooltip}
+          className={`group relative z-10 flex size-[96px] items-center justify-center rounded-full shadow-vx-card transition-[background-color,border-color,color,transform] duration-[200ms] ease-[var(--ease-vx-out)] active:scale-[0.93] focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember focus-visible:ring-offset-2 focus-visible:ring-offset-vx-bg-canvas disabled:cursor-not-allowed disabled:active:scale-100 ${coreStateClass}`}
+        >
+          {isRecording ? (
+            <span
+              data-testid="mic-stop-icon"
+              className="h-[22px] w-[22px] rounded-[5px] bg-vx-text-inverse transition-transform duration-[180ms] ease-[var(--ease-vx-out)]"
+            />
+          ) : showSuccess ? (
+            <Check
+              data-testid="mic-success-icon"
+              className="h-7 w-7 text-vx-semantic-success"
+              strokeWidth={2.2}
+            />
+          ) : (
+            <Mic
+              className={`h-7 w-7 transition-opacity duration-[180ms] ${
+                isProcessing ? "opacity-35" : "opacity-100"
+              }`}
+              strokeWidth={1.75}
+            />
+          )}
+        </button>
+      </div>
 
       <div className="flex min-h-[72px] w-full flex-col items-center justify-center gap-2 text-center">
         {isRecording ? (
@@ -325,7 +475,7 @@ function VoiceConsoleCard({
         <button
           type="button"
           onClick={() => navigate("settings", "audio")}
-          className="bg-vx-bg-subtle border border-vx-border-subtle hover:border-vx-border-default rounded-[8px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs text-vx-text-secondary hover:text-vx-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
+          className="bg-vx-bg-subtle border border-vx-border-subtle hover:border-vx-border-default rounded-[8px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs text-vx-text-secondary hover:text-vx-text-primary transition-[border-color,color,transform] duration-[120ms] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
         >
           <Volume2 className="h-[13px] w-[13px] shrink-0" />
           <span>{micLabel} &#x2197;</span>
@@ -333,7 +483,7 @@ function VoiceConsoleCard({
         <button
           type="button"
           onClick={() => navigate("settings", "stt")}
-          className="bg-vx-bg-subtle border border-vx-border-subtle hover:border-vx-border-default rounded-[8px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs text-vx-text-secondary hover:text-vx-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
+          className="bg-vx-bg-subtle border border-vx-border-subtle hover:border-vx-border-default rounded-[8px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs text-vx-text-secondary hover:text-vx-text-primary transition-[border-color,color,transform] duration-[120ms] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember"
         >
           <Sparkles className="h-[13px] w-[13px] shrink-0" />
           <span>{engineLabel} &#x2197;</span>
@@ -357,36 +507,27 @@ function LifetimeTelemetryCard({
   onRetry: () => void;
 }) {
   const recordingTime = splitDuration(totals.total_duration_ms, t);
-  const metrics = [
-    {
-      key: "wpm",
-      value: `${avgWpm} WPM`,
-      label: t("home.speaking_pace"),
-      accent: true,
-    },
+  const rows = [
     {
       key: "time",
-      value: `${recordingTime.value} ${recordingTime.unit}`,
       label: t("home.total_dictated"),
-      accent: false,
+      value: `${recordingTime.value} ${recordingTime.unit}`,
     },
     {
       key: "words",
-      value: formatCompact(totals.total_words),
       label: t("home.words_captured"),
-      accent: false,
+      value: formatCompact(totals.total_words),
     },
     {
       key: "sessions",
-      value: formatCompact(totals.total_sessions),
       label: t("home.sessions"),
-      accent: false,
+      value: formatCompact(totals.total_sessions),
     },
   ];
 
   return (
-    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-5 py-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <section className="vx-card-rise vx-stagger-1 bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-[18px] py-3.5">
+      <div className="mb-2.5 flex items-center justify-between gap-2">
         <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-vx-text-muted">
           {t("home.lifetime_telemetry")}
         </h2>
@@ -411,35 +552,40 @@ function LifetimeTelemetryCard({
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {metrics.map((metric, idx) => (
-              <Fragment key={metric.key}>
-                {idx > 0 && (
-                  <div
-                    aria-hidden="true"
-                    className="w-px h-[34px] bg-vx-border-subtle shrink-0"
-                  />
-                )}
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span
-                    className={`font-mono text-[15px] font-semibold tabular-nums ${
-                      metric.accent
-                        ? "text-vx-accent-ember"
-                        : "text-vx-text-primary"
-                    }`}
-                  >
-                    {metric.value}
-                  </span>
-                  <span className="text-xs text-vx-text-muted">
-                    {metric.label}
-                  </span>
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-[18px]">
+            {/* Left: calibrated WPM semicircle gauge */}
+            <div className="flex w-[150px] shrink-0 flex-col items-center gap-0.5">
+              <WpmHalfRing value={avgWpm} />
+              <span className="text-xs text-vx-text-muted">
+                {t("home.speaking_pace")}
+              </span>
+            </div>
+
+            <div
+              aria-hidden="true"
+              className="hidden h-[92px] w-px shrink-0 bg-vx-border-subtle sm:block"
+            />
+
+            {/* Right: 3 hairline-separated compact metric rows */}
+            <dl className="flex w-full min-w-0 flex-1 flex-col divide-y divide-vx-border-subtle">
+              {rows.map((row) => (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between gap-3 py-1.5 first:pt-0.5 last:pb-0.5"
+                >
+                  <dt className="text-[13px] text-vx-text-secondary">
+                    {row.label}
+                  </dt>
+                  <dd className="font-mono text-sm font-bold tabular-nums text-vx-text-primary">
+                    {row.value}
+                  </dd>
                 </div>
-              </Fragment>
-            ))}
+              ))}
+            </dl>
           </div>
 
           {totals.total_sessions === 0 && (
-            <p className="mt-3 border-t border-vx-border-subtle pt-2.5 text-xs text-vx-text-muted">
+            <p className="mt-2.5 border-t border-vx-border-subtle pt-2 text-xs text-vx-text-muted">
               {t("home.stats_empty")}
             </p>
           )}
@@ -483,29 +629,50 @@ function ModeTranslateCard({
     ? baseModes
     : [...baseModes, { id: activeMode, label: modeLabel(t, activeMode), desc: "" }];
 
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const indicator = useSlidingHorizontalIndicator(activeMode, railRef, btnRefs);
+
   const targetName = translationTarget === "en" ? "English" : "Bahasa Indonesia";
 
   return (
-    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-5 py-4 flex flex-col gap-3">
+    <section className="vx-card-rise vx-stagger-2 bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-4 py-3 flex flex-col gap-2.5">
       <div
-        className={`grid gap-2 ${
+        ref={railRef}
+        className={`relative grid gap-1 rounded-[8px] border border-vx-border-subtle bg-vx-bg-subtle p-[3px] ${
           modes.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"
         }`}
       >
+        <span
+          data-testid="mode-active-pill"
+          aria-hidden="true"
+          className={`pointer-events-none absolute top-[3px] bottom-[3px] left-0 rounded-[6px] border border-vx-border-strong bg-vx-bg-elevated shadow-vx-subtle transition-[transform,width,opacity] duration-[200ms] ease-[var(--ease-vx-out)] ${
+            indicator.ready ? "opacity-100" : "opacity-0"
+          }`}
+          style={{
+            width: `${indicator.width}px`,
+            transform: `translateX(${indicator.left}px)`,
+          }}
+        />
         {modes.map((m) => {
           const isSelected = activeMode === m.id;
           return (
             <button
               key={m.id}
+              ref={(el) => {
+                btnRefs.current[m.id] = el;
+              }}
               type="button"
               aria-pressed={isSelected}
               onClick={() =>
                 void invokeAction(() => onUpdateSetting("active_mode", m.id))
               }
-              className={`flex flex-col items-center justify-center rounded-[8px] border px-3 py-2.5 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
+              className={`relative z-10 flex flex-col items-center justify-center rounded-[6px] border px-2.5 py-1.5 text-center transition-colors duration-[150ms] focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
                 isSelected
-                  ? "bg-vx-bg-elevated border-vx-border-strong text-vx-text-primary"
-                  : "bg-vx-bg-subtle border-vx-border-subtle text-vx-text-secondary hover:border-vx-border-default hover:text-vx-text-primary"
+                  ? indicator.ready
+                    ? "border-transparent bg-transparent text-vx-text-primary"
+                    : "border-vx-border-strong bg-vx-bg-elevated text-vx-text-primary shadow-vx-subtle"
+                  : "border-transparent bg-transparent text-vx-text-secondary hover:text-vx-text-primary"
               }`}
             >
               <span className="text-[13px] font-medium">{m.label}</span>
@@ -519,7 +686,7 @@ function ModeTranslateCard({
         })}
       </div>
 
-      <div className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] px-3 py-2.5 flex items-center justify-between gap-3">
+      <div className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] px-3 py-2 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <Languages className="h-4 w-4 text-vx-text-secondary shrink-0" />
           <span className="truncate text-[13px] text-vx-text-primary">
@@ -590,7 +757,7 @@ function RecentTranscriptionsCard({
   onTogglePin: (id: string, pinned: boolean) => void;
 }) {
   return (
-    <section className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-5 py-4 flex-1 flex flex-col gap-2.5">
+    <section className="vx-card-rise vx-stagger-3 bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-[18px] py-3.5 flex-1 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-vx-text-muted">
           {t("home.recent_transcriptions")}
@@ -630,7 +797,7 @@ function RecentTranscriptionsCard({
             return (
               <div
                 key={item.id}
-                className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] px-3 py-2.5 flex flex-col gap-1.5"
+                className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] px-3 py-2 flex flex-col gap-1"
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="line-clamp-2 text-[13px] leading-[18px] text-vx-text-primary">
@@ -782,7 +949,7 @@ export function HomeView() {
   const hotkey = isHotkeyConfig(settings.hotkey) ? settings.hotkey : undefined;
   const shortcutDisplay = formatAccelerator(hotkey?.key ?? "Ctrl+Space", platform);
 
-  const recentItems = useMemo(() => historyItems.slice(0, 3), [historyItems]);
+  const recentItems = useMemo(() => historyItems.slice(0, 2), [historyItems]);
   const avgWpm = useMemo(() => computeAvgWpm(historyItems), [historyItems]);
 
   const engineMissing =
@@ -791,7 +958,7 @@ export function HomeView() {
       : settings.groq_api_key_set !== true;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-8 pt-7 pb-24 flex flex-col gap-5 vx-panel-reveal">
+    <div className="mx-auto w-full max-w-5xl px-8 pt-6 pb-24 flex flex-col gap-4">
       <HomeTopBar
         t={t}
         isRecording={isRecording}
@@ -816,7 +983,7 @@ export function HomeView() {
           onMicClick={() => void handleMicClick()}
         />
 
-        <div className="flex flex-col gap-3.5 min-w-0">
+        <div className="flex flex-col gap-3 min-w-0">
           <LifetimeTelemetryCard
             t={t}
             totals={totals}

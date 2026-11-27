@@ -259,13 +259,42 @@ describe("HomeView v2 redesign & navigation", () => {
     expect(tauri.pinHistory).toHaveBeenCalledWith("rec-1", true);
   });
 
-  it("shows recording timer and vx-mic-pulse when recording is active", () => {
+  it("shows recording timer, Stop morph, and vx-mic-pulse ripples when recording is active", () => {
     useAppStore.setState({ state: "recording", durationSec: 14 });
 
     const { container } = render(<HomeView />);
 
     expect(screen.getByText("00:14")).toBeInTheDocument();
     expect(screen.getByText("Recording · 00:14")).toBeInTheDocument();
-    expect(container.querySelector(".vx-mic-pulse")).not.toBeNull();
+    expect(screen.getByTestId("mic-stop-icon")).toBeInTheDocument();
+    expect(container.querySelectorAll(".vx-mic-pulse")).toHaveLength(2);
+  });
+
+  it("renders calibrated WpmHalfRing with computed WPM and sliding mode pill", () => {
+    render(<HomeView />);
+
+    const ring = screen.getByTestId("wpm-half-ring");
+    expect(ring).toBeInTheDocument();
+    expect(ring).toHaveTextContent("80");
+    expect(ring).toHaveTextContent("WPM");
+    expect(screen.getByText("Speaking pace")).toBeInTheDocument();
+    expect(screen.getByTestId("mode-active-pill")).toBeInTheDocument();
+  });
+
+  it("shows orbiting hairline ring while processing and brief success flash on completion", () => {
+    useAppStore.setState({ state: "processing" });
+    const { rerender } = render(<HomeView />);
+
+    const orbit = screen.getByTestId("mic-orbit-ring");
+    expect(orbit.getAttribute("class")).toContain("vx-mic-orbit");
+
+    useAppStore.setState({
+      state: "idle",
+      wordCount: 12,
+      outcome: { injected: true, appContext: "Slack" },
+    });
+    rerender(<HomeView />);
+
+    expect(screen.getByTestId("mic-success-icon")).toBeInTheDocument();
   });
 });
