@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### New Features
 - Added Dark (Warm Obsidian), Light (Warm Paper), and System theme modes in General settings, synchronized automatically across the main window and the floating widget overlay.
 - Redesigned the entire desktop interface with a warm monochrome matte design system, ember focus accents, directional page transitions, sliding tab/mode indicators, tactile button feedback, and full `prefers-reduced-motion` support.
-- Redesigned the Home workspace with a single-core 4-state microphone console (clean idle button, audio-reactive recording ripples with Stop morph, orbiting processing ring, and brief success confirmation flash), a calibrated WPM semicircle gauge in a two-column Lifetime Telemetry card, a sliding mode selector, and quick-navigation shortcuts.
+- Redesigned the Home workspace with a split left stack pairing a compact 4-state Voice Console card (clean idle button, audio-reactive recording ripples with Stop morph, orbiting processing ring, and brief success confirmation flash) with an Active Setup card (microphone and Speech & LLM quick links, 1-click Auto / EN / ID dictation language switcher, and live active dictionary term and snippet counts), alongside a calibrated WPM semicircle gauge in Lifetime Telemetry and a sliding mode selector.
 - Upgraded the Floating Dock into three hairline-separated navigation groups with a synchronized sliding active indicator pill and expanding active labels, and redesigned toast notifications as top-right elevated cards with optional descriptions and persistent dismiss buttons.
 - Redesigned the floating overlay widget into an ultra-compact morphing pill (`92x34` idle with logo and dormant bars, expanding smoothly across recording, formatting, success, and error states) with capsule auto-hide and spring-bloom reveal choreography.
 - Redesigned History into a two-column split layout with search, mode filter, All/Pinned segmented toggle, and an Editorial Reader featuring Formatted and Raw STT tabs alongside Pin, Copy, Re-inject, and Delete actions.
@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added search, All/Active/Replacements filter chips, and inline editing to Dictionary, plus search, inline editing, an active trigger count badge, and per-snippet active toggles to Snippets.
 - Redesigned all 8 Settings tabs with a sliding vertical navigation rail and added history retention options (30, 90, 180 days, or Forever), an Ollama endpoint and model readiness test, a live Audio microphone level meter with device refresh, and a running-applications picker with a 3-second active-app countdown in App Rules.
 - Redesigned the 8-step Onboarding wizard with an updated progress layout and persisted resume-step support across data-directory restarts.
+- Added responsive layouts across all desktop views (Home, File Transcription, History, Dictionary, Snippets, all 8 Settings tabs with collapsible horizontal tab navigation on narrow windows, and Onboarding) plus a `680x520` minimum window size guard so both compact (`900x600`) and full-screen windows render without clipping or dock overlap.
 
 ### Bug Fixes
 - Fixed duplicate controls in General settings and routed the system tray About action directly into the Settings About tab.
@@ -26,8 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fixed onboarding navigation when returning from STT setup to the Microphone step and ensured persisted resume state clears cleanly on completion.
 
 ### Improvements
-- Added English and Indonesian translations across all redesigned v2 screens, settings controls, and compact widget states.
-- Expanded automated test coverage across UI primitives, theme synchronization, FloatingDock, HomeView, FloatingWidget, History, Dictionary, Snippets, File Transcription, Settings tabs, and Onboarding (264 frontend tests and 488 Rust tests).
+- Added English and Indonesian translations across all redesigned v2 screens, settings controls, Active Setup quick-switcher, and compact widget states.
+- Expanded automated test coverage across UI primitives, theme synchronization, FloatingDock, HomeView, FloatingWidget, History, Dictionary, Snippets, File Transcription, Settings tabs, and Onboarding (265 frontend tests and 488 Rust tests).
 
 ## [0.7.1] - 2026-10-19
 
