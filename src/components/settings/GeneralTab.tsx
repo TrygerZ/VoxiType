@@ -200,7 +200,7 @@ export function GeneralTab() {
             onChange={(e) =>
               void invokeAction(() => update("language", e.target.value))
             }
-            className="w-48"
+            className="w-full sm:w-48"
           />
         </SettingsRow>
         <SettingsRow
@@ -282,7 +282,7 @@ export function GeneralTab() {
                 update("history_retention_days", Number(e.target.value)),
               )
             }
-            className="w-40"
+            className="w-full sm:w-40"
           />
         </SettingsRow>
         <SettingsRow
@@ -503,7 +503,7 @@ function DataDirectoryRow({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-[10px] border border-vx-border-subtle bg-vx-bg-subtle px-3 py-2">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 rounded-[10px] border border-vx-border-subtle bg-vx-bg-subtle px-3 py-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-[10px] uppercase tracking-wider text-vx-text-dim">
             {t("data_directory.active")}

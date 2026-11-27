@@ -234,8 +234,8 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="flex h-full w-full flex-col vx-app-bg relative">
-        <main className="flex-1 overflow-x-hidden overflow-y-auto pb-36">
-          <div key={view} className={`h-full ${pageTransitionClass}`}>
+        <main className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div key={view} className={`min-h-full h-full ${pageTransitionClass}`}>
             {view === "home" && <HomeView />}
             {view === "settings" && (
               <SettingsPanel key={settingsTab ?? "general"} initialTab={settingsTab} />
@@ -245,7 +245,7 @@ export default function App() {
             {view === "snippets" && <SnippetsPanel />}
             {view === "file" && <FileTranscriptionPanel />}
             {view === "about" && (
-              <div className="mx-auto w-full max-w-4xl px-8 pt-7 pb-24">
+              <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-24">
                 <AboutTab />
               </div>
             )}

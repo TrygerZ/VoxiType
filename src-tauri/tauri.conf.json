@@ -16,6 +16,8 @@
         "title": "VoxiType",
         "width": 900,
         "height": 600,
+        "minWidth": 680,
+        "minHeight": 520,
         "resizable": true,
         "fullscreen": false,
         "visible": true,

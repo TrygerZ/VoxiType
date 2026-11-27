@@ -150,8 +150,8 @@ export function FileQueueItem({
 
   if (item.status === "queued") {
     return (
-      <li className="bg-vx-bg-surface border border-vx-border-subtle rounded-[8px] px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <li className="bg-vx-bg-surface border border-vx-border-subtle rounded-[8px] px-4 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <FileAudio className="h-4 w-4 shrink-0 text-vx-text-muted" />
           <div className="flex min-w-0 flex-col">
             <span
@@ -188,8 +188,8 @@ export function FileQueueItem({
     const subtext = `${progressLabel(t, item.progress)}${dir ? ` \u00b7 ${dir}` : ""}`;
     return (
       <li className="bg-vx-bg-surface border border-vx-accent-ember rounded-[8px] px-4 py-3.5 flex flex-col gap-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <FileAudio className="h-[18px] w-[18px] shrink-0 text-vx-accent-ember" />
             <div className="flex min-w-0 flex-col">
               <span
@@ -233,8 +233,8 @@ export function FileQueueItem({
     if (hasPartialIssue) {
       return (
         <li className="bg-vx-bg-surface border border-vx-semantic-warning rounded-[8px] px-4 py-3 flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <FileAudio className="h-4 w-4 shrink-0 text-vx-semantic-warning" />
               <span
                 className="truncate text-[13px] font-medium text-vx-text-primary"
@@ -312,8 +312,8 @@ export function FileQueueItem({
 
     return (
       <li className="bg-vx-bg-surface border border-vx-border-default rounded-[12px] px-4 py-3.5 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <FileAudio className="h-4 w-4 shrink-0 text-vx-semantic-success" />
             <div className="flex min-w-0 flex-col">
               <span
@@ -364,8 +364,8 @@ export function FileQueueItem({
           : "border-vx-border-default"
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <FileAudio className="h-4 w-4 shrink-0 text-vx-text-muted" />
           <div className="flex min-w-0 flex-col">
             <span

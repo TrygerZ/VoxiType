@@ -49,8 +49,14 @@ function useSlidingVerticalIndicator(
 
   useLayoutEffect(() => {
     const update = () => {
+      const nav = navRef.current;
       const btn = buttonRefs.current?.[active];
-      if (!btn || btn.offsetHeight <= 0) return;
+      if (!nav || !btn || btn.offsetHeight <= 0) return;
+      const isVertical = window.getComputedStyle(nav).flexDirection === "column";
+      if (!isVertical) {
+        setIndicator((prev) => (prev.ready ? { top: 0, height: 0, ready: false } : prev));
+        return;
+      }
       setIndicator({
         top: btn.offsetTop,
         height: btn.offsetHeight,
@@ -99,21 +105,21 @@ export function SettingsPanel({ initialTab }: { initialTab?: string }) {
   const indicator = useSlidingVerticalIndicator(active, navRef, buttonRefs);
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full min-h-0 w-full flex-col md:flex-row">
       <nav
         ref={navRef}
-        className="relative flex w-[224px] shrink-0 flex-col gap-0.5 border-r border-vx-border-subtle px-3 py-7"
+        className="relative flex w-full shrink-0 flex-row items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-vx-border-subtle px-4 py-2.5 md:w-[192px] lg:w-[224px] md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:border-b-0 md:border-r md:px-3 md:py-6 lg:py-7 md:pb-24"
         role="tablist"
         aria-orientation="vertical"
       >
-        <h2 className="mb-3 px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-vx-text-dim">
+        <h2 className="hidden md:block mb-3 px-3 text-[11px] font-medium uppercase tracking-[0.15em] text-vx-text-dim">
           {t("settings.preferences")}
         </h2>
         {indicator.ready && (
           <span
             data-testid="settings-rail-pill"
             aria-hidden="true"
-            className="pointer-events-none absolute left-3 right-3 top-0 rounded-lg border border-vx-border-subtle bg-vx-bg-subtle transition-[transform,height] duration-[200ms] ease-[var(--ease-vx-out)]"
+            className="hidden md:block pointer-events-none absolute left-3 right-3 top-0 rounded-lg border border-vx-border-subtle bg-vx-bg-subtle transition-[transform,height] duration-[200ms] ease-[var(--ease-vx-out)]"
             style={{
               transform: `translateY(${indicator.top}px)`,
               height: `${indicator.height}px`,
@@ -132,7 +138,7 @@ export function SettingsPanel({ initialTab }: { initialTab?: string }) {
               role="tab"
               aria-selected={isSelected}
               onClick={() => setActive(id)}
-              className={`relative z-10 flex items-center gap-2.5 rounded-lg border px-3 py-2 text-[13px] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
+              className={`relative z-10 flex shrink-0 whitespace-nowrap md:shrink items-center gap-2 md:gap-2.5 rounded-lg border px-3 py-1.5 md:py-2 text-[13px] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-vx-accent-ember ${
                 isSelected
                   ? indicator.ready
                     ? "border-transparent bg-transparent font-medium text-vx-text-primary"
@@ -154,7 +160,7 @@ export function SettingsPanel({ initialTab }: { initialTab?: string }) {
           );
         })}
       </nav>
-      <div className="flex-1 overflow-y-auto px-10 py-8 pb-28">
+      <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-10 lg:py-8 pb-24">
         <div key={active} className="vx-panel-reveal mx-auto max-w-2xl">
           {renderActiveTab(active)}
         </div>

@@ -239,8 +239,8 @@ export function FileTranscriptionPanel() {
     });
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-8 pt-7 pb-24 vx-panel-reveal">
-      <header className="flex items-start justify-between gap-4">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-24 vx-panel-reveal">
+      <header className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <div className="flex flex-col gap-0.5">
           <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.02em] text-vx-text-primary">
             {t("file.title")}
@@ -249,7 +249,7 @@ export function FileTranscriptionPanel() {
             {t("file.subtitle_v2")}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <QueueHeaderBadge t={t} items={items} busy={busy} />
           {items.length > 0 && (
             <>
@@ -383,7 +383,7 @@ export function FileTranscriptionPanel() {
       {items.length === 0 ? (
         <div
           data-testid="file-dropzone"
-          className={`bg-vx-bg-surface border border-dashed rounded-[12px] py-12 px-6 flex flex-col items-center justify-center gap-3 text-center transition-colors ${
+          className={`bg-vx-bg-surface border border-dashed rounded-[12px] py-8 sm:py-12 px-4 sm:px-6 flex flex-col items-center justify-center gap-3 text-center transition-colors ${
             isDragging
               ? "border-vx-accent-ember bg-vx-accent-ember-soft/40"
               : "border-vx-border-default"

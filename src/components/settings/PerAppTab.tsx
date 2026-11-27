@@ -218,7 +218,7 @@ export function PerAppTab() {
         <SettingsGroup title={t("settings.app_rules.add_group")}>
           <div className="flex flex-col gap-3 px-4 py-4">
             <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-[180px] flex-1">
+              <div className="min-w-[140px] flex-1">
                 <Input
                   aria-label={t("settings.app_rules.proc_name")}
                   placeholder={t("settings.app_rules.proc_name")}
@@ -236,7 +236,7 @@ export function PerAppTab() {
                 <Crosshair className="h-3.5 w-3.5" />
                 {t("settings.app_rules.detect_btn")}
               </Button>
-              <div className="w-36">
+              <div className="w-full sm:w-36">
                 <Select
                   aria-label={t("settings.app_rules.mode_apply")}
                   options={modeOptions}
@@ -297,7 +297,7 @@ export function PerAppTab() {
             modes.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between gap-3 px-4 py-3"
+                className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 px-4 py-3"
               >
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate font-mono text-sm font-medium text-vx-text-primary">
@@ -308,7 +308,7 @@ export function PerAppTab() {
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <div className="w-36">
+                  <div className="w-32 sm:w-36">
                     <Select
                       aria-label={t("settings.app_rules.rule_mode_aria", {
                         app: m.app_process_name,

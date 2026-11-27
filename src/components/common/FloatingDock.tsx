@@ -136,7 +136,7 @@ export function FloatingDock({ active, onChange }: FloatingDockProps) {
   return (
     <nav
       aria-label="Primary"
-      className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-full bg-vx-bg-dock border border-vx-border-default shadow-vx-dock px-2 py-1.5"
+      className="fixed bottom-5 left-1/2 z-50 flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-1 rounded-full bg-vx-bg-dock border border-vx-border-default shadow-vx-dock px-2 py-1.5"
     >
       <span
         data-testid="dock-active-pill"

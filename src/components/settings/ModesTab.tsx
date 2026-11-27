@@ -39,7 +39,7 @@ export function ModesTab() {
             onChange={(e) =>
               void invokeAction(() => update("active_mode", e.target.value))
             }
-            className="w-44"
+            className="w-full sm:w-44"
           />
         </SettingsRow>
       </SettingsGroup>
@@ -85,7 +85,7 @@ export function ModesTab() {
                 update("translation_target", e.target.value),
               )
             }
-            className="w-44 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full sm:w-44 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </SettingsRow>
       </SettingsGroup>

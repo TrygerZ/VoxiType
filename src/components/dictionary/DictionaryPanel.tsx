@@ -37,8 +37,8 @@ function DictionaryEntryRow({
   onDelete: () => void;
 }) {
   return (
-    <div className="px-4 py-3 flex items-center justify-between gap-3">
-      <div className="min-w-0 flex flex-wrap items-center gap-2">
+    <div className="px-4 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 sm:gap-3">
+      <div className="min-w-0 flex-1 flex flex-wrap items-center gap-2">
         <span
           className={`text-[13px] font-medium ${
             entry.is_active ? "text-vx-text-primary" : "text-vx-text-muted"
@@ -116,8 +116,8 @@ function DictionaryEditRow({
 
   return (
     <div className="px-4 py-3 bg-vx-bg-elevated flex flex-wrap items-center justify-between gap-2.5">
-      <div className="flex flex-1 flex-wrap items-center gap-2 min-w-[240px]">
-        <div className="flex-1 min-w-[160px]">
+      <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0 sm:min-w-[240px]">
+        <div className="flex-1 min-w-[130px]">
           <Input
             autoFocus
             aria-label={t("dictionary.placeholder_word")}
@@ -128,7 +128,7 @@ function DictionaryEditRow({
             onKeyDown={handleKeyDown}
           />
         </div>
-        <div className="flex-1 min-w-[160px]">
+        <div className="flex-1 min-w-[130px]">
           <Input
             aria-label={t("dictionary.placeholder_rep")}
             placeholder={t("dictionary.placeholder_rep_v2")}
@@ -306,8 +306,8 @@ export function DictionaryPanel() {
   ];
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-[18px] px-8 pt-7 pb-24 vx-panel-reveal">
-      <header className="flex items-start justify-between gap-4">
+    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-[18px] px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-24 vx-panel-reveal">
+      <header className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <div className="flex flex-col gap-0.5">
           <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.02em] text-vx-text-primary">
             {t("dictionary.title_v2")}
@@ -317,7 +317,7 @@ export function DictionaryPanel() {
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap shrink-0 items-center gap-2">
           <Button
             variant="secondary"
             size="sm"
@@ -338,7 +338,7 @@ export function DictionaryPanel() {
       </header>
 
       <div className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-3.5 py-3 flex flex-wrap items-center gap-2.5">
-        <div className="flex-1 min-w-[200px]">
+        <div className="flex-1 min-w-[160px]">
           <Input
             placeholder={t("dictionary.placeholder_word_v2")}
             aria-label={t("dictionary.placeholder_word")}
@@ -350,7 +350,7 @@ export function DictionaryPanel() {
             }}
           />
         </div>
-        <div className="w-64">
+        <div className="flex-1 min-w-[160px] sm:flex-none sm:w-56 lg:w-64">
           <Input
             placeholder={t("dictionary.placeholder_rep_v2")}
             aria-label={t("dictionary.placeholder_rep")}

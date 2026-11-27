@@ -28,14 +28,14 @@ export function StepShell({
   wide = false,
 }: StepShellProps) {
   return (
-    <main className="vx-app-bg flex h-full flex-col overflow-y-auto px-6 py-5 sm:px-8 sm:py-6">
+    <main className="vx-app-bg flex h-full flex-col overflow-y-auto px-4 py-4 sm:px-8 sm:py-6">
       <div
         className={`mx-auto flex w-full flex-1 flex-col justify-between gap-4 ${wide ? "max-w-3xl" : "max-w-xl"}`}
       >
         <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
         <div className="vx-panel-reveal my-auto flex flex-col items-center gap-5 py-2">
           <header className="flex flex-col items-center gap-1.5 text-center">
-            <h1 className="text-balance text-2xl font-semibold tracking-tight text-vx-text-primary">
+            <h1 className="text-balance text-xl sm:text-2xl font-semibold tracking-tight text-vx-text-primary">
               {title}
             </h1>
             <p className="max-w-lg text-pretty text-sm leading-relaxed text-vx-text-secondary">

@@ -102,7 +102,7 @@ export function AudioTab() {
 
       <SettingsGroup title={t("settings.audio.device_group")}>
         <SettingsRow label={t("settings.audio.mic")}>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
             <Select
               aria-label={t("settings.audio.mic")}
               options={devices.map((d) => ({ value: d.id, label: d.name }))}
@@ -110,7 +110,7 @@ export function AudioTab() {
               onChange={(e) =>
                 void invokeAction(() => update("mic_device", e.target.value))
               }
-              className="w-56"
+              className="w-full sm:w-52 lg:w-56"
             />
             <Button
               variant="secondary"

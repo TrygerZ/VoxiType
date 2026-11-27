@@ -88,7 +88,7 @@ export function ShortcutsTab() {
             ]}
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            className="w-44"
+            className="w-full sm:w-44"
           />
         </SettingsRow>
       </SettingsGroup>

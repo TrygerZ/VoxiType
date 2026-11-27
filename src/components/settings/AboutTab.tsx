@@ -67,7 +67,7 @@ export function AboutTab() {
         description={t("settings.about.desc")}
       />
 
-      <div className="flex flex-col items-center justify-center gap-4 rounded-[12px] border border-vx-border-subtle bg-vx-bg-surface p-10 text-center">
+      <div className="flex flex-col items-center justify-center gap-4 rounded-[12px] border border-vx-border-subtle bg-vx-bg-surface p-6 sm:p-10 text-center">
         <span className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[14px] border border-vx-border-subtle bg-vx-bg-subtle p-1.5">
           <img
             src="/logo.png"

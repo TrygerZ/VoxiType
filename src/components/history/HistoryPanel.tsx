@@ -80,7 +80,7 @@ function HistoryToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <div className="relative flex-1 min-w-[200px]">
+      <div className="relative flex-1 min-w-[180px]">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-vx-text-muted" />
         <input
           aria-label={t("history.search_placeholder")}
@@ -96,7 +96,7 @@ function HistoryToolbar({
         options={modeOptions}
         value={modeFilter}
         onChange={(e) => onModeChange(e.target.value)}
-        className="w-[150px]"
+        className="w-[136px] sm:w-[150px]"
       />
 
       <div className="bg-vx-bg-subtle border border-vx-border-default rounded-[8px] p-[3px] flex items-center gap-0.5 shrink-0">
@@ -211,8 +211,8 @@ function HistoryEditorialReader({
     }`;
 
   return (
-    <div className="bg-vx-bg-surface border border-vx-border-default rounded-[12px] px-5 py-[18px] flex flex-col gap-3.5 min-w-0 overflow-y-auto">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="bg-vx-bg-surface border border-vx-border-default rounded-[12px] px-4 py-4 sm:px-5 sm:py-[18px] min-h-[220px] md:min-h-0 flex flex-col gap-3.5 min-w-0 overflow-y-auto">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         <div className="bg-vx-bg-subtle border border-vx-border-subtle rounded-[8px] p-[3px] flex items-center gap-0.5">
           <button
             type="button"
@@ -232,7 +232,7 @@ function HistoryEditorialReader({
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <IconButton
             size="md"
             tone="ghost"
@@ -371,8 +371,8 @@ export function HistoryPanel() {
     filtered.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-5 px-8 pt-7 pb-24 vx-panel-reveal">
-      <header className="flex items-start justify-between gap-4">
+    <div className="mx-auto flex min-h-full md:h-full w-full max-w-5xl flex-col gap-4 sm:gap-5 px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-24 vx-panel-reveal">
+      <header className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <div className="flex flex-col gap-0.5">
           <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.02em] text-vx-text-primary">
             {t("history.title")}
@@ -382,7 +382,7 @@ export function HistoryPanel() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Button
             variant="secondary"
             size="sm"
@@ -484,8 +484,8 @@ export function HistoryPanel() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.44fr)_minmax(0,0.56fr)] flex-1 min-h-0">
-          <div className="flex flex-col gap-2 overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(240px,0.42fr)_minmax(0,0.58fr)] lg:grid-cols-[minmax(0,0.44fr)_minmax(0,0.56fr)] flex-1 min-h-0">
+          <div className="flex flex-col gap-2 overflow-y-auto pr-1 max-h-[220px] md:max-h-none">
             {filtered.map((item) => (
               <HistoryEntryCard
                 key={item.id}

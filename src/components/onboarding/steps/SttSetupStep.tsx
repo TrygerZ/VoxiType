@@ -332,7 +332,7 @@ function GroqSetup({
           ]}
           value={sttLanguage}
           onChange={(e) => onLanguageChange(e.target.value)}
-          className="w-48"
+          className="w-full sm:w-48"
         />
         <StatusButton
           status={status}
@@ -418,7 +418,7 @@ function OfflineSetup({
             ]}
             value={sttLanguage}
             onChange={(e) => onLanguageChange(e.target.value)}
-            className="w-44"
+            className="w-full sm:w-44"
           />
           <Input
             label={t("onboarding.stt.offline.threads")}
@@ -579,7 +579,7 @@ function PathPickerField({
   onBrowse: () => void;
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
       <Input
         autoFocus={autoFocus}
         label={label}
@@ -592,7 +592,7 @@ function PathPickerField({
         variant="secondary"
         size="md"
         type="button"
-        className="mt-6 whitespace-nowrap"
+        className="sm:mt-6 whitespace-nowrap"
         onClick={onBrowse}
       >
         <FolderOpen className="h-3.5 w-3.5" />

@@ -43,7 +43,7 @@ export function WelcomeStep({
   ];
 
   return (
-    <main className="vx-app-bg flex h-full flex-col overflow-y-auto px-6 py-5 sm:px-8 sm:py-6">
+    <main className="vx-app-bg flex h-full flex-col overflow-y-auto px-4 py-4 sm:px-8 sm:py-6">
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-between gap-4">
         <StepProgress step={step} currentStepIdx={currentStepIdx} t={t} />
         <div className="vx-panel-reveal my-auto flex flex-col items-center gap-6 py-2">
@@ -56,7 +56,7 @@ export function WelcomeStep({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <h1 className="text-balance text-2xl font-semibold tracking-tight text-vx-text-primary">
+              <h1 className="text-balance text-xl sm:text-2xl font-semibold tracking-tight text-vx-text-primary">
                 {t("onboarding.welcome.title")}
               </h1>
               <p className="max-w-md text-pretty text-sm leading-relaxed text-vx-text-secondary">

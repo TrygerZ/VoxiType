@@ -9,8 +9,8 @@ export function SettingsHeader({
   description?: string;
 }) {
   return (
-    <div className="mb-7 flex flex-col gap-1">
-      <h1 className="text-2xl font-semibold tracking-tight text-vx-text-primary">
+    <div className="mb-5 sm:mb-7 flex flex-col gap-1">
+      <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-vx-text-primary">
         {title}
       </h1>
       {description && (
@@ -53,7 +53,7 @@ export function SettingsRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+    <div className="flex flex-col items-start gap-2.5 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm font-medium text-vx-text-primary">
           {label}
@@ -62,7 +62,7 @@ export function SettingsRow({
           <span className="text-xs text-vx-text-dim">{description}</span>
         )}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="shrink-0 max-w-full sm:max-w-none">{children}</div>
     </div>
   );
 }

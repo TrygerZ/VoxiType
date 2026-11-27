@@ -25,7 +25,7 @@ function SnippetRow({
   onDelete: () => void;
 }) {
   return (
-    <div className="px-4 py-3.5 flex items-start justify-between gap-4">
+    <div className="px-4 py-3.5 flex flex-wrap sm:flex-nowrap items-start justify-between gap-3 sm:gap-4">
       <div className="min-w-0 flex-1 flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2.5">
           <StatusBadge
@@ -232,8 +232,8 @@ export function SnippetsPanel() {
     : snippets;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-[18px] px-8 pt-7 pb-24 vx-panel-reveal">
-      <header className="flex items-start justify-between gap-4">
+    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-[18px] px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-24 vx-panel-reveal">
+      <header className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <div className="flex flex-col gap-0.5">
           <h1 className="text-[22px] font-semibold leading-7 tracking-[-0.02em] text-vx-text-primary">
             {t("snippets.title_v2")}
@@ -250,8 +250,8 @@ export function SnippetsPanel() {
       </header>
 
       <div className="bg-vx-bg-surface border border-vx-border-subtle rounded-[12px] px-4 py-3.5 flex flex-col gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
+          <div className="flex-1 min-w-[180px]">
             <Input
               placeholder={t("snippets.placeholder_trigger_v2")}
               aria-label={t("snippets.placeholder_trigger")}

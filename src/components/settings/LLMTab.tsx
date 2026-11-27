@@ -116,7 +116,7 @@ export function LLMTab() {
             onChange={(e) =>
               void invokeAction(() => update("llm_engine", e.target.value))
             }
-            className="w-52"
+            className="w-full sm:w-52"
           />
         </SettingsRow>
       </SettingsGroup>
@@ -177,7 +177,7 @@ export function LLMTab() {
       {engine === "groq" && (
         <SettingsGroup title={t("settings.llm.groq_group")}>
           <div className="flex flex-col gap-3 px-4 py-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium text-vx-text-secondary">
                 {t("settings.llm.api_key")}
               </span>

@@ -113,7 +113,7 @@ export function STTTab() {
             onChange={(e) =>
               void invokeAction(() => update("stt_engine", e.target.value))
             }
-            className="w-48"
+            className="w-full sm:w-48"
           />
         </SettingsRow>
         <SettingsRow label={t("settings.stt.lang")}>
@@ -128,7 +128,7 @@ export function STTTab() {
             onChange={(e) =>
               void invokeAction(() => update("stt_language", e.target.value))
             }
-            className="w-48"
+            className="w-full sm:w-48"
           />
         </SettingsRow>
       </SettingsGroup>
@@ -193,7 +193,7 @@ export function STTTab() {
       ) : (
         <SettingsGroup title={t("settings.stt.groq_group")}>
           <div className="flex flex-col gap-3 px-4 py-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium text-vx-text-secondary">
                 {t("settings.stt.api_key")}
               </span>
@@ -288,7 +288,7 @@ function PathPickerField({
   onBrowse: () => void;
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
       {/* Read-only by design: paths must come from the native dialog, so
           free-text entry is not offered (backend would reject it anyway). */}
       <Input
@@ -303,7 +303,7 @@ function PathPickerField({
         variant="secondary"
         size="md"
         onClick={onBrowse}
-        className="mt-6 whitespace-nowrap"
+        className="sm:mt-6 whitespace-nowrap"
       >
         <FolderOpen className="h-4 w-4" />
         {browseLabel}

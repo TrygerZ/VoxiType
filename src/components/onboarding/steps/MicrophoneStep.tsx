@@ -127,7 +127,7 @@ export function MicrophoneStep(props: MicrophoneStepProps) {
       }
     >
       <div className="flex w-full max-w-md flex-col gap-4 rounded-[12px] border border-vx-border-subtle bg-vx-bg-surface p-5 text-left">
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-end gap-2">
           {devices.length > 0 ? (
             <div className="min-w-0 flex-1">
               <Select
