@@ -8,7 +8,7 @@
 | Frontend testing | Vitest + React Testing Library | vitest.config.ts, src/test/ |
 | Backend | Rust 1.90+ | src-tauri/src/ |
 | State | Zustand 5.x | src/stores/ |
-| Storage | SQLite 3.53.2 via rusqlite 0.40.2 | src-tauri/src/storage/ |
+| Storage | SQLite 3.54.1 via rusqlite 0.43.0 | src-tauri/src/storage/ |
 | Audio | cpal + rubato; symphonia 0.6.1 for file decode; generation-guarded onboarding microphone meter | src-tauri/src/audio/ |
 | VAD | None; block-level noise gate + post-hoc voice check (no VAD module) | src-tauri/src/audio/capture.rs |
 | STT | Groq Whisper (REST primary) + whisper.cpp (external CLI) | src-tauri/src/stt/ |
